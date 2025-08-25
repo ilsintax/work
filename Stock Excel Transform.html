@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>다단계 주식 및 금융상품 엑셀 변환기</title>
+  <h1 class="text-xs">made by 세무법인일신 (가급적 사이트 배포하지 마시길 부탁드립니다)</h1>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .preview-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+    .preview-table th, .preview-table td {
+      border: 1px solid #e2e8f0; padding: .375rem .5rem; text-align: left;
+      white-space: nowrap; min-width: 20px;
+    }
+    .preview-table th { background-color: #f8fafc; font-weight: 600; }
+    .selectable-row:hover, .selectable-col:hover { background-color: #f0f9ff; cursor: pointer; }
+    .highlighted-row { background-color: #bae6fd !important; }
+    .highlighted-col { background-color: #c7d2fe !important; }
+    .highlighted-col-p3-1 { background-color: #a7f3d0 !important; } /* 거래종류 */
+    .highlighted-col-p3-2 { background-color: #fde68a !important; } /* 종목 */
+    .highlighted-col-p3-3 { background-color: #fecaca !important; } /* 거래주식수 */
+    .highlighted-col-p3-4 { background-color: #d8b4fe !important; } /* 단가 */
+    .highlighted-col-p3-5 { background-color: #bfdbfe !important; } /* 주식잔고 */
+    .highlighted-col-p3-add { background-color: #d1d5db !important; } /* 추가 */
+    #prompt-area { display: none; margin-bottom: 1rem; padding: .75rem; background-color: #e0f2fe;
+      border-left: 4px solid #3b82f6; color: #0369a1; border-radius: .375rem; }
+    /* 드래그 앤 드롭 스타일 */
+    .drop-zone { min-height: 80px; border: 2px dashed #cbd5e1; background-color: #f8fafc; }
+    .drop-zone.drag-over { background-color: #e0f2fe; border-color: #3b82f6; }
+    .draggable-item { cursor: grab; }
+    .draggable-item:active { cursor: grabbing; }
+    /* 경로 전환 버튼 스타일 */
+    .path-nav-btn {
+        transition: all 0.2s;
+        border-bottom: 2px solid transparent;
+    }
+    .path-nav-btn.active {
+        color: #4f46e5; /* indigo-600 */
+        border-bottom-color: #4f46e5;
+        font-weight: 600;
+    }
+    .path-nav-btn.completed {
+        color: #16a34a; /* green-600 */
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="container mx-auto p-4 md:p-8 max-w-5xl space-y-6">
+    <!-- 상단 진행 단계 표시줄 -->
+    <div id="progress-bar" class="flex items-center justify-center text-sm text-slate-500 mb-4"></div>
+
+    <header class="text-center mb-4">
+      <h1 id="main-header" class="text-3xl font-bold text-slate-900">1단계: 엑셀 데이터 행 변환</h1>
+      <p id="main-subheader" class="text-slate-600 mt-2">여러 행으로 반복되는 데이터를 한 행으로 병합합니다.</p>
+    </header>
+
+    <!-- 1. 파일 업로드 -->
+    <div id="upload-section">
+      <label for="file-input" class="flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition">
+        <svg class="w-10 h-10 mb-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+        <span class="text-slate-600 font-medium">클릭하여 XLSX/XLS 파일 업로드</span>
+        <input id="file-input" type="file" accept=".xlsx,.xls" class="hidden"/>
+      </label>
+      <p id="file-name" class="mt-2 text-sm text-center text-slate-500"></p>
+    </div>
+
+    <!-- 2. 미리보기 및 편집 섹션 -->
+    <div id="preview-section" class="hidden space-y-4">
+      <div id="nav-buttons-container" class="hidden justify-center border-b border-slate-200"></div>
+      <div id="prompt-area"><p id="prompt-text" class="font-medium"></p></div>
+      <div id="control-buttons" class="flex items-center space-x-3"></div>
+      <div id="drag-drop-area" class="hidden space-y-4"></div>
+      <div id="preview-container" class="overflow-x-auto border rounded-lg bg-white shadow-sm"></div>
+    </div>
+
+    <!-- 단계 전환 섹션 -->
+    <div id="transition-section" class="hidden text-center py-6 space-y-4"></div>
+  </div>
+
+  <script>
+    // --- DOM 요소 ---
+    const progressBar = document.getElementById('progress-bar');
+    const mainHeader = document.getElementById('main-header');
+    const mainSubheader = document.getElementById('main-subheader');
+    const fileInput = document.getElementById('file-input');
+    const fileNameEl = document.getElementById('file-name');
+    const uploadSection = document.getElementById('upload-section');
+    const previewSection = document.getElementById('preview-section');
+    const previewContainer = document.getElementById('preview-container');
+    const promptArea = document.getElementById('prompt-area');
+    const promptText = document.getElementById('prompt-text');
+    const controlButtons = document.getElementById('control-buttons');
+    const transitionSection = document.getElementById('transition-section');
+    const dragDropArea = document.getElementById('drag-drop-area');
+    const navButtonsContainer = document.getElementById('nav-buttons-container');
+
+    // --- 상태 변수 ---
+    let currentPhaseData = [];
+    let splitData = [];
+    let phase4RemovedData = [];
+    let phase5FinalData = [];
+    let phase2State = { step: '', currencyCount: 0, headerRowIndex: -1, splitColumnIndex: -1 };
+    let phase3State = { step: 0, selections: {}, currentPath: -1 };
+    let phase4State = { step: 0, selections: {}, currentPath: -1 };
+    let phase5State = { step: 0, selections: {}, currentPath: -1 };
+    const phase3Prompts = [
+        { key: 'tradeTypeCol', text: '1/5: 거래종류가 있는 열을 클릭하세요.' },
+        { key: 'stockNameCol', text: '2/5: 종목이 있는 열을 클릭하세요.' },
+        { key: 'stockQtyCol', text: '3/5: 거래주식수가 있는 열을 클릭하세요.' },
+        { key: 'unitPriceCol', text: '4/5: 단가가 있는 열을 클릭하세요.' },
+        { key: 'stockBalanceCol', text: '5/5: 주식잔고가 있는 열을 클릭하세요.' },
+        { key: 'additionalOption', text: '추가로 적요에 등록해야 할 열이 있나요?' },
+        { key: 'additionalCol1', text: '추가적요 1번 열을 클릭하세요.' },
+        { key: 'additionalCol2', text: '추가적요 2번 열을 클릭하세요.' }
+    ];
+     const phase5Prompts = [
+        { key: 'dateCol', text: '1/6: 일자가 있는 열을 선택하세요.' },
+        { key: 'feeCol', text: '2/6: 수수료에 해당하는 열을 선택하세요.' },
+        { key: 'taxCol', text: '3/6: 제세금에 해당하는 열을 선택하세요.' },
+        { key: 'amountCol', text: '4/6: 거래금액에 해당하는 열을 선택하세요.' },
+        { key: 'balanceCol', text: '5/6: 예수금 잔액에 해당하는 열을 선택하세요.' },
+        { key: 'baseAmount', text: '해당 통장의 기초가액을 입력하세요.' },
+        { key: 'tradeTypeCol', text: '6/6: 거래종류에 해당하는 열을 선택하세요.' },
+        { key: 'jukyoCol', text: '마지막으로, 3단계에서 생성한 적요(결과 생성) 열을 선택하세요.'}
+    ];
+    let selectedHeaderRows = [];
+    let isEditMode = false;
+
+    document.addEventListener('DOMContentLoaded', () => updateProgressBar(1));
+    fileInput.addEventListener('change', handleFile);
+
+    function updateProgressBar(phase, paths = [], activePathIndex = -1) {
+        let html = '';
+        const phases = [1, 2, 3, 4, 5];
+        phases.forEach((p, i) => {
+            if (p > phase) return;
+            if (i > 0) html += `<span class="mx-2">&rarr;</span>`;
+            
+            if (p === 3 && phase >= 3 && paths.length > 1) {
+                const pathHtml = paths.map((path, idx) => `<span class="font-semibold ${idx === activePathIndex && phase === 3 ? 'text-indigo-600' : ''}">${path.completed ? '&#10004; ' : ''}${p}단계 (${path.name})</span>`).join('<span class="mx-1 text-slate-300">|</span>');
+                html += `<div>${pathHtml}</div>`;
+            } else if (p === 4 && phase >= 4 && paths.length > 1) {
+                 const pathHtml = paths.map((path, idx) => `<span class="font-semibold ${idx === activePathIndex && phase === 4 ? 'text-indigo-600' : ''}">${path.phase4Completed ? '&#10004; ' : ''}${p}단계 (${path.name})</span>`).join('<span class="mx-1 text-slate-300">|</span>');
+                html += `<div>${pathHtml}</div>`;
+            } else if (p === 5 && phase >= 5 && paths.length > 1) {
+                 const pathHtml = paths.map((path, idx) => `<span class="font-semibold ${idx === activePathIndex && phase === 5 ? 'text-indigo-600' : ''}">${path.phase5Completed ? '&#10004; ' : ''}${p}단계 (${path.name})</span>`).join('<span class="mx-1 text-slate-300">|</span>');
+                html += `<div>${pathHtml}</div>`;
+            }
+            else {
+                html += `<span class="font-semibold ${p === phase ? 'text-indigo-600' : ''}">${p}단계</span>`;
+            }
+        });
+        progressBar.innerHTML = html;
+    }
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = new Uint8Array(event.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          currentPhaseData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null });
+          renderPreview(currentPhaseData);
+          fileNameEl.textContent = `선택된 파일: ${file.name}`;
+          uploadSection.classList.add('hidden');
+          previewSection.classList.remove('hidden');
+          setupPhase1Controls();
+        } catch (error) { alert("엑셀 파일을 읽는 중 오류가 발생했습니다."); }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function renderPreview(data, highlightType = '', eventHandler = null) {
+        let html = '<table class="preview-table">';
+        data.forEach((row, rowIndex) => {
+            html += `<tr data-row-index="${rowIndex}" class="${highlightType === 'row' ? 'selectable-row' : ''}">`;
+            (row || []).forEach((cell, colIndex) => {
+                html += `<td data-col-index="${colIndex}" class="${highlightType === 'col' ? 'selectable-col' : ''}">${cell !== null ? cell : ''}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</table>';
+        previewContainer.innerHTML = html;
+        previewContainer.classList.remove('hidden');
+
+        if (eventHandler) {
+            const selector = highlightType === 'col' ? '.selectable-col' : '.selectable-row';
+            previewContainer.querySelectorAll(selector).forEach(el => el.addEventListener('click', eventHandler));
+        }
+    }
+
+    function setupPhase1Controls() {
+        controlButtons.innerHTML = `
+            <button id="start-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">편집 시작</button>
+            <button id="complete-btn" class="hidden px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">작업 완료</button>
+            <button id="reset-btn" class="hidden px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">다시 선택</button>
+        `;
+        document.getElementById('start-edit-btn').addEventListener('click', startPhase1Editing);
+        document.getElementById('complete-btn').addEventListener('click', processPhase1Data);
+        document.getElementById('reset-btn').addEventListener('click', resetSelection);
+    }
+
+    function startPhase1Editing() {
+      isEditMode = true;
+      document.getElementById('start-edit-btn').classList.add('hidden');
+      document.getElementById('complete-btn').classList.remove('hidden');
+      document.getElementById('reset-btn').classList.remove('hidden');
+      promptArea.style.display = 'block';
+      promptText.textContent = '반복되는 행의 제목을 선택해주세요. (1~4개 선택 가능)';
+      renderPreview(currentPhaseData, 'row', handleRowClick);
+    }
+    
+    function handleRowClick(e) {
+      if (!isEditMode) return;
+      const tr = e.currentTarget;
+      const rowIndex = parseInt(tr.dataset.rowIndex, 10);
+      
+      if (phase2State.step === 'awaitingHeader') {
+          phase2State.headerRowIndex = rowIndex;
+          promptText.textContent = '2/3: 외화를 구분할 수 있는 열을 클릭해주세요.';
+          phase2State.step = 'awaitingColumn';
+          isEditMode = false;
+          renderPreview(currentPhaseData, 'col', handleColumnClick);
+          const headerTr = previewContainer.querySelector(`tr[data-row-index="${phase2State.headerRowIndex}"]`);
+          if (headerTr) headerTr.classList.add('highlighted-row');
+          return;
+      }
+
+      const selectionIndex = selectedHeaderRows.indexOf(rowIndex);
+      if (selectionIndex > -1) {
+        selectedHeaderRows.splice(selectionIndex, 1);
+        tr.classList.remove('highlighted-row');
+      } else {
+        if (selectedHeaderRows.length < 4) {
+          selectedHeaderRows.push(rowIndex);
+          tr.classList.add('highlighted-row');
+        } else { alert('최대 4개의 행만 선택할 수 있습니다.'); }
+      }
+      selectedHeaderRows.sort((a, b) => a - b);
+    }
+
+    function handleColumnClick(e) {
+        if (phase2State.step === 'awaitingColumn') {
+            const td = e.currentTarget;
+            const colIndex = parseInt(td.dataset.colIndex, 10);
+            phase2State.splitColumnIndex = colIndex;
+            previewContainer.querySelectorAll('td').forEach(cell => cell.classList.remove('highlighted-col'));
+            previewContainer.querySelectorAll(`td[data-col-index="${colIndex}"]`).forEach(cell => cell.classList.add('highlighted-col'));
+            
+            const uniqueValues = [...new Set(currentPhaseData.slice(phase2State.headerRowIndex + 1).map(row => row[phase2State.splitColumnIndex]).filter(Boolean))];
+            setupDragDropUI(uniqueValues, phase2State.currencyCount, processPhase2Data);
+        }
+    }
+    
+    function resetSelection() {
+        selectedHeaderRows = [];
+        previewContainer.querySelectorAll('.highlighted-row').forEach(row => row.classList.remove('highlighted-row'));
+    }
+
+    function processPhase1Data() {
+      if (selectedHeaderRows.length < 1) { alert('최소 1개 이상의 행을 선택해야 합니다.'); return; }
+      isEditMode = false;
+      const numRowsPerGroup = selectedHeaderRows.length;
+      const repeatingHeadersData = selectedHeaderRows.map(rowIndex => currentPhaseData[rowIndex] || []);
+      const newHeaders = repeatingHeadersData.flat().map(cell => cell || '');
+      const outputData = [newHeaders];
+      const dataStartIndex = Math.max(...selectedHeaderRows) + 1;
+      
+      for (let i = dataStartIndex; i < currentPhaseData.length; i += numRowsPerGroup) {
+        const group = currentPhaseData.slice(i, i + numRowsPerGroup);
+        if (group.every(row => !row || row.every(cell => cell === null || String(cell).trim() === ''))) continue;
+        const newRow = group.flat().map(cell => cell);
+        const finalRow = [];
+        for (let j = 0; j < newHeaders.length; j++) {
+            finalRow.push(newRow[j] !== undefined ? newRow[j] : null);
+        }
+        outputData.push(finalRow);
+      }
+      
+      currentPhaseData = outputData;
+      previewSection.classList.add('hidden');
+      transitionSection.innerHTML = `
+        <p class="text-lg font-medium text-slate-800">1단계 작업이 완료되었습니다.</p>
+        <div class="flex justify-center space-x-4">
+            <button id="next-phase-btn" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">2단계로 넘어가기 (주식통장)</button>
+            <a id="download-btn-phase1" href="#" class="inline-block px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700">이 엑셀 다운로드받기</a>
+        </div>`;
+      transitionSection.classList.remove('hidden');
+      document.getElementById('next-phase-btn').addEventListener('click', setupPhase2);
+      generateDownloadLink(currentPhaseData, 'download-btn-phase1', 'phase1_result.xlsx');
+    }
+
+    function setupPhase2() {
+        updateProgressBar(2);
+        mainHeader.textContent = '2단계: 통화별 계좌 나누기';
+        mainSubheader.textContent = '데이터를 통화 종류에 따라 분류합니다.';
+        transitionSection.classList.add('hidden');
+        dragDropArea.classList.add('hidden');
+        previewSection.classList.remove('hidden');
+        renderPreview(currentPhaseData);
+        promptArea.style.display = 'block';
+        promptText.textContent = '해당 통장이 여러 종류의 통화(ex: 원화, 외화)로 거래가 되었나요?';
+        controlButtons.innerHTML = `
+            <button id="multi-currency-yes" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">예</button>
+            <button id="multi-currency-no" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">아니오</button>
+        `;
+        document.getElementById('multi-currency-yes').addEventListener('click', askCurrencyCount);
+        document.getElementById('multi-currency-no').addEventListener('click', () => startPhase3(-1));
+    }
+
+    function askCurrencyCount() {
+        promptText.textContent = '몇 가지 통화로 거래가 되었나요?';
+        controlButtons.innerHTML = `
+            <input type="number" id="currency-count" min="2" max="5" placeholder="2~5 사이 숫자 입력" class="p-2 border rounded-md w-48">
+            <button id="start-split-edit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">편집 시작</button>
+        `;
+        document.getElementById('start-split-edit').addEventListener('click', startPhase2Editing);
+    }
+
+    function startPhase2Editing() {
+        const count = parseInt(document.getElementById('currency-count').value, 10);
+        if (isNaN(count) || count < 2 || count > 5) { alert('2에서 5 사이의 숫자를 정확히 입력해주세요.'); return; }
+        phase2State = { step: 'awaitingHeader', currencyCount: count, headerRowIndex: -1, splitColumnIndex: -1 };
+        promptText.textContent = '1/3: 제목행을 클릭해주세요.';
+        controlButtons.innerHTML = `<button id="reset-phase2-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md">2단계 처음부터</button>`;
+        document.getElementById('reset-phase2-btn').addEventListener('click', setupPhase2);
+        isEditMode = true;
+        renderPreview(currentPhaseData, 'row', handleRowClick);
+    }
+
+    function setupDragDropUI(uniqueValues, dropZoneCount, onComplete) {
+        previewContainer.classList.add('hidden');
+        dragDropArea.classList.remove('hidden');
+        
+        let dropZonesHTML = '';
+        for (let i = 0; i < dropZoneCount; i++) {
+            const title = dropZoneCount > 1 ? `그룹 ${i + 1}` : '입출금과 관련 없는 내용';
+            dropZonesHTML += `<div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2">${title}</h3><div id="drop-zone-${i}" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-id="${i}"></div></div>`;
+        }
+
+        dragDropArea.innerHTML = `
+            <div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">항목 (드래그하세요)</h3><div id="source-items" class="flex flex-wrap gap-2">${uniqueValues.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div>
+            <div class="grid grid-cols-1 md:grid-cols-${Math.min(dropZoneCount, 3)} gap-4">${dropZonesHTML}</div>`;
+        
+        controlButtons.innerHTML = `
+            <button id="complete-dnd-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">작업 완료</button>
+            <button id="reset-dnd-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md">다시 선택</button>`;
+        
+        document.getElementById('complete-dnd-btn').addEventListener('click', onComplete);
+        
+        document.querySelectorAll('.draggable-item').forEach(item => item.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', e.target.dataset.value)));
+        document.querySelectorAll('.drop-zone').forEach(zone => {
+            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+            zone.addEventListener('dragleave', e => zone.classList.remove('drag-over'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                const item = document.querySelector(`.draggable-item[data-value="${e.dataTransfer.getData('text/plain')}"]`);
+                if (item) zone.appendChild(item);
+            });
+        });
+    }
+
+    function processPhase2Data() {
+        const headerRow = currentPhaseData[phase2State.headerRowIndex];
+        const dataRows = currentPhaseData.slice(phase2State.headerRowIndex + 1);
+        splitData = [];
+        for (let i = 0; i < phase2State.currencyCount; i++) {
+            const zone = document.getElementById(`drop-zone-${i}`);
+            const valuesInZone = [...zone.querySelectorAll('.draggable-item')].map(item => item.dataset.value);
+            const filteredData = dataRows.filter(row => valuesInZone.includes(String(row[phase2State.splitColumnIndex])));
+            splitData.push({ name: `${i + 1}번 통화`, data: [headerRow, ...filteredData], completed: false, phase4Completed: false, phase5Completed: false });
+        }
+        
+        previewSection.classList.add('hidden');
+        dragDropArea.classList.add('hidden');
+        transitionSection.innerHTML = `
+            <p class="text-lg font-medium text-slate-800">2단계 작업이 완료되었습니다.</p>
+            <div class="flex justify-center space-x-4">
+                <button id="proceed-to-phase3-btn" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">3단계로 넘어가기</button>
+                <a id="download-phase2-btn" href="#" class="inline-block px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700">분할된 파일(시트별) 다운로드</a>
+            </div>`;
+        transitionSection.classList.remove('hidden');
+        document.getElementById('proceed-to-phase3-btn').addEventListener('click', () => startPhase3(0));
+        generateMultiSheetDownloadLink(splitData, 'download-phase2-btn', `phase2_splits.xlsx`);
+    }
+    
+    function startPhase3(pathIndex) {
+        phase3State.currentPath = pathIndex;
+        transitionSection.classList.add('hidden');
+        previewSection.classList.remove('hidden');
+        
+        if (pathIndex === -1) {
+            updateProgressBar(3);
+            mainHeader.textContent = '3단계: 주식 적요 생성';
+            mainSubheader.textContent = `현재 '단일 통화' 데이터를 편집 중입니다.`;
+            navButtonsContainer.classList.add('hidden');
+        } else {
+            navButtonsContainer.classList.remove('hidden');
+            navButtonsContainer.classList.add('flex');
+            mainHeader.textContent = '3단계: 주식 적요 생성';
+            updateProgressBar(3, splitData, pathIndex);
+            mainSubheader.textContent = `현재 '${splitData[pathIndex].name}' 데이터를 편집 중입니다.`;
+            navButtonsContainer.innerHTML = splitData.map((path, index) => `<button class="path-nav-btn px-4 py-2 text-sm ${path.completed ? 'completed' : ''}" data-path-index="${index}">${path.completed ? '&#10004; ' : ''}${path.name}</button>`).join('');
+            document.querySelectorAll('.path-nav-btn').forEach(btn => {
+                btn.addEventListener('click', e => startPhase3(parseInt(e.target.dataset.pathIndex, 10)));
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.path-nav-btn[data-path-index="${pathIndex}"]`).classList.add('active');
+        }
+        
+        showPhase3DateCheck(pathIndex);
+    }
+
+    function showPhase3DateCheck(pathIndex) {
+        const dataToRender = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        renderPreview(dataToRender, 'col', (e) => handleDateColumnSelection(e, pathIndex));
+        promptArea.style.display = 'block';
+        promptText.textContent = '날짜가 포함된 열을 클릭해주세요.';
+        controlButtons.innerHTML = '';
+    }
+
+    function handleDateColumnSelection(e, pathIndex) {
+        const colIndex = parseInt(e.currentTarget.dataset.colIndex, 10);
+        const data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const headerRowIndex = 0;
+        const dateValues = data.slice(headerRowIndex + 1).map(row => row[colIndex]);
+        const order = checkDateOrder(dateValues);
+
+        if (order === 'descending') {
+            promptText.textContent = '날짜가 역순입니다. 순서를 바로잡겠습니다.';
+            controlButtons.innerHTML = `<button id="reverse-confirm" class="px-4 py-2 bg-green-600 text-white rounded-md">확인</button>`;
+            document.getElementById('reverse-confirm').addEventListener('click', () => {
+                reverseDataOrder(pathIndex);
+                startJukyoGeneration(pathIndex);
+            });
+        } else {
+            promptText.textContent = '날짜가 올바른 순서입니다.';
+            controlButtons.innerHTML = `<button id="date-confirm" class="px-4 py-2 bg-blue-600 text-white rounded-md">확인</button>`;
+            document.getElementById('date-confirm').addEventListener('click', () => startJukyoGeneration(pathIndex));
+        }
+    }
+
+    function startJukyoGeneration(pathIndex) {
+        phase3State.step = 0;
+        phase3State.selections = {};
+        updatePhase3Prompt();
+        const dataToRender = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        renderPreview(dataToRender, 'col', handlePhase3ColumnSelection);
+    }
+
+    function handlePhase3ColumnSelection(e) {
+        const colIndex = parseInt(e.currentTarget.dataset.colIndex, 10);
+        const currentStepInfo = phase3Prompts[phase3State.step];
+        phase3State.selections[currentStepInfo.key] = colIndex;
+        const highlightClass = `highlighted-col-p3-${phase3State.step < 5 ? phase3State.step + 1 : 'add'}`;
+        previewContainer.querySelectorAll(`td[data-col-index="${colIndex}"]`).forEach(cell => cell.classList.add(highlightClass));
+        phase3State.step++;
+        updatePhase3Prompt();
+    }
+
+    function updatePhase3Prompt() {
+        if (phase3State.step >= phase3Prompts.length) {
+            promptText.textContent = '모든 열 선택이 완료되었습니다.';
+            controlButtons.innerHTML = `
+                <button id="process-p3-btn" class="px-4 py-2 bg-green-600 text-white rounded-md">작업 완료</button>
+                <button id="reset-p3-selection" class="px-4 py-2 bg-slate-500 text-white rounded-md">다시 선택</button>`;
+            document.getElementById('process-p3-btn').addEventListener('click', processPhase3Data);
+            document.getElementById('reset-p3-selection').addEventListener('click', () => startJukyoGeneration(phase3State.currentPath));
+            return;
+        }
+        const currentStepInfo = phase3Prompts[phase3State.step];
+        promptText.textContent = currentStepInfo.text;
+        
+        const baseButtons = `<button id="reset-p3-selection" class="px-4 py-2 bg-slate-500 text-white rounded-md">처음부터 다시 선택</button>`;
+        const skipButton = `<button class="px-4 py-2 bg-yellow-500 text-white rounded-md" id="skip-p3-selection">해당 없음</button>`;
+
+        if (phase3State.step < 5) { // For the first 5 column selections
+             controlButtons.innerHTML = skipButton + baseButtons;
+             document.getElementById('skip-p3-selection').addEventListener('click', () => {
+                const currentStepInfo = phase3Prompts[phase3State.step];
+                phase3State.selections[currentStepInfo.key] = null; // Mark as skipped
+                phase3State.step++;
+                updatePhase3Prompt();
+            });
+        } else if (currentStepInfo.key === 'additionalOption') {
+            controlButtons.innerHTML = `
+                <button class="px-3 py-1 bg-white border rounded-md" data-count="0">0개</button>
+                <button class="px-3 py-1 bg-white border rounded-md" data-count="1">1개</button>
+                <button class="px-3 py-1 bg-white border rounded-md" data-count="2">2개</button>
+                ${baseButtons}`;
+            controlButtons.querySelectorAll('button[data-count]').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    const count = parseInt(e.target.dataset.count, 10);
+                    phase3State.selections.additionalOption = count;
+                    if (count === 0) { 
+                        phase3State.step = phase3Prompts.length; 
+                    } else if (count === 1) {
+                         phase3State.step = phase3Prompts.findIndex(p => p.key === 'additionalCol1');
+                    } else {
+                         phase3State.step++;
+                    }
+                    updatePhase3Prompt();
+                });
+            });
+        } else { // For additionalCol1 and additionalCol2
+             controlButtons.innerHTML = skipButton + baseButtons;
+             document.getElementById('skip-p3-selection').addEventListener('click', () => {
+                const currentStepInfo = phase3Prompts[phase3State.step];
+                phase3State.selections[currentStepInfo.key] = null;
+                if(currentStepInfo.key === 'additionalCol1' && phase3State.selections.additionalOption === 1) {
+                    phase3State.step = phase3Prompts.length;
+                } else {
+                    phase3State.step++;
+                }
+                updatePhase3Prompt();
+            });
+        }
+        document.getElementById('reset-p3-selection').addEventListener('click', () => startJukyoGeneration(phase3State.currentPath));
+    }
+
+    function processPhase3Data() {
+        const pathIndex = phase3State.currentPath;
+        let data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const selections = phase3State.selections;
+        const headerRow = data[0];
+        const dataRows = data.slice(1);
+        const newHeaderRow = [...headerRow, "결과 생성"];
+        const newDataRows = dataRows.map(row => {
+            let combinedData = "";
+            let continueProcessing = true;
+            const getValue = (key) => {
+                const colIndex = selections[key];
+                if (colIndex === null || colIndex === undefined) return "";
+                return TrimAndClean(row[colIndex]);
+            };
+            
+            const tradeTypeVal = getValue('tradeTypeCol');
+            if (continueProcessing && tradeTypeVal !== "" && tradeTypeVal !== "0") { combinedData = tradeTypeVal; } else { continueProcessing = false; }
+
+            const stockNameVal = getValue('stockNameCol');
+            if (continueProcessing && stockNameVal !== "" && stockNameVal !== "0") { combinedData += ` / ${stockNameVal}`; } else { continueProcessing = false; }
+
+            const stockQtyVal = getValue('stockQtyCol');
+            if (continueProcessing && stockQtyVal !== "" && stockQtyVal !== "0") { combinedData += ` / ${stockQtyVal}주`; } else { continueProcessing = false; }
+            
+            const unitPriceVal = getValue('unitPriceCol');
+            if (continueProcessing && unitPriceVal !== "" && unitPriceVal !== "0") { combinedData += ` / @${unitPriceVal}`; } else { continueProcessing = false; }
+
+            const stockBalanceVal = getValue('stockBalanceCol');
+            if (continueProcessing && stockBalanceVal !== "" && stockBalanceVal !== "0") { combinedData += ` / 잔고${stockBalanceVal}주`; }
+
+            if (selections.additionalOption >= 1 && selections.additionalCol1 !== undefined) {
+                const add1Val = getValue('additionalCol1');
+                if (add1Val !== "" && add1Val !== "0") { combinedData += ` / ${add1Val}`; }
+            }
+            if (selections.additionalOption >= 2 && selections.additionalCol2 !== undefined) {
+                const add2Val = getValue('additionalCol2');
+                if (add2Val !== "" && add2Val !== "0") { combinedData += ` / ${add2Val}`; }
+            }
+            return [...row, combinedData];
+        });
+        const finalData = [newHeaderRow, ...newDataRows];
+
+        if (pathIndex === -1) {
+            currentPhaseData = finalData;
+        } else {
+            splitData[pathIndex].data = finalData;
+            splitData[pathIndex].completed = true;
+        }
+
+        if (pathIndex === -1 || splitData.every(p => p.completed)) {
+            previewSection.classList.add('hidden');
+            transitionSection.innerHTML = `
+                <p class="text-lg font-medium text-slate-800">3단계 모든 작업이 완료되었습니다.</p>
+                <div class="flex justify-center space-x-4">
+                    <button id="next-phase-btn" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">4단계로 넘어가기</button>
+                    <a id="download-p3-btn" href="#" class="inline-block px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700">최종 엑셀 다운로드</a>
+                </div>`;
+            transitionSection.classList.remove('hidden');
+            document.getElementById('next-phase-btn').addEventListener('click', () => startPhase4(pathIndex === -1 ? -1 : 0));
+            const finalDownloadData = (pathIndex === -1) ? [ { name: 'Result', data: currentPhaseData } ] : splitData;
+            generateMultiSheetDownloadLink(finalDownloadData, 'download-p3-btn', `phase3_final_result.xlsx`);
+        } else {
+            previewContainer.classList.add('hidden');
+            promptText.textContent = `'${splitData[pathIndex].name}' 작업이 완료되었습니다. 다른 통화를 작업해주세요.`;
+            controlButtons.innerHTML = '';
+            navButtonsContainer.innerHTML = splitData.map((path, index) => `<button class="path-nav-btn px-4 py-2 text-sm ${path.completed ? 'completed' : ''}" data-path-index="${index}">${path.completed ? '&#10004; ' : ''}${path.name}</button>`).join('');
+            document.querySelectorAll('.path-nav-btn').forEach(btn => {
+                btn.addEventListener('click', e => startPhase3(parseInt(e.target.dataset.pathIndex, 10)));
+            });
+        }
+    }
+    
+    // --- 4단계 함수들 ---
+
+    function startPhase4(pathIndex) {
+        phase4State.currentPath = pathIndex;
+        transitionSection.classList.add('hidden');
+        previewSection.classList.remove('hidden');
+        
+        if(pathIndex === -1) {
+            updateProgressBar(4);
+            mainHeader.textContent = '4단계: 입출금과 상관없는 내용 분류하기';
+            mainSubheader.textContent = `현재 '단일 통화' 데이터를 편집 중입니다.`;
+            navButtonsContainer.classList.add('hidden');
+        } else {
+            navButtonsContainer.classList.remove('hidden');
+            navButtonsContainer.classList.add('flex');
+            mainHeader.textContent = '4단계: 입출금과 상관없는 내용 분류하기';
+            updateProgressBar(4, splitData, pathIndex);
+            mainSubheader.textContent = `현재 '${splitData[pathIndex].name}' 데이터를 편집 중입니다.`;
+            navButtonsContainer.innerHTML = splitData.map((path, index) => `<button class="path-nav-btn px-4 py-2 text-sm ${path.phase4Completed ? 'completed' : ''}" data-path-index="${index}">${path.phase4Completed ? '&#10004; ' : ''}${path.name}</button>`).join('');
+            document.querySelectorAll('.path-nav-btn').forEach(btn => {
+                btn.addEventListener('click', e => startPhase4(parseInt(e.target.dataset.pathIndex, 10)));
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.path-nav-btn[data-path-index="${pathIndex}"]`).classList.add('active');
+        }
+
+        controlButtons.innerHTML = `<button id="start-phase4-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md">작업 시작</button>`;
+        previewContainer.classList.add('hidden');
+        promptArea.style.display = 'block';
+        promptText.textContent = '편집을 시작하려면 아래 버튼을 누르세요.';
+        document.getElementById('start-phase4-edit-btn').addEventListener('click', showPhase4Preview);
+    }
+
+    function showPhase4Preview() {
+        const pathIndex = phase4State.currentPath;
+        const dataToRender = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        renderPreview(dataToRender, 'col', handlePhase4ColumnSelection);
+        promptText.textContent = '거래종류가 있는 열을 클릭해주세요.';
+        controlButtons.innerHTML = '';
+    }
+
+    function handlePhase4ColumnSelection(e) {
+        const colIndex = parseInt(e.currentTarget.dataset.colIndex, 10);
+        phase4State.selections = { tradeTypeCol: colIndex };
+        
+        const pathIndex = phase4State.currentPath;
+        const data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const headerRow = data[0];
+        const uniqueValues = [...new Set(data.slice(1).map(row => row[colIndex]).filter(Boolean))];
+
+        promptText.innerHTML = `입출금과 관련 없는 내용을 선택해서 아래 창으로 드래그해주세요.
+            <div class="text-sm text-slate-600 mt-2 p-3 bg-slate-100 rounded-md">
+                <p class="font-semibold">설명:</p>
+                <p>미래에셋의 경우 '주식매도 입금'은 입출금과 관련이 없는 내용으로 분류해야 합니다.</p>
+                <p>미래에셋의 경우 '주식매도 출고'는 입출금 내용이므로 분류하지 말아주세요.</p>
+                <br><br><br><br>
+            </div>
+        `;
+        setupDragDropUI(uniqueValues, 1, processPhase4Data);
+    }
+
+    function processPhase4Data() {
+        const pathIndex = phase4State.currentPath;
+        let data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const colIndex = phase4State.selections.tradeTypeCol;
+
+        const zone = document.getElementById('drop-zone-0');
+        const valuesToRemove = [...zone.querySelectorAll('.draggable-item')].map(item => item.dataset.value);
+
+        const headerRow = data[0];
+        const dataRows = data.slice(1);
+
+        const keptRows = dataRows.filter(row => !valuesToRemove.includes(String(row[colIndex])));
+        const removedRows = dataRows.filter(row => valuesToRemove.includes(String(row[colIndex])));
+        
+        const finalData = [headerRow, ...keptRows];
+        phase4RemovedData.push({pathIndex: pathIndex, data: [headerRow, ...removedRows]});
+
+        if (pathIndex === -1) {
+            currentPhaseData = finalData;
+        } else {
+            splitData[pathIndex].data = finalData;
+            splitData[pathIndex].phase4Completed = true;
+        }
+
+        if (pathIndex === -1 || splitData.every(p => p.phase4Completed)) {
+             previewSection.classList.add('hidden');
+             dragDropArea.classList.add('hidden');
+             transitionSection.innerHTML = `
+                <p class="text-lg font-medium text-slate-800">4단계 모든 작업이 완료되었습니다.</p>
+                <div class="flex justify-center space-x-4">
+                    <button id="next-phase-btn" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">5단계로 넘어가기</button>
+                    <a id="download-p4-btn" href="#" class="inline-block px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700">최종 엑셀 다운로드</a>
+                </div>`;
+            transitionSection.classList.remove('hidden');
+            document.getElementById('next-phase-btn').addEventListener('click', () => startPhase5(pathIndex === -1 ? -1 : 0));
+            
+            const finalDownloadData = (pathIndex === -1) ? [{ name: 'Result', data: currentPhaseData }] : splitData;
+            const finalRemovedData = phase4RemovedData.map(item => {
+                const originalName = (item.pathIndex === -1) ? 'Result' : splitData[item.pathIndex].name;
+                return { name: `${originalName} (분류됨)`, data: item.data };
+            });
+            
+            generateMultiSheetDownloadLink([...finalDownloadData, ...finalRemovedData], 'download-p4-btn', `phase4_final_result.xlsx`);
+        } else {
+            previewContainer.classList.add('hidden');
+            dragDropArea.classList.add('hidden');
+            promptText.textContent = `'${splitData[pathIndex].name}' 작업이 완료되었습니다. 다른 통화를 작업해주세요.`;
+            controlButtons.innerHTML = '';
+            navButtonsContainer.innerHTML = splitData.map((path, index) => `<button class="path-nav-btn px-4 py-2 text-sm ${path.phase4Completed ? 'completed' : ''}" data-path-index="${index}">${path.phase4Completed ? '&#10004; ' : ''}${path.name}</button>`).join('');
+            document.querySelectorAll('.path-nav-btn').forEach(btn => {
+                btn.addEventListener('click', e => startPhase4(parseInt(e.target.dataset.pathIndex, 10)));
+            });
+        }
+    }
+
+    // --- 5단계 함수들 ---
+    function startPhase5(pathIndex) {
+        phase5State.currentPath = pathIndex;
+        transitionSection.classList.add('hidden');
+        previewSection.classList.remove('hidden');
+        
+        if(pathIndex === -1) {
+            updateProgressBar(5);
+            mainHeader.textContent = '5단계: 업로드 가능한 입출금 형태로 변환';
+            mainSubheader.textContent = `현재 '단일 통화' 데이터를 편집 중입니다.`;
+            navButtonsContainer.classList.add('hidden');
+        } else {
+            navButtonsContainer.classList.remove('hidden');
+            navButtonsContainer.classList.add('flex');
+            mainHeader.textContent = '5단계: 업로드 가능한 입출금 형태로 변환';
+            updateProgressBar(5, splitData, pathIndex);
+            mainSubheader.textContent = `현재 '${splitData[pathIndex].name}' 데이터를 편집 중입니다.`;
+            navButtonsContainer.innerHTML = splitData.map((path, index) => `<button class="path-nav-btn px-4 py-2 text-sm ${path.phase5Completed ? 'completed' : ''}" data-path-index="${index}">${path.phase5Completed ? '&#10004; ' : ''}${path.name}</button>`).join('');
+            document.querySelectorAll('.path-nav-btn').forEach(btn => {
+                btn.addEventListener('click', e => startPhase5(parseInt(e.target.dataset.pathIndex, 10)));
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.path-nav-btn[data-path-index="${pathIndex}"]`).classList.add('active');
+        }
+
+        controlButtons.innerHTML = `<button id="start-phase5-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md">작업 시작</button>`;
+        previewContainer.classList.add('hidden');
+        promptArea.style.display = 'block';
+        promptText.textContent = '편집을 시작하려면 아래 버튼을 누르세요.';
+        document.getElementById('start-phase5-edit-btn').addEventListener('click', showPhase5Preview);
+    }
+
+    function showPhase5Preview() {
+        phase5State.step = 0;
+        phase5State.selections = {};
+        updatePhase5Prompt();
+        const pathIndex = phase5State.currentPath;
+        const dataToRender = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        renderPreview(dataToRender, 'col', handlePhase5ColumnSelection);
+    }
+
+    function handlePhase5ColumnSelection(e) {
+        const colIndex = parseInt(e.currentTarget.dataset.colIndex, 10);
+        const currentStepInfo = phase5Prompts[phase5State.step];
+        phase5State.selections[currentStepInfo.key] = colIndex;
+        previewContainer.querySelectorAll(`td[data-col-index="${colIndex}"]`).forEach(cell => cell.classList.add('highlighted-col'));
+        phase5State.step++;
+        updatePhase5Prompt();
+    }
+
+    function updatePhase5Prompt() {
+        if (phase5State.step >= phase5Prompts.length) {
+            promptText.textContent = '모든 열 선택이 완료되었습니다.';
+            controlButtons.innerHTML = `<button id="process-p5-btn" class="px-4 py-2 bg-green-600 text-white rounded-md">최종 변환 실행</button>`;
+            document.getElementById('process-p5-btn').addEventListener('click', processPhase5Data);
+            return;
+        }
+        const currentStepInfo = phase5Prompts[phase5State.step];
+        promptText.textContent = currentStepInfo.text;
+        
+        const baseButtons = `<button class="px-4 py-2 bg-slate-500 text-white rounded-md" onclick="showPhase5Preview()">다시 선택</button>`;
+        const skipButton = `<button class="px-4 py-2 bg-yellow-500 text-white rounded-md" id="skip-p5-selection">해당 없음</button>`;
+
+        if (currentStepInfo.key === 'baseAmount') {
+            controlButtons.innerHTML = `
+                <input type="number" id="base-amount-input" placeholder="기초가액 입력" class="p-2 border rounded-md">
+                <button id="submit-base-amount" class="px-4 py-2 bg-blue-600 text-white rounded-md">입력</button>
+            `;
+            document.getElementById('submit-base-amount').addEventListener('click', () => {
+                const value = document.getElementById('base-amount-input').value;
+                phase5State.selections.baseAmount = parseFloat(value) || 0;
+                phase5State.step++;
+                updatePhase5Prompt();
+            });
+        } else if (currentStepInfo.key === 'tradeTypeCol') {
+            controlButtons.innerHTML = skipButton + baseButtons; // 거래종류는 필수이므로 스킵 버튼 제거 가능
+        } else {
+             controlButtons.innerHTML = skipButton + baseButtons;
+             document.getElementById('skip-p5-selection').addEventListener('click', () => {
+                phase5State.selections[currentStepInfo.key] = null;
+                phase5State.step++;
+                updatePhase5Prompt();
+            });
+        }
+    }
+
+    function processPhase5Data() {
+        const pathIndex = phase5State.currentPath;
+        const data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const selections = phase5State.selections;
+        const colIndex = selections.tradeTypeCol;
+        const uniqueValues = [...new Set(data.slice(1).map(row => row[colIndex]).filter(Boolean))];
+
+        promptText.textContent = '거래 종류를 입금과 출금으로 분류해주세요.';
+        
+        const dropZoneHtml = `
+            <div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2">입금에 해당하는 거래종류</h3><div id="drop-zone-0" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-id="0"></div></div>
+            <div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2">출금에 해당하는 거래종류</h3><div id="drop-zone-1" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-id="1"></div></div>
+        `;
+        dragDropArea.innerHTML = `
+            <div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">항목 (드래그하세요)</h3><div id="source-items" class="flex flex-wrap gap-2">${uniqueValues.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${dropZoneHtml}</div>`;
+
+        previewContainer.classList.add('hidden');
+        dragDropArea.classList.remove('hidden');
+        controlButtons.innerHTML = `<button id="complete-final-btn" class="px-4 py-2 bg-green-600 text-white rounded-md">최종 생성</button>`;
+        document.getElementById('complete-final-btn').addEventListener('click', generateFinalSheet);
+
+        document.querySelectorAll('.draggable-item').forEach(item => item.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', e.target.dataset.value)));
+        document.querySelectorAll('.drop-zone').forEach(zone => {
+            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+            zone.addEventListener('dragleave', e => zone.classList.remove('drag-over'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                const item = document.querySelector(`.draggable-item[data-value="${e.dataTransfer.getData('text/plain')}"]`);
+                if (item) zone.appendChild(item);
+            });
+        });
+    }
+
+    function generateFinalSheet() {
+        const pathIndex = phase5State.currentPath;
+        const data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const selections = phase5State.selections;
+        
+        const depositZone = document.getElementById('drop-zone-0');
+        const withdrawalZone = document.getElementById('drop-zone-1');
+        const depositTypes = [...depositZone.querySelectorAll('.draggable-item')].map(item => item.dataset.value);
+        const withdrawalTypes = [...withdrawalZone.querySelectorAll('.draggable-item')].map(item => item.dataset.value);
+
+        const dataRows = data.slice(1);
+        const newSheet = [['일자', '입금', '출금', '잔액', '(참고용)잔액', '적요']];
+        let runningBalance = selections.baseAmount || 0;
+
+        dataRows.forEach(row => {
+            const getValue = (key) => {
+                const colIndex = selections[key];
+                if (colIndex === null || colIndex === undefined) return "";
+                return row[colIndex];
+            };
+            const getNumericValue = (key) => {
+                const val = getValue(key);
+                if (val === "" || val === null) return 0;
+                return parseFloat(String(val).replace(/,/g, '')) || 0;
+            }
+
+            const tradeType = getValue('tradeTypeCol');
+            const date = getValue('dateCol');
+            const jukyo = getValue('jukyoCol');
+            const originalBalance = getValue('balanceCol');
+            const amount = getNumericValue('amountCol');
+            const fee = getNumericValue('feeCol');
+            const tax = getNumericValue('taxCol');
+
+            // Main transaction
+            let deposit = 0;
+            let withdrawal = 0;
+            if (depositTypes.includes(tradeType)) {
+                deposit = amount;
+            } else if (withdrawalTypes.includes(tradeType)) {
+                withdrawal = amount;
+            }
+            runningBalance += deposit - withdrawal;
+            newSheet.push([date, deposit, withdrawal, runningBalance, originalBalance, jukyo]);
+
+            // Fee
+            if (fee > 0) {
+                runningBalance -= fee;
+                newSheet.push([date, 0, fee, runningBalance, originalBalance, `(수수료)${jukyo}`]);
+            }
+            // Tax
+            if (tax > 0) {
+                runningBalance -= tax;
+                newSheet.push([date, 0, tax, runningBalance, originalBalance, `(제세금)${jukyo}`]);
+            }
+        });
+        
+        phase5FinalData.push({pathIndex: pathIndex, data: newSheet});
+
+        if (pathIndex === -1) {
+            // single path logic
+        } else {
+            splitData[pathIndex].phase5Completed = true;
+        }
+
+        if (pathIndex === -1 || splitData.every(p => p.phase5Completed)) {
+            previewSection.classList.add('hidden');
+            dragDropArea.classList.add('hidden');
+            transitionSection.innerHTML = `
+                <p class="text-2xl font-bold text-slate-800">🎉 수고하셨습니다! 🎉</p>
+                <p class="text-lg font-medium text-slate-600">모든 작업이 완료되었습니다.</p>
+                <div class="flex justify-center space-x-4">
+                    <a id="download-p5-btn" href="#" class="inline-block px-8 py-4 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 text-lg">최종 엑셀 파일 다운로드</a>
+                </div>`;
+            transitionSection.classList.remove('hidden');
+            
+            const finalSheets = [];
+            // Add original data from phase 4
+            if(splitData.length > 0) {
+                splitData.forEach(path => finalSheets.push({ name: `${path.name} (4단계 원본)`, data: path.data }));
+            } else {
+                finalSheets.push({ name: `4단계 원본`, data: currentPhaseData });
+            }
+            // Add removed data from phase 4
+            phase4RemovedData.forEach(item => {
+                const originalName = (item.pathIndex === -1) ? 'Result' : splitData[item.pathIndex].name;
+                finalSheets.push({ name: `${originalName} (4단계 분류됨)`, data: item.data });
+            });
+            // Add final data from phase 5
+            phase5FinalData.forEach(item => {
+                const originalName = (item.pathIndex === -1) ? 'Result' : splitData[item.pathIndex].name;
+                finalSheets.push({ name: `${originalName} (5단계 최종본)`, data: item.data });
+            });
+
+            generateMultiSheetDownloadLink(finalSheets, 'download-p5-btn', `final_result.xlsx`);
+
+        } else {
+            previewContainer.classList.add('hidden');
+            dragDropArea.classList.add('hidden');
+            promptText.textContent = `'${splitData[pathIndex].name}' 작업이 완료되었습니다. 다른 통화를 작업해주세요.`;
+            controlButtons.innerHTML = '';
+            navButtonsContainer.innerHTML = splitData.map((path, index) => `<button class="path-nav-btn px-4 py-2 text-sm ${path.phase5Completed ? 'completed' : ''}" data-path-index="${index}">${path.phase5Completed ? '&#10004; ' : ''}${path.name}</button>`).join('');
+            document.querySelectorAll('.path-nav-btn').forEach(btn => {
+                btn.addEventListener('click', e => startPhase5(parseInt(e.target.dataset.pathIndex, 10)));
+            });
+        }
+    }
+
+
+    function parseDate(value) {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'number') { return new Date((value - 25569) * 86400 * 1000); }
+        if (typeof value === 'string') { const parsed = new Date(value); if (!isNaN(parsed.getTime())) { return parsed; } }
+        return null;
+    }
+
+    function checkDateOrder(dates) {
+        const parsedDates = dates.map(parseDate).filter(d => d !== null);
+        if (parsedDates.length < 2) return 'ascending';
+        let isDescending = true;
+        for (let i = 0; i < parsedDates.length - 1; i++) { if (parsedDates[i] < parsedDates[i+1]) { isDescending = false; break; } }
+        if (isDescending) return 'descending';
+        let isAscending = true;
+        for (let i = 0; i < parsedDates.length - 1; i++) { if (parsedDates[i] > parsedDates[i+1]) { isAscending = false; break; } }
+        if (isAscending) return 'ascending';
+        return 'mixed';
+    }
+    
+    function reverseDataOrder(pathIndex) {
+        let data = (pathIndex === -1) ? currentPhaseData : splitData[pathIndex].data;
+        const header = data.shift();
+        data.reverse();
+        const reversedData = [header, ...data];
+        if (pathIndex === -1) { currentPhaseData = reversedData; } else { splitData[pathIndex].data = reversedData; }
+        renderPreview(reversedData);
+    }
+
+    function TrimAndClean(inputValue) {
+        if (inputValue === null || inputValue === undefined) return "";
+        return String(inputValue).trim().replace(/\s/g, ' ');
+    }
+
+    function generateDownloadLink(data, elementId, filename) {
+      const newWorksheet = XLSX.utils.aoa_to_sheet(data);
+      const newWorkbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'Data');
+      const excelBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.getElementById(elementId);
+      if (link) {
+          if (link.href.startsWith('blob:')) { URL.revokeObjectURL(link.href); }
+          link.href = url;
+          link.download = filename;
+      }
+    }
+
+    function generateMultiSheetDownloadLink(sheetDataArray, elementId, filename) {
+        const workbook = XLSX.utils.book_new();
+        sheetDataArray.forEach(sheetInfo => {
+            const worksheet = XLSX.utils.aoa_to_sheet(sheetInfo.data);
+            XLSX.utils.book_append_sheet(workbook, worksheet, sheetInfo.name.replace(/[/\\?*:[\]]/g, ''));
+        });
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.sheet;charset=UTF-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.getElementById(elementId);
+        if (link) {
+            if (link.href.startsWith('blob:')) { URL.revokeObjectURL(link.href); }
+            link.href = url;
+            link.download = filename;
+        }
+    }
+  </script>
+</body>
+</html>
