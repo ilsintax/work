@@ -227,7 +227,7 @@
                 <p>*미래에셋의 경우 '주식매도 입금'은 제거할 항목으로 분류해야 합니다.</p>
                 <p>*미래에셋의 경우 '주식매도 출고'는 제거할 항목으로 분류하지 말아주세요.</p>
                 <p>*'외화주식매도 입금'도 동일합니다..</p>
-                <br><br><br><br>
+                <br><br><br><br></div>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"><div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">전체 거래 종류 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2">${sourceItems.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2 text-red-600">제거할 항목 (드롭)</h3><div id="drop-zone-0" class="drop-zone p-2 rounded flex flex-wrap gap-2">${itemsInZone.map(val => `<div class="draggable-item bg-red-100 px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div></div>`;
             }
             return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">4단계: 불필요 항목 제거</h1></header><div class="flex border-b">${pathNav}</div>${contentHTML}<div class="flex items-center space-x-3 mt-4"><button id="process-phase4-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">현재 통화 적용 & 다음으로</button><button id="reset-phase4-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">선택 초기화</button></div></div>`;
@@ -840,4 +840,5 @@
   </script>
 </body>
 </html>
+
 
