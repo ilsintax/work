@@ -224,9 +224,10 @@
                 contentHTML = `<p class="text-slate-600 mt-2">입출금과 관련 없는 거래 종류를 아래 '제거할 항목' 영역으로 드래그 앤 드롭하세요.</p>
                 <div class="text-sm text-red-500 mt-2 p-3 bg-slate-100 rounded-md">
                 <p class="font-semibold">설명:</p>
-                <p>*미래에셋의 경우 '주식매도 입금'은 제거할 항목으로 분류해야 합니다.</p>
-                <p>*미래에셋의 경우 '주식매도 출고'는 제거할 항목으로 분류하지 말아주세요.</p>
-                <p>*'외화주식매도 입금'도 동일합니다..</p>
+                <p>*미래에셋의 경우 '주식매수(매도) 입/출금'은 제거할 항목으로 분류해야 합니다.</p>
+                <p>*미래에셋의 경우 '해외주식매수(매도) 입/출금'은 제거할 항목으로 분류해야 합니다.</p>
+                <p>*미래에셋의 경우 '주식매수(매도) 입/출고'는 제거할 항목으로 분류하지 말아주세요.</p>
+                <p>*미래에셋의 경우 '해외주식매수(매도) 입/출고'는 제거할 항목으로 분류하지 말아주세요.</p>
                 <br><br><br><br></div>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"><div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">전체 거래 종류 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2">${sourceItems.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2 text-red-600">제거할 항목 (드롭)</h3><div id="drop-zone-0" class="drop-zone p-2 rounded flex flex-wrap gap-2">${itemsInZone.map(val => `<div class="draggable-item bg-red-100 px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div></div>`;
             }
@@ -840,5 +841,6 @@
   </script>
 </body>
 </html>
+
 
 
