@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Excel 행 변환기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 엑셀 파일 처리를 위한 라이브러리 -->
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    /* 테이블 스타일 */
+    .preview-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+    .preview-table th, .preview-table td {
+      border: 1px solid #e2e8f0; padding: .375rem .5rem; text-align: left;
+      white-space: nowrap; min-width: 20px;
+    }
+    .preview-table th { background-color: #f8fafc; font-weight: 600; }
+    /* 행 선택 기능 스타일 */
+    .selectable-row:hover { background-color: #f0f9ff; cursor: pointer; }
+    .highlighted-row { background-color: #bae6fd !important; }
+    /* 안내 메시지 스타일 */
+    #prompt-area { display: none; margin-bottom: 1rem; padding: .75rem; background-color: #e0f2fe;
+      border-left: 4px solid #3b82f6; color: #0369a1; border-radius: .375rem; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="container mx-auto p-4 md:p-8 max-w-5xl space-y-6">
+    <header class="text-center mb-4">
+      <h1 class="text-3xl font-bold text-slate-900">엑셀 데이터 행 변환기</h1>
+      <p class="text-slate-600 mt-2">여러 행으로 반복되는 데이터를 한 행으로 병합합니다.</p>
+    </header>
+
+    <!-- 1. 파일 업로드 -->
+    <div id="upload-section">
+      <label for="file-input"
+             class="flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition">
+        <svg class="w-10 h-10 mb-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+        <span class="text-slate-600 font-medium">클릭하여 XLSX/XLS 파일 업로드</span>
+        <input id="file-input" type="file" accept=".xlsx,.xls" class="hidden"/>
+      </label>
+      <p id="file-name" class="mt-2 text-sm text-center text-slate-500"></p>
+    </div>
+
+    <!-- 2. 미리보기 및 편집 섹션 -->
+    <div id="preview-section" class="hidden space-y-4">
+      <div id="prompt-area">
+        <p id="prompt-text" class="font-medium"></p>
+      </div>
+      
+      <!-- 버튼 영역 -->
+      <div id="control-buttons" class="flex items-center space-x-3">
+        <button id="start-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+          편집 시작
+        </button>
+        <button id="complete-btn" class="hidden px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition shadow-sm">
+          작업 완료
+        </button>
+         <button id="reset-btn" class="hidden px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600 transition shadow-sm">
+          다시 선택
+        </button>
+      </div>
+
+      <!-- 데이터 미리보기 테이블 -->
+      <div id="preview-container" class="overflow-x-auto border rounded-lg bg-white shadow-sm"></div>
+    </div>
+
+    <!-- 3. 다운로드 섹션 -->
+    <div id="download-section" class="hidden text-center py-6">
+      <a id="download-btn" href="#" class="inline-block px-8 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition shadow-lg">
+        변환된 엑셀 파일 다운로드
+      </a>
+    </div>
+  </div>
+
+  <script>
+    // --- DOM 요소 가져오기 ---
+    const fileInput = document.getElementById('file-input');
+    const fileNameEl = document.getElementById('file-name');
+    const uploadSection = document.getElementById('upload-section');
+    const previewSection = document.getElementById('preview-section');
+    const previewContainer = document.getElementById('preview-container');
+    const promptArea = document.getElementById('prompt-area');
+    const promptText = document.getElementById('prompt-text');
+    const startEditBtn = document.getElementById('start-edit-btn');
+    const completeBtn = document.getElementById('complete-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const downloadSection = document.getElementById('download-section');
+    const downloadBtn = document.getElementById('download-btn');
+
+    // --- 상태 변수 ---
+    let workbookData = null; // 원본 엑셀 데이터 저장
+    let rawSheetData = [];   // 시트 데이터를 2차원 배열로 저장
+    let selectedHeaderRows = []; // 사용자가 선택한 헤더 행 인덱스 저장
+    let isEditMode = false;      // 편집 모드 활성화 여부
+
+    // --- 이벤트 리스너 ---
+    fileInput.addEventListener('change', handleFile);
+    startEditBtn.addEventListener('click', startEditing);
+    completeBtn.addEventListener('click', processData);
+    resetBtn.addEventListener('click', resetSelection);
+
+    /**
+     * 사용자가 업로드한 엑셀 파일을 읽고 처리합니다.
+     */
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = new Uint8Array(event.target.result);
+          workbookData = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbookData.SheetNames[0];
+          const worksheet = workbookData.Sheets[firstSheetName];
+          rawSheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+          renderPreview(rawSheetData);
+          fileNameEl.textContent = `선택된 파일: ${file.name}`;
+          previewSection.classList.remove('hidden');
+          startEditBtn.disabled = false;
+        } catch (error) {
+          console.error("파일 처리 중 오류 발생:", error);
+          alert("엑셀 파일을 읽는 중 오류가 발생했습니다. 파일 형식을 확인해주세요.");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    /**
+     * 엑셀 데이터를 HTML 테이블로 렌더링합니다.
+     */
+    function renderPreview(data) {
+      let html = '<table class="preview-table">';
+      data.forEach((row, rowIndex) => {
+        html += `<tr data-row-index="${rowIndex}">`;
+        (row || []).forEach(cell => {
+          html += `<td>${cell !== null ? cell : ''}</td>`;
+        });
+        html += '</tr>';
+      });
+      html += '</table>';
+      previewContainer.innerHTML = html;
+    }
+
+    /**
+     * '편집 시작' 버튼을 누르면 행 선택 모드를 활성화합니다.
+     */
+    function startEditing() {
+      isEditMode = true;
+      startEditBtn.classList.add('hidden');
+      completeBtn.classList.remove('hidden');
+      resetBtn.classList.remove('hidden');
+      promptArea.style.display = 'block';
+      promptText.textContent = '반복되는 행의 제목을 선택해주세요. (2~4개 선택 가능)';
+      previewContainer.querySelectorAll('tr').forEach(tr => {
+        tr.classList.add('selectable-row');
+        tr.addEventListener('click', handleRowClick);
+      });
+    }
+
+    /**
+     * 사용자가 미리보기 테이블의 행을 클릭했을 때 호출됩니다.
+     */
+    function handleRowClick(e) {
+      if (!isEditMode) return;
+      const tr = e.currentTarget;
+      const rowIndex = parseInt(tr.dataset.rowIndex, 10);
+      const selectionIndex = selectedHeaderRows.indexOf(rowIndex);
+
+      if (selectionIndex > -1) {
+        selectedHeaderRows.splice(selectionIndex, 1);
+        tr.classList.remove('highlighted-row');
+      } else {
+        if (selectedHeaderRows.length < 4) {
+          selectedHeaderRows.push(rowIndex);
+          tr.classList.add('highlighted-row');
+        } else {
+          alert('최대 4개의 행만 선택할 수 있습니다.');
+        }
+      }
+      selectedHeaderRows.sort((a, b) => a - b);
+    }
+    
+    /**
+     * 선택된 행들을 초기화합니다.
+     */
+    function resetSelection() {
+        selectedHeaderRows = [];
+        previewContainer.querySelectorAll('.highlighted-row').forEach(row => {
+            row.classList.remove('highlighted-row');
+        });
+    }
+
+    /**
+     * '작업 완료' 버튼을 누르면 데이터를 변환하고 엑셀 파일을 생성합니다.
+     * (핵심 로직 수정)
+     */
+    function processData() {
+      if (selectedHeaderRows.length < 2) {
+        alert('최소 2개 이상의 행을 선택해야 합니다.');
+        return;
+      }
+      
+      isEditMode = false;
+      promptText.textContent = '데이터를 변환하고 있습니다...';
+
+      const numRowsPerGroup = selectedHeaderRows.length;
+      
+      // 1. 새로운 헤더 생성: 사용자가 선택한 행들을 하나의 배열로 합쳐 헤더를 만듭니다.
+      const repeatingHeadersData = selectedHeaderRows.map(rowIndex => rawSheetData[rowIndex] || []);
+      const newHeaders = repeatingHeadersData.flat().map(cell => cell || ''); // .flat()으로 2차원 배열을 1차원으로 만듭니다.
+
+      const outputData = [newHeaders];
+
+      // 2. 데이터 변환: 데이터 그룹도 헤더와 동일한 방식으로 병합합니다.
+      const dataStartIndex = Math.max(...selectedHeaderRows) + 1;
+      
+      for (let i = dataStartIndex; i < rawSheetData.length; i += numRowsPerGroup) {
+        const group = rawSheetData.slice(i, i + numRowsPerGroup);
+        
+        // 데이터가 없는 빈 그룹(예: 엑셀 끝의 빈 행들)은 건너뜁니다.
+        if (group.every(row => !row || row.every(cell => cell === null || String(cell).trim() === ''))) {
+            continue;
+        }
+
+        // 그룹 내의 여러 행을 하나의 행으로 합칩니다.
+        const newRow = group.flat().map(cell => cell);
+
+        // 합쳐진 데이터 행의 길이를 헤더 길이에 맞춥니다 (길면 자르고, 짧으면 null 추가).
+        const finalRow = [];
+        for (let j = 0; j < newHeaders.length; j++) {
+            finalRow.push(newRow[j] !== undefined ? newRow[j] : null);
+        }
+        outputData.push(finalRow);
+      }
+
+      // 3. 새 엑셀 파일 생성
+      generateExcel(outputData);
+      
+      // 4. UI 업데이트
+      previewSection.classList.add('hidden');
+      uploadSection.classList.add('hidden');
+      downloadSection.classList.remove('hidden');
+    }
+
+    /**
+     * 변환된 데이터를 사용하여 새 엑셀 파일을 생성하고 다운로드 링크를 만듭니다.
+     */
+    function generateExcel(data) {
+      const newWorksheet = XLSX.utils.aoa_to_sheet(data);
+      const newWorkbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'Transformed Data');
+
+      const excelBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
+      
+      if (downloadBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadBtn.href);
+      }
+      downloadBtn.href = URL.createObjectURL(blob);
+      downloadBtn.download = 'transformed_data.xlsx';
+    }
+  </script>
+</body>
+</html>
