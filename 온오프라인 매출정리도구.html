@@ -1,0 +1,2010 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>지능형 온라인 및 오프라인 매출 정리 v2.5 (최종본 수정)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Noto Sans KR', 'Inter', sans-serif; }
+    #app { display: flex; flex-direction: column; min-height: 100vh; }
+    #top-nav { flex-shrink: 0; }
+    main { flex-grow: 1; }
+    
+    .nav-btn { transition: all 0.2s; border-bottom: 3px solid transparent; }
+    .nav-btn.active { border-bottom-color: #4f46e5; font-weight: 600; color: #4338ca; }
+    .nav-btn.completed { color: #16a34a; }
+    .nav-btn:disabled { color: #9ca3af; cursor: not-allowed; background-color: transparent !important; }
+
+    .preview-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+    .preview-table th, .preview-table td {
+      border: 1px solid #e2e8f0; padding: .375rem .5rem; text-align: left;
+      white-space: nowrap; min-width: 20px;
+    }
+    .preview-table th { background-color: #f8fafc; font-weight: 600; }
+    .selectable-row:hover { background-color: #f0f9ff; cursor: pointer; }
+    .highlighted-row { background-color: #bae6fd !important; }
+    
+    .highlight-p1-approvalDateCol { background-color: #a7f3d0 !important; }
+    .highlight-p1-clientCol { background-color: #fde68a !important; }
+    .highlight-p1-countCol { background-color: #fecaca !important; }
+    .highlight-p1-amountCol { background-color: #d8b4fe !important; }
+
+    .drop-zone { min-height: 80px; border: 2px dashed #cbd5e1; background-color: #f8fafc; transition: all 0.2s; }
+    .drop-zone.drag-over { background-color: #e0f2fe; border-color: #3b82f6; }
+    .draggable-item { cursor: grab; padding: 4px 8px; margin: 4px; border-radius: 4px; border: 1px solid #ccc; background-color: white; }
+    .draggable-item:active { cursor: grabbing; }
+
+    .selection-box { cursor: pointer; transition: all 0.2s; }
+    .selection-box.selecting { border-color: #4f46e5; box-shadow: 0 0 0 2px #c7d2fe; }
+    
+    .client-list-item {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .client-list-item:hover { background-color: #f3f4f6; }
+    .client-list-item.active { background-color: #e0e7ff; font-weight: 600; color: #3730a3; }
+    .client-list-item .status-icon {
+        margin-left: auto;
+        font-weight: bold;
+    }
+    .client-list-item.verified .status-icon::after { content: '✔'; color: #16a34a; }
+    .client-list-item.forced .status-icon::after { content: '✔'; color: #ef4444; }
+
+    /* --- Modal Styles --- */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        z-index: 10000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .modal-content {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 0.5rem;
+        max-width: 90vw;
+        max-height: 90vh;
+        overflow: auto;
+        position: relative;
+    }
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    #loading-spinner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+  <div id="app">
+    <nav id="top-nav" class="bg-white border-b border-slate-200 w-full sticky top-0 z-20"></nav>
+    <main class="w-full p-4 md:p-8">
+        <div id="sticky-header" class="hidden sticky top-16 bg-slate-50/80 backdrop-blur-sm z-10 py-2 mb-4"></div>
+        <div id="main-content" class="max-w-7xl mx-auto">
+            <!-- JS 렌더링 영역 -->
+        </div>
+    </main>
+  </div>
+
+  <!-- Main Modal -->
+  <div id="modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content w-full max-w-lg">
+      <h2 id="modal-title" class="text-xl font-bold mb-4 text-slate-800"></h2>
+      <div id="modal-message" class="text-slate-600 mb-6"></div>
+      <div id="modal-content-extra"></div>
+      <div id="modal-buttons" class="flex justify-end space-x-3 mt-6"></div>
+    </div>
+  </div>
+  
+  <!-- PDF Preview Modal -->
+  <div id="preview-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-content">
+          <div class="modal-header">
+              <h2 class="text-xl font-bold text-gray-800">PDF 미리보기</h2>
+              <div id="modal-actions">
+                  <button onclick="generatePdfFromPreview()" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">확인 및 저장</button>
+                  <button onclick="closePreviewModal()" class="ml-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">취소</button>
+              </div>
+          </div>
+          <div id="preview-body">
+              <!-- 미리보기 내용이 여기에 삽입됩니다. -->
+          </div>
+          <div id="loading-spinner" style="display: none;">
+              <div class="text-center">
+                  <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p class="text-gray-600">PDF 파일 생성 중...</p>
+              </div>
+          </div>
+      </div>
+  </div>
+
+
+  <script>
+    /******************************************************************************
+     * 지능형 온라인 및 오프라인 매출 정리 v2.5 (최종본 수정)
+     ******************************************************************************/
+    
+    // --- 0. DB 관리 (IndexedDB) ---
+    const DBManager = {
+        db: null,
+        init() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('SalesAppDB_v2_5', 1); // Use a new DB name for this version
+                request.onerror = (event) => reject("IndexedDB error: " + event.target.errorCode);
+                request.onsuccess = (event) => {
+                    this.db = event.target.result;
+                    resolve();
+                };
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    db.createObjectStore('works', { keyPath: 'id' });
+                };
+            });
+        },
+        saveWork(work) {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(['works'], 'readwrite');
+                const store = transaction.objectStore('works');
+                const request = store.put(work);
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject("Save error: " + event.target.error);
+            });
+        },
+        getAllWorks() {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(['works'], 'readonly');
+                const store = transaction.objectStore('works');
+                const request = store.getAll();
+                request.onsuccess = (event) => resolve(event.target.result);
+                request.onerror = (event) => reject("Get all error: " + event.target.error);
+            });
+        },
+        deleteWork(id) {
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction(['works'], 'readwrite');
+                const store = transaction.objectStore('works');
+                const request = store.delete(id);
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject("Delete error: " + event.target.error);
+            });
+        }
+    };
+
+    // --- 1. 상태 관리 (State) ---
+    const AppState = {
+        _state: {},
+        _listeners: [],
+        getInitialState() {
+            return {
+                currentPhase: 'welcome',
+                fileName: null,
+                currentWorkId: null,
+                phases: {
+                    upload: { isComplete: false, rawData: [] },
+                    phase1: { isComplete: false, isHeaderRowConfirmed: false, config: { headerRow: null, approvalDateCol: null, clientCol: null, countCol: null, amountCol: null }, output: null, selectingKey: null },
+                    phase2: { isComplete: false, subPhase: 'setup', config: { workInfo: null, cleansing: { deleted: [], merged: [{name: '통합 그룹 1', values: []}], added: [] } }, uniqueClients: [], output: null },
+                    phase3: { isComplete: false, isAmountConfirmed: false, config: { cashReceiptAmount: null }, output: null },
+                    phase4: { isComplete: false, activeClient: null, clientData: {} },
+                    phase5: { isComplete: false, subPhase: 'verification', config: { deductFrom: null, offlineCardSales: 0 }, verificationResult: null, finalResult: null, referenceData: null },
+                }
+            };
+        },
+        init() { this._state = this.getInitialState(); },
+        getState() { return this._state; },
+        setState(updater, options = { notify: true }) {
+            const oldState = JSON.parse(JSON.stringify(this._state));
+            const newState = typeof updater === 'function' ? updater(oldState) : updater;
+            this._state = newState;
+            console.log("State Updated:", this._state);
+            if (options.notify) {
+                this.notify();
+            }
+        },
+        subscribe(listener) { this._listeners.push(listener); },
+        notify() { this._listeners.forEach(listener => listener()); },
+    };
+
+    // --- 2. UI 렌더링 (Renderer) ---
+    const UIRenderer = {
+        init() {
+            this.topNavEl = document.getElementById('top-nav');
+            this.mainContentEl = document.getElementById('main-content');
+            this.stickyHeaderEl = document.getElementById('sticky-header');
+            this.modalEl = document.getElementById('modal');
+            this.modalTitleEl = document.getElementById('modal-title');
+            this.modalMessageEl = document.getElementById('modal-message');
+            this.modalButtonsEl = document.getElementById('modal-buttons');
+            this.modalContentExtraEl = document.getElementById('modal-content-extra');
+            AppState.subscribe(() => this.render());
+        },
+        showModal(title, message, buttons, extraContent = '') {
+            this.modalTitleEl.textContent = title;
+            this.modalMessageEl.innerHTML = message;
+            this.modalContentExtraEl.innerHTML = extraContent;
+            this.modalButtonsEl.innerHTML = '';
+            buttons.forEach(btnInfo => {
+                const button = document.createElement('button');
+                button.textContent = btnInfo.text;
+                button.className = `px-4 py-2 rounded-md font-semibold ${btnInfo.className}`;
+                button.onclick = btnInfo.onClick;
+                this.modalButtonsEl.appendChild(button);
+            });
+            this.modalEl.style.display = 'flex';
+        },
+        hideModal() {
+            this.modalEl.style.display = 'none';
+            this.modalContentExtraEl.innerHTML = '';
+        },
+        render() {
+            const state = AppState.getState();
+            this.topNavEl.innerHTML = this.renderTopNavigation(state);
+            
+            switch(state.currentPhase) {
+                case 'welcome':
+                    this.stickyHeaderEl.classList.add('hidden');
+                    this.mainContentEl.innerHTML = this.renderWelcomeView();
+                    AppController.populateWelcomeScreen();
+                    break;
+                case 'upload':
+                    this.stickyHeaderEl.classList.add('hidden');
+                    this.mainContentEl.innerHTML = this.renderUploadView();
+                    break;
+                default:
+                    this.mainContentEl.innerHTML = this.renderPhaseView(state);
+                    this.renderStickyHeader(state);
+                    break;
+            }
+            this.attachEventListeners();
+        },
+        renderTopNavigation(state) {
+            const phases = [
+                { id: 'phase1', name: '1. 데이터 불러오기' }, { id: 'phase2', name: '2. 거래처 정제' }, 
+                { id: 'phase3', name: '3. 현금영수증 입력' }, { id: 'phase4', name: '4. 업체내역 입력' }, 
+                { id: 'phase5', name: '5. 최종 분석' }, 
+            ];
+            
+            const isWorking = state.currentPhase !== 'welcome' && state.currentPhase !== 'upload';
+
+            const buttonsHTML = phases.map(phase => {
+                const phaseState = state.phases[phase.id];
+                const prevPhaseState = state.phases[this.getPrevPhase(phase.id)];
+                
+                const isEnabled = phase.id === 'phase1' ? state.phases.upload.isComplete : (prevPhaseState?.isComplete || phaseState?.isComplete);
+
+                return `<button data-phase="${phase.id}" class="nav-btn px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 ${state.currentPhase === phase.id ? 'active' : ''} ${phaseState?.isComplete ? 'completed' : ''}" ${!isEnabled ? 'disabled' : ''}>${phase.name}</button>`;
+            }).join('');
+            
+            return `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-4">
+                  <span class="font-bold text-lg text-indigo-600">매출 정리 도구 v2.5</span>
+                </div>
+                <div class="flex space-x-4">${isWorking ? buttonsHTML : ''}</div>
+                <div>
+                  <button id="reset-btn" class="text-sm px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200">초기화</button>
+                </div>
+            </div></div>`;
+        },
+        renderWelcomeView() {
+            return `
+            <header class="text-center mb-12">
+                <h1 class="text-4xl font-bold text-slate-900">지능형 매출 정리 도구</h1>
+                <p class="text-slate-600 mt-2">복잡한 매출 정산을 몇 번의 클릭으로 자동화하세요.</p>
+            </header>
+<!-- 작업 가이드라인 섹션 시작 -->
+<div class="mt-8 mb-4 p-6 bg-amber-50 border-l-4 border-amber-400 text-amber-900 rounded-r-lg shadow-sm">
+    <h2 class="text-xl font-bold mb-4 text-amber-900">🚀 작업 절차 가이드</h2>
+
+    <div class="space-y-4 text-sm">
+        <div>
+            <h3 class="font-semibold text-base mb-2">1. 선행 작업 절차</h3>
+            <ul class="list-decimal list-inside space-y-2 pl-2">
+                <li><strong class="font-medium">POS매출 업로드:</strong> 업체명의 신용카드(POS) 매출 내역을 먼저 업로드합니다.</li>
+                <li><strong class="font-medium">현금영수증 업로드:</strong> 국세청 집계 내역과 동일하게 현금영수증을 업로드합니다.</li>
+                <li><strong class="font-medium">현금영수증 차감 처리:</strong> 이후 현금영수증 금액을 카과 / 건별에서 동일 금액만큼 차감합니다.
+                    <p class="text-xs text-amber-800 pl-4 mt-1">방법: 동일 날짜 전표를 복사 → 과세유형을 변경 → 마이너스 금액 입력.</p>
+                    <p class="text-xs text-red-600 pl-4 mt-1">⚠️ 환경설정에 따라 금액 변동이 있을 수 있으니 주의해야 합니다.</p>
+                <li><strong class="font-medium">신용카드 매출자료조회 엑셀 업로드:</strong> 이 작업은 국세청 신용카드 매출자료조회 엑셀로 다운로드 받아 업로드 함으로써 시작됩니다.</li>
+                </li>
+            </ul>
+        </div>
+
+        <div>
+            <h3 class="font-semibold text-base mb-2">2. 기본 로직 설명</h3>
+            <ul class="list-disc list-inside space-y-2 pl-2">
+                <li>
+                    <strong class="font-medium">매출 총액 확정 기준:</strong>
+                    <p class="pl-4">업체 신용카드(POS 매출)을 제외한, 업체가 제공한 매출자료를 기준으로 총 매출액을 확정합니다. <br/> (이유: 일부 PG사의 집계에서는 현금영수증 발행 내역을 확인할 수 없기 때문입니다.)</p>
+                </li>
+                <li>
+                    <strong class="font-medium">처리 방법 예시:</strong>
+                    <p class="pl-4 mb-1">국세청 집계: A PG사 100 + 현금영수증 100 / 업체 제공: A PG사 150 + 오프라인 현금 150</p>
+                    <ul class="list-['→'] list-inside space-y-1 pl-6 text-xs">
+                        <li>"현금영수증" 가상 거래처를 설정하고, 현과(+100)/건별(-100)으로 분개하여 최종 0원으로 처리합니다.</li>
+                        <li>이후 업체 매출(A PG사 150, 오프라인현금 150)을 카과 또는 건별로 반영합니다.</li>
+                        <li><strong>최종 결과:</strong> 부가세 신고서상 매출은 <code class="bg-amber-200 px-1 rounded">현금영수증 100</code> + <code class="bg-amber-200 px-1 rounded">건별 매출 200</code> (300 - 100) 이 됩니다.</li>
+                    </ul>
+                </li>
+                 <li>
+                    <strong class="font-medium">장점:</strong>
+                     <p class="pl-4">현금영수증 발행 거래처를 일일이 추적할 필요가 없으며, 온라인 PG사와 오프라인 매출, 계좌이체 등이 혼재된 복잡한 상황에서도 단순하고 일관된 처리가 가능합니다.</p>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+<!-- 작업 가이드라인 섹션 끝 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="flex flex-col">
+                    <h2 class="text-2xl font-semibold mb-4 text-slate-800">새로운 작업 시작하기</h2>
+                    <button id="start-new-work-btn" class="w-full h-full flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition">
+                        <svg class="w-12 h-12 mb-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        <span class="text-slate-600 font-medium text-lg">새로운 엑셀 파일로 작업 시작</span>
+                    </button>
+                </div>
+                <div class="flex flex-col">
+                    <h2 class="text-2xl font-semibold mb-4 text-slate-800">저장된 작업 이어하기</h2>
+                    <div id="saved-works-list" class="bg-white p-4 rounded-lg border space-y-3 h-full overflow-y-auto">
+                        <p class="text-slate-500 text-center py-8">저장된 작업이 없습니다.</p>
+                    </div>
+                </div>
+            </div>`;
+        },
+        renderUploadView() {
+            return `<header class="text-center mb-8"><h1 class="text-4xl font-bold text-slate-900">새 작업 시작</h1><p class="text-slate-600 mt-2">정리할 온라인 매출 엑셀 파일을 업로드해주세요.</p></header><label for="file-input" class="flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition"><svg class="w-12 h-12 mb-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg><span class="text-slate-600 font-medium text-lg">클릭하여 XLSX/XLS 파일 업로드</span><input id="file-input" type="file" accept=".xlsx,.xls" class="hidden"/></label>`;
+        },
+        renderPhaseView(state) {
+            switch(state.currentPhase) {
+                case 'phase1': return this.renderPhase1View(state);
+                case 'phase2': return this.renderPhase2View(state);
+                case 'phase3': return this.renderPhase3View(state);
+                case 'phase4': return this.renderPhase4View(state);
+                case 'phase5': return this.renderPhase5View(state);
+                default: return `<div class="text-center py-10"><h1 class="text-2xl font-bold">오류</h1><p class="text-slate-600 mt-2">알 수 없는 단계입니다.</p></div>`;
+            }
+        },
+        renderPhase1View(state) {
+            const { rawData } = state.phases.upload;
+            const { isHeaderRowConfirmed } = state.phases.phase1;
+            const { headerRow, selectingKey, approvalDateCol, clientCol, countCol, amountCol } = state.phases.phase1.config;
+            const highlightMapping = {
+                'highlight-p1-approvalDateCol': approvalDateCol, 'highlight-p1-clientCol': clientCol,
+                'highlight-p1-countCol': countCol, 'highlight-p1-amountCol': amountCol
+            };
+            let tableHTML = this.generateTableHTML(rawData.slice(0, 20), { 
+                selectedRows: headerRow !== null ? [headerRow] : [],
+                highlightMapping: highlightMapping, isRowSelectionLocked: isHeaderRowConfirmed
+            });
+            let step1HTML = isHeaderRowConfirmed ? `
+                <div class="flex justify-between items-center">
+                    <p class="text-slate-600 font-semibold">Step 1: 제목 행이 <span class="text-green-600 font-bold">확정</span>되었습니다. (선택된 행: ${headerRow + 1}행)</p>
+                    <button id="change-header-row-btn" class="px-3 py-1 bg-slate-500 text-white rounded-md hover:bg-slate-600 text-sm">제목 행 변경</button>
+                </div>` : `
+                <p class="text-slate-600 font-semibold">Step 1: 제목 행을 클릭하세요. (하나만 선택 가능)</p>
+                <div class="mt-4">
+                    <button id="confirm-header-row-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-green-300" ${headerRow === null ? 'disabled' : ''}>제목 행 확정</button>
+                </div>`;
+            const prompts = [
+                { key: 'approvalDateCol', text: '1. 승인년월을 선택하세요', value: approvalDateCol }, { key: 'clientCol', text: '2. 거래처열을 선택하세요', value: clientCol },
+                { key: 'countCol', text: '3. 건수열을 선택하세요', value: countCol }, { key: 'amountCol', text: '4. 매출액열을 선택하세요', value: amountCol },
+            ];
+            const selectionUI = prompts.map(p => {
+                const isSelecting = selectingKey === p.key;
+                const headerText = p.value !== null && rawData.length > headerRow && rawData[headerRow] ? rawData[headerRow][p.value] : '미선택';
+                const valueText = p.value !== null ? `[${p.value + 1}열] ${headerText}` : '미선택';
+                return `<div data-key="${p.key}" class="selection-box p-3 border rounded-md ${isSelecting ? 'selecting' : ''}"><label class="font-medium text-sm pointer-events-none">${p.text}</label><span class="block font-bold text-indigo-600 pointer-events-none mt-1">${valueText}</span></div>`;
+            }).join('');
+            const allColsSelected = approvalDateCol !== null && clientCol !== null && countCol !== null && amountCol !== null;
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">1단계: 데이터 불러오기 및 열 선택</h1></header><div>${step1HTML}<div class="overflow-x-auto border rounded-lg bg-white shadow-sm mt-2">${tableHTML}</div></div><div class="${isHeaderRowConfirmed ? '' : 'opacity-50 pointer-events-none'}"><p class="text-slate-600 mt-4 font-semibold">Step 2: 아래 항목을 클릭한 뒤, 테이블에서 해당하는 열을 선택해주세요.</p><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">${selectionUI}</div></div><div class="flex items-center space-x-3 pt-4 border-t ${isHeaderRowConfirmed ? '' : 'hidden'}"><button id="process-phase1-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" ${!allColsSelected ? 'disabled' : ''}>작업 완료 & 다음 단계로</button></div></div>`;
+        },
+        renderStickyHeader(state) {
+            const { workInfo } = state.phases.phase2.config;
+            if (workInfo) {
+                this.stickyHeaderEl.classList.remove('hidden');
+                this.stickyHeaderEl.innerHTML = `<div class="flex items-center justify-between space-x-6 text-sm bg-white p-2 rounded-lg shadow-sm border">
+                    <div class="flex items-center space-x-6">
+                        <span class="font-semibold">작업 정보:</span>
+                        <span><strong>거래처명:</strong> ${workInfo.clientName}</span>
+                        <span><strong>작업년도:</strong> ${workInfo.workYear}</span>
+                        <span><strong>작업기수:</strong> ${workInfo.workPeriod}</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button id="save-work-btn" class="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">작업 저장</button>
+                        <button id="back-to-welcome-btn" class="text-xs px-2 py-1 bg-slate-500 text-white rounded hover:bg-slate-600">목록으로</button>
+                    </div>
+                </div>`;
+            } else {
+                this.stickyHeaderEl.classList.add('hidden');
+            }
+        },
+        renderPhase2View(state) {
+            const { subPhase } = state.phases.phase2;
+            if (subPhase === 'setup') return this.renderPhase2SetupView(state);
+            if (subPhase === 'cleansing') return this.renderPhase2CleansingView(state);
+            if (subPhase === 'preview') return this.renderPhase2PreviewView(state);
+        },
+        renderPhase2SetupView(state) {
+            const workInfo = state.phases.phase2.config.workInfo || {};
+            const periods = ['1기예정 (1~3월)', '1기확정 (4~6월)', '1기예정 및 확정 (1~6월)', '2기예정 (7~9월)', '2기확정 (10~12월)', '2기예정 및 확정 (7~12월)'];
+            const periodOptionsHTML = periods.map(p => `<option value="${p}" ${workInfo.workPeriod === p ? 'selected' : ''}>${p}</option>`).join('');
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">2단계: 작업 정보 설정</h1><p class="text-slate-600 mt-2">매출을 정산할 기본 정보를 입력해주세요.</p></header><div class="p-6 bg-white rounded-lg shadow-sm border space-y-4"><div><label for="work-client-name" class="block text-sm font-medium text-gray-700">거래처명</label><input type="text" id="work-client-name" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="예: (주)천재적사고" value="${workInfo.clientName || ''}"></div><div><label for="work-year" class="block text-sm font-medium text-gray-700">작업년도</label><input type="number" id="work-year" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="예: 2025" value="${workInfo.workYear || ''}"></div><div><label for="work-period" class="block text-sm font-medium text-gray-700">작업기수</label><select id="work-period" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">${periodOptionsHTML}</select></div></div><div class="flex items-center space-x-3 pt-4 border-t"><button id="process-phase2-setup-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">정보 입력 완료 & 작업 시작</button></div></div>`;
+        },
+        renderPhase2CleansingView(state) {
+            const { uniqueClients } = state.phases.phase2;
+            const { deleted, merged, added } = state.phases.phase2.config.cleansing;
+            const currentClients = uniqueClients.filter(c => !deleted.includes(c) && !merged.flatMap(g => g.values).includes(c)).concat(added.map(a => a.name));
+            const sourceItemsHTML = currentClients.map(val => `<div class="draggable-item" draggable="true" data-value="${val}">${val}</div>`).join('');
+            const mergedGroupsHTML = merged.map((group, index) => `<div class="p-3 rounded-lg bg-white border"><input type="text" value="${group.name}" data-group-index="${index}" class="group-name-input font-semibold mb-2 border-b-2 w-full p-1" placeholder="통합 후 이름"><div id="merge-zone-${index}" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-type="merge" data-zone-id="${index}">${group.values.map(val => `<div class="draggable-item bg-blue-100" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div>`).join('');
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">2단계: 거래처 정제</h1><p class="text-slate-600 mt-2">거래처를 정리하세요. 목록의 거래처를 드래그하여 아래 영역으로 이동시킬 수 있습니다.</p></header><div class="p-4 bg-amber-50 border-l-4 border-amber-400 text-amber-800 text-sm space-y-1 rounded-r-lg"><h3 class="font-bold">💡 작업 가이드</h3><p>1. <strong>신용카드</strong>는 거래처 목록에서 <strong>삭제할 거래처</strong>로 옮겨 제외해주세요.</p><p>2. 동일거래처는 <strong>통합할 거래처</strong>로 옮기시고 통합그룹의 이름을 입력해주세요.<br> &nbsp;&nbsp;&nbsp;&nbsp;(예: '엔에이치엔페이코'와 '엔에이치엔케이씨피'는 동일거래처입니다)</p><p>3. 국세청에 표시되지 않은 거래처는 하단 <strong>추가할 거래처</strong>에 직접 입력해주세요.(오프라인, 계좌이체 등 포함)</p></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-1 p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">거래처 목록 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-type="source">${sourceItemsHTML}</div><div class="mt-4"><h3 class="font-semibold mb-2">추가할 거래처</h3><div class="flex gap-2"><input type="text" id="add-client-input" class="flex-grow border rounded-md px-2 py-1" placeholder="새 거래처 이름"><button id="add-client-btn" class="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm">추가</button></div></div></div><div class="lg:col-span-2 p-4 rounded-lg bg-white border grid grid-cols-1 md:grid-cols-2 gap-4"><div><h3 class="font-semibold mb-2 text-red-600">삭제할 거래처</h3><div id="delete-zone" class="drop-zone p-2 rounded" data-zone-type="delete">${deleted.map(val => `<div class="draggable-item bg-red-100" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="space-y-4"><h3 class="font-semibold mb-2 text-blue-600">통합할 거래처</h3>${mergedGroupsHTML}<button id="add-merge-group-btn" class="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 text-sm">+ 통합 그룹 추가</button></div></div></div><div class="flex items-center space-x-3 pt-4 border-t"><button id="process-phase2-cleansing-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">거래처 분류 완료</button></div></div>`;
+        },
+        renderPhase2PreviewView(state) {
+            const { output } = state.phases.phase2;
+            if (!output) return `<div>오류: 미리보기 데이터를 생성할 수 없습니다.</div>`;
+            const totalAmount = output.reduce((sum, row) => sum + (row[3] || 0), 0);
+            const totalCount = output.reduce((sum, row) => sum + (row[2] || 0), 0);
+            const tableData = output.map(row => {
+                const count = typeof row[2] === 'number' ? row[2].toLocaleString() : row[2];
+                const amount = typeof row[3] === 'number' ? row[3].toLocaleString() : row[3];
+                return [row[0], row[1], count, amount];
+            });
+            const tableHTML = this.generateTableHTML([['승인년월', '거래처', '건수', '매출액'], ...tableData]);
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">2단계: 정제 결과 미리보기</h1><p class="text-slate-600 mt-2">거래처 정제 작업이 반영된 결과입니다.</p></header><div class="overflow-x-auto border rounded-lg bg-white shadow-sm">${tableHTML}</div><div class="mt-4 p-4 bg-slate-100 rounded-lg flex justify-end items-center space-x-8"><div><span class="font-semibold text-md">총 건수 합계:</span><span class="font-bold text-lg text-slate-700 ml-2">${totalCount.toLocaleString()}</span></div><div><span class="font-semibold text-md">총 매출액 합계:</span><span class="font-bold text-xl text-indigo-600 ml-2">${totalAmount.toLocaleString()} 원</span></div></div><div class="flex items-center space-x-3 pt-4 border-t"><button id="process-phase2-complete-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">작업 완료 & 3단계로 이동</button><button id="retry-phase2-cleansing-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">다시하기</button></div></div>`;
+        },
+        renderPhase3View(state) {
+            const { isAmountConfirmed, config } = state.phases.phase3;
+            const { workInfo } = state.phases.phase2.config;
+            if (!workInfo) return `<p>2단계 작업을 먼저 완료해주세요.</p>`;
+            if (!isAmountConfirmed) {
+                const promptText = `<strong>${workInfo.clientName}</strong>의 <strong>${workInfo.workYear}년 ${workInfo.workPeriod}</strong>의 현금영수증 매출총액을 입력해주세요.`;
+                return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">3단계: 현금영수증 입력</h1></header><div class="p-6 bg-white rounded-lg shadow-sm border space-y-4"><label for="cash-receipt-amount" class="block text-md font-medium text-gray-700">${promptText}</label><input type="text" inputmode="numeric" id="cash-receipt-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="금액을 숫자로만 입력하세요" value="${(config.cashReceiptAmount || '').toLocaleString()}"></div><div class="flex items-center space-x-3 pt-4 border-t"><button id="confirm-phase3-amount-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">확인</button></div></div>`;
+            } else {
+                const phase2Total = state.phases.phase2.output.reduce((sum, row) => sum + (row[3] || 0), 0);
+                const totalAmount = phase2Total + config.cashReceiptAmount;
+                const summaryText1 = `국세청 오픈마켓 및 현금영수증 매출 합계액은 <strong class="text-xl text-indigo-600">${totalAmount.toLocaleString()}</strong> 입니다.`;
+                const summaryText2 = `다음단계에서 입력할 금액의 총액은 해당 금액보다 많아야 합니다.`;
+                return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">3단계: 현금영수증 입력 완료</h1></header><div class="p-6 bg-green-50 rounded-lg shadow-sm border border-green-200 space-y-4 text-center"><p class="text-lg text-slate-800">${summaryText1}</p><p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md">${summaryText2}</p></div><div class="flex items-center space-x-3 pt-4 border-t"><button id="process-phase3-complete-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">작업 완료 & 다음 단계로</button><button id="retry-phase3-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">금액 다시 입력</button></div></div>`;
+            }
+        },
+        renderPhase4View(state) {
+            const { activeClient, clientData } = state.phases.phase4;
+            const finalClients = Array.from(new Set(state.phases.phase2.output.map(row => row[1]))).sort();
+
+            const clientListHTML = finalClients.map(client => {
+                const clientInfo = clientData[client];
+                const isVerified = clientInfo?.isVerified;
+                const verificationClass = isVerified ? (clientInfo.verificationStatus === 'forced' ? 'forced' : 'verified') : '';
+                return `<div class="client-list-item ${client === activeClient ? 'active' : ''} ${verificationClass}" data-client="${client}">
+                            <span>${client}</span>
+                            <span class="status-icon"></span>
+                        </div>`;
+            }).join('');
+            
+            let mainContentHTML = `<div class="text-center p-8 text-slate-500">← 왼쪽 목록에서 거래처를 선택하여 작업을 시작하세요.</div>`;
+            if (activeClient) {
+                mainContentHTML = this.renderPhase4MainContent(state);
+            }
+
+            const allClientsVerified = finalClients.length > 0 && finalClients.every(client => clientData[client]?.isVerified);
+            const goToPhase5Button = allClientsVerified 
+                ? `<div class="mt-6 text-center"><button id="go-to-phase5-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700">모든 거래처 검증 완료! 최종 분석 단계로 이동</button></div>`
+                : '';
+
+            return `
+                <div class="space-y-6">
+                    <header><h1 class="text-3xl font-bold text-slate-900">4단계: 업체별 상세 내역 입력 및 검증</h1></header>
+<!-- 4단계 작업 가이드라인 섹션 시작 -->
+<div class="mb-6 p-4 bg-amber-50 border-l-4 border-amber-400 text-amber-900 rounded-r-lg shadow-sm text-sm">
+    <h3 class="font-bold mb-2">💡 매출유형 입력 관련 주의사항</h3>
+    <ul class="list-disc list-inside space-y-1">
+        <li><strong class="font-medium">중복 생성 가능:</strong> '항목 추가' 버튼을 통해 동일 매출유형(예: 카과)을 여러 번 생성하여 입력할 수 있습니다.</li>
+        <li><strong class="font-medium">거래처 중복 생성 가능:</strong> '매출처 추가' 버튼을 통해 해당 거래처 목록에 속하는 여러 매출처를 입력할 수 있습니다.</li>
+        <li><strong class="font-medium">실제 업로드 기준 입력:</strong> 반드시 실제로 업로드할 매출유형을 기준으로 입력해야 합니다.</li>
+        <li><strong class="font-medium">집계 방식:</strong> 중복 입력된 내용 및 다중 매출처 입력 내용은 최종 엑셀 생성 시 매출유형별로 합산되어 집계됩니다.</li>
+    </ul>
+</div>
+<!-- 4단계 작업 가이드라인 섹션 끝 -->
+                    <div class="grid grid-cols-12 gap-6">
+                        <div class="col-span-3">
+                            <div class="p-4 bg-white rounded-lg shadow-sm border">
+                                <h2 class="font-semibold mb-2">거래처 목록</h2>
+                                <div class="space-y-1">${clientListHTML}</div>
+                                ${goToPhase5Button}
+                            </div>
+                        </div>
+                        <div class="col-span-9">${mainContentHTML}</div>
+                    </div>
+                </div>
+            `;
+        },
+        renderPhase4MainContent(state) {
+            const { activeClient } = state.phases.phase4;
+            const clientNCSData = state.phases.phase2.output.filter(row => row[1] === activeClient);
+            const clientVendorData = state.phases.phase4.clientData[activeClient]?.vendors || [];
+            
+            const ncsTableRows = clientNCSData.map(row => `<tr><td class="px-4 py-2">${row[0]}</td><td class="px-4 py-2 text-right">${(row[3] || 0).toLocaleString()}</td></tr>`).join('');
+            const ncsTotal = clientNCSData.reduce((sum, row) => sum + (row[3] || 0), 0);
+            const ncsTableHTML = `
+                <div class="p-4 bg-white rounded-lg shadow-sm border">
+                    <h3 class="font-semibold mb-2">국세청 데이터: ${activeClient}</h3>
+                    <table class="w-full text-sm">
+                        <thead><tr class="bg-slate-50"><th class="px-4 py-2 text-left">월</th><th class="px-4 py-2 text-right">금액</th></tr></thead>
+                        <tbody>${ncsTableRows}</tbody>
+                        <tfoot><tr class="font-bold bg-slate-100"><td class="px-4 py-2">합계</td><td class="px-4 py-2 text-right">${ncsTotal.toLocaleString()}</td></tr></tfoot>
+                    </table>
+                </div>`;
+
+            const months = [...new Set(clientNCSData.map(row => row[0]))].sort();
+            
+            const vendorInputHTML = clientVendorData.map((vendor, v_idx) => {
+                const itemColumns = vendor.items.map((item, i_idx) => `
+                    <th class="p-2 border-b" data-vendor-idx="${v_idx}" data-item-idx="${i_idx}">
+                        <div class="flex flex-col items-center gap-1">
+                            <select class="p-1 border rounded text-sm w-full phase4-input-type" data-path="vendors[${v_idx}].items[${i_idx}].type">
+                                <option ${item.type === '카과' ? 'selected' : ''}>카과</option>
+                                <option ${item.type === '현과' ? 'selected' : ''}>현과</option>
+                                <option ${item.type === '건별' ? 'selected' : ''}>건별</option>
+                                <option ${item.type === '카과(선불)' ? 'selected' : ''}>카과(선불)</option>
+                            </select>
+                            <button class="delete-item-btn" data-vendor-index="${v_idx}" data-item-index="${i_idx}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400 hover:text-red-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
+                            </button>
+                        </div>
+                    </th>`).join('');
+                
+                const monthRows = months.map((month, m_idx) => {
+                    const monthInputs = vendor.items.map((item, i_idx) => {
+                        const amount = item.monthlyAmounts[month] || 0;
+                        return `<td>
+                            <input type="text" inputmode="numeric" class="w-full p-1 border rounded text-right text-sm phase4-input" 
+                                   placeholder="0" value="${(amount || '').toLocaleString()}" data-month-idx="${m_idx}" data-item-idx="${i_idx}" data-vendor-idx="${v_idx}">
+                        </td>`;
+                    }).join('');
+                    return `<tr data-month-idx="${m_idx}" data-vendor-idx="${v_idx}"><td class="font-semibold px-2">${month.slice(5,7)}월</td>${monthInputs}<td></td><td class="font-semibold text-right px-2 py-1 bg-slate-50 month-total">0</td></tr>`;
+                }).join('');
+
+                const footerRow = `<tfoot class="bg-slate-100"><tr data-vendor-idx="${v_idx}"><td class="font-bold px-2">합계</td>${vendor.items.map((_, i_idx) => `<td class="font-bold text-right px-2 py-1 item-total" data-item-idx="${i_idx}">0</td>`).join('')}<td></td><td class="font-bold text-right px-2 py-1 grand-total">0</td></tr></tfoot>`;
+
+                return `
+                    <div class="p-4 bg-white rounded-lg shadow-sm border mt-4 vendor-container" data-vendor-idx="${v_idx}">
+                        <div class="flex justify-between items-center mb-2">
+                            <input type="text" placeholder="매출처 이름 입력" value="${vendor.name || ''}" class="font-semibold border-b-2 w-full p-1 phase4-input-name" data-path="vendors[${v_idx}].name">
+                            <button class="delete-vendor-btn p-1 ml-2" data-vendor-index="${v_idx}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-400 hover:text-red-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead><tr><th class="p-2 border-b">월</th>${itemColumns}<th class="p-2 border-b align-bottom"><button class="add-item-btn p-1 bg-slate-200 text-xs rounded hover:bg-slate-300 w-full" data-vendor-index="${v_idx}">항목 추가</button></th><th class="p-2 border-b font-semibold">월별 합계</th></tr></thead>
+                            <tbody>${monthRows}</tbody>
+                            ${footerRow}
+                        </table>
+                        </div>
+                    </div>`;
+            }).join('');
+            
+            const verificationResult = DataTransformer.calculatePhase4Verification(clientNCSData, clientVendorData);
+            const verificationRows = verificationResult.monthly.map(row => `
+                <tr>
+                    <td class="px-4 py-2">${row.month}</td>
+                    <td class="px-4 py-2 text-right">${row.ncs.toLocaleString()}</td>
+                    <td class="px-4 py-2 text-right">${row.vendor.toLocaleString()}</td>
+                    <td class="px-4 py-2 text-right ${row.diff !== 0 ? 'text-red-500 font-bold' : ''}">${row.diff.toLocaleString()}</td>
+                </tr>`).join('');
+
+            const verificationPanelHTML = `
+                 <div id="verification-panel" class="p-4 bg-white rounded-lg shadow-sm border mt-6">
+                     <h3 class="font-semibold mb-2">검증</h3>
+                     <table class="w-full text-sm">
+                          <thead><tr class="bg-slate-50">
+                             <th class="px-4 py-2 text-left">월</th>
+                             <th class="px-4 py-2 text-right">국세청</th>
+                             <th class="px-4 py-2 text-right">입력합계(현과제외)</th>
+                             <th class="px-4 py-2 text-right">차액</th>
+                         </tr></thead>
+                         <tbody>${verificationRows}</tbody>
+                         <tfoot><tr class="font-bold bg-slate-100">
+                             <td class="px-4 py-2">합계</td>
+                             <td class="px-4 py-2 text-right">${verificationResult.total.ncs.toLocaleString()}</td>
+                             <td class="px-4 py-2 text-right">${verificationResult.total.vendor.toLocaleString()}</td>
+                             <td class="px-4 py-2 text-right ${verificationResult.total.diff !== 0 ? 'text-red-500 font-bold' : ''}">${verificationResult.total.diff.toLocaleString()}</td>
+                         </tr></tfoot>
+                     </table>
+                     <button id="verify-client-btn" class="w-full mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">검증하기</button>
+                 </div>
+            `;
+            
+            return `
+                <div class="space-y-4">
+                    ${ncsTableHTML}
+                    <div>
+                        <h3 class="font-semibold mb-2">업체 전송 내역 입력</h3>
+                        ${vendorInputHTML}
+                        <button id="add-vendor-btn" class="w-full mt-4 px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600">+ 매출처 추가</button>
+                    </div>
+                    ${verificationPanelHTML}
+                </div>
+            `;
+        },
+        renderPhase5View(state) {
+            const { subPhase, verificationResult, finalResult, referenceData } = state.phases.phase5;
+            let content = '';
+
+            if (subPhase === 'verification') {
+                if (!verificationResult) return '<p>검증 데이터를 계산하는 중입니다...</p>';
+                const { totalVendorSales, totalNCSSales } = verificationResult;
+                content = `
+                    <div class="p-6 bg-white rounded-lg shadow-sm border">
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-500">신용카드 제외 업체전송내역 입력 총 합계</h3>
+                                <p class="text-2xl font-bold text-indigo-600">${totalVendorSales.toLocaleString()} 원</p>
+                                <p class="text-xs text-slate-400 mt-1">카과 + 현과 + 건별 + 카과(선불) 금액의 합계</p>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-500">국세청 신용카드 + 현금영수증 매출내역</h3>
+                                <p class="text-2xl font-bold text-teal-600">${totalNCSSales.toLocaleString()} 원</p>
+                                 <p class="text-xs text-slate-400 mt-1">국세청 카드매출 + 3단계 입력 현금영수증</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (subPhase === 'results') {
+                if (!finalResult) return '<p>최종 결과를 계산하는 중입니다...</p>';
+                const { companyTotal, composition, finalBreakdown } = finalResult;
+
+                const renderTable = (title, data) => `
+                    <div class="p-4 bg-white rounded-lg shadow-sm border">
+                        <h3 class="font-bold text-lg mb-3">${title}</h3>
+                        <table class="w-full text-sm">
+                            <tbody>
+                                <tr class="border-b"><td class="py-2 px-3">카과</td><td class="py-2 px-3 text-right font-mono">${(data.kaGwa || 0).toLocaleString()}</td></tr>
+                                <tr class="border-b"><td class="py-2 px-3">건별</td><td class="py-2 px-3 text-right font-mono">${(data.geonByeol || 0).toLocaleString()}</td></tr>
+                                <tr class="border-b"><td class="py-2 px-3">현과</td><td class="py-2 px-3 text-right font-mono">${(data.hyunGwa || 0).toLocaleString()}</td></tr>
+                                <tr class="border-b"><td class="py-2 px-3">카과(선불)</td><td class="py-2 px-3 text-right font-mono">${(data.kaGwaSeonbul || 0).toLocaleString()}</td></tr>
+                            </tbody>
+                            <tfoot class="font-bold bg-slate-50"><tr class="border-t-2"><td class="py-2 px-3">합계</td><td class="py-2 px-3 text-right font-mono">${(data.total || 0).toLocaleString()}</td></tr></tfoot>
+                        </table>
+                    </div>
+                `;
+                
+                let referenceHTML = '';
+                if (referenceData) {
+                    const diff1 = referenceData.userCreditCardSales - referenceData.ntsCreditCardSales;
+                    const diff2 = referenceData.userCashReceiptSales - referenceData.ntsCashReceiptSales;
+                    const diff3 = referenceData.userOtherSales - referenceData.ntsOnlineSales;
+                    referenceHTML = `
+                        <div class="md:col-span-3 mt-4 p-4 bg-slate-50 rounded-lg shadow-sm border">
+                            <h3 class="font-bold text-lg mb-3">참고</h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-slate-200">
+                                        <tr>
+                                            <th class="py-2 px-3 text-left">항목</th>
+                                            <th class="py-2 px-3 text-right">국세청집계</th>
+                                            <th class="py-2 px-3 text-right">사용자집계</th>
+                                            <th class="py-2 px-3 text-right">차액</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr class="border-b">
+                                            <td class="py-2 px-3 text-slate-600">신용카드매출누계</td>
+                                            <td class="py-2 px-3 text-right font-mono">${(referenceData.ntsCreditCardSales || 0).toLocaleString()}</td>
+                                            <td class="py-2 px-3 text-right font-mono">${(referenceData.userCreditCardSales || 0).toLocaleString()}</td>
+                                            <td class="py-2 px-3 text-right font-mono ${diff1 !== 0 ? 'text-red-500' : ''}">${(diff1 || 0).toLocaleString()}</td>
+                                        </tr>
+                                        <tr class="border-b">
+                                            <td class="py-2 px-3 text-slate-600">현금영수증매출누계</td>
+                                            <td class="py-2 px-3 text-right font-mono">${(referenceData.ntsCashReceiptSales || 0).toLocaleString()}</td>
+                                            <td class="py-2 px-3 text-right font-mono">${(referenceData.userCashReceiptSales || 0).toLocaleString()}</td>
+                                            <td class="py-2 px-3 text-right font-mono ${diff2 !== 0 ? 'text-red-500' : ''}">${(diff2 || 0).toLocaleString()}</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="py-2 px-3 text-slate-600">신용카드 외 판매대행 등 매출누계</td>
+                                            <td class="py-2 px-3 text-right font-mono">${(referenceData.ntsOnlineSales || 0).toLocaleString()}</td>
+                                            <td class="py-2 px-3 text-right font-mono">${(referenceData.userOtherSales || 0).toLocaleString()}</td>
+                                            <td class="py-2 px-3 text-right font-mono ${diff3 !== 0 ? 'text-red-500' : ''}">${(diff3 || 0).toLocaleString()}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+
+                content = `
+                     <div id="phase5-print-area">
+                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                             <div class="md:col-span-1 p-4 bg-indigo-50 rounded-lg shadow-sm border border-indigo-200 flex flex-col items-center justify-center text-center">
+                                 <h3 class="font-bold text-lg text-indigo-800">최종 온라인/오프라인 매출 합</h3>
+                                 <p class="text-4xl font-extrabold text-indigo-600 mt-4">${companyTotal.toLocaleString()} 원</p>
+                             </div>
+                             <div class="md:col-span-1">${renderTable('온라인/오프라인 매출의 구성', composition)}</div>
+                             <div class="md:col-span-1">${renderTable('최종 카과/현과/건별/카과(선불) 매출', finalBreakdown)}</div>
+                             ${referenceHTML}
+                         </div>
+                     </div>
+                     <div class="mt-8 text-center space-x-4">
+                         <button id="pdf-download-btn" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700">PDF 저장</button>
+                         <button id="excel-download-btn" class="px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg shadow-md hover:bg-emerald-700">업로드용 엑셀 다운로드</button>
+                     </div>
+                `;
+            }
+
+            return `
+                <div class="space-y-6">
+                    <header><h1 class="text-3xl font-bold text-slate-900">5단계: 최종 분석</h1></header>
+                    ${content}
+                </div>
+            `;
+        },
+        generateTableHTML(data, options = {}) {
+            let html = '<table class="preview-table">';
+            data.forEach((row, rowIndex) => {
+                const rowClass = options.isRowSelectionLocked ? '' : `selectable-row ${options.selectedRows?.includes(rowIndex) ? 'highlighted-row' : ''}`;
+                html += `<tr data-row-index="${rowIndex}" class="${rowClass}">`;
+                (row || []).forEach((cell, colIndex) => {
+                    let colClass = '';
+                    if (options.highlightMapping) {
+                        for (const [className, col] of Object.entries(options.highlightMapping)) {
+                            if (col === colIndex) colClass += ` ${className}`;
+                        }
+                    }
+                    html += `<td data-col-index="${colIndex}" class="${colClass.trim()}">${cell ?? ''}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</table>';
+            return html;
+        },
+        getPrevPhase(phaseId) {
+            const order = ['upload', 'phase1', 'phase2', 'phase3', 'phase4', 'phase5'];
+            const index = order.indexOf(phaseId);
+            return index > 0 ? order[index - 1] : 'upload';
+        },
+        attachEventListeners() {
+            // Global listeners
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', (e) => AppController.navigate(e.currentTarget.dataset.phase)));
+            document.getElementById('reset-btn')?.addEventListener('click', AppController.resetAll);
+            document.getElementById('back-to-welcome-btn')?.addEventListener('click', AppController.goToWelcome);
+            document.getElementById('save-work-btn')?.addEventListener('click', AppController.handleSaveWork);
+
+            // Phase-specific listeners
+            const state = AppState.getState();
+            switch(state.currentPhase) {
+                case 'welcome':
+                    document.getElementById('start-new-work-btn')?.addEventListener('click', AppController.handleStartNewWork);
+                    document.querySelectorAll('.load-work-btn').forEach(btn => btn.addEventListener('click', e => AppController.handleLoadWork(Number(e.currentTarget.dataset.id))));
+                    document.querySelectorAll('.delete-work-btn').forEach(btn => btn.addEventListener('click', e => AppController.handleDeleteWork(Number(e.currentTarget.dataset.id))));
+                    break;
+                case 'upload':
+                    document.getElementById('file-input')?.addEventListener('change', AppController.handleFile);
+                    break;
+                case 'phase1':
+                    document.querySelectorAll('#main-content .selectable-row').forEach(row => row.addEventListener('click', e => AppController.handlePhase1RowSelect(parseInt(e.currentTarget.dataset.rowIndex, 10))));
+                    document.querySelectorAll('#main-content .selection-box').forEach(box => box.addEventListener('click', e => AppController.handlePhase1KeySelect(e.currentTarget.dataset.key)));
+                    document.querySelectorAll('#main-content .preview-table td').forEach(cell => cell.addEventListener('click', e => AppController.handlePhase1ColSelect(parseInt(e.currentTarget.dataset.colIndex, 10))));
+                    document.getElementById('process-phase1-btn')?.addEventListener('click', () => AppController.processPhase1());
+                    document.getElementById('confirm-header-row-btn')?.addEventListener('click', () => AppController.confirmHeaderRow());
+                    document.getElementById('change-header-row-btn')?.addEventListener('click', () => AppController.changeHeaderRow());
+                    break;
+                case 'phase2':
+                    document.getElementById('process-phase2-setup-btn')?.addEventListener('click', () => AppController.processPhase2Setup());
+                    this.attachDragAndDropListeners();
+                    document.getElementById('add-client-btn')?.addEventListener('click', () => AppController.handlePhase2AddClient());
+                    document.getElementById('add-merge-group-btn')?.addEventListener('click', () => AppController.handlePhase2AddMergeGroup());
+                    document.querySelectorAll('.group-name-input').forEach(input => input.addEventListener('change', e => AppController.handlePhase2MergeGroupNameChange(parseInt(e.currentTarget.dataset.groupIndex, 10), e.currentTarget.value)));
+                    document.getElementById('process-phase2-cleansing-btn')?.addEventListener('click', () => AppController.processPhase2Cleansing());
+                    document.getElementById('process-phase2-complete-btn')?.addEventListener('click', () => AppController.processPhase2Complete());
+                    document.getElementById('retry-phase2-cleansing-btn')?.addEventListener('click', () => AppController.retryPhase2Cleansing());
+                    break;
+                case 'phase3':
+                    document.getElementById('confirm-phase3-amount-btn')?.addEventListener('click', () => AppController.confirmPhase3Amount());
+                    document.getElementById('process-phase3-complete-btn')?.addEventListener('click', () => AppController.processPhase3Complete());
+                    document.getElementById('retry-phase3-btn')?.addEventListener('click', () => AppController.retryPhase3());
+                    document.getElementById('cash-receipt-amount')?.addEventListener('input', AppController.formatNumberInput);
+                    break;
+                case 'phase4':
+                    document.querySelectorAll('.client-list-item').forEach(item => item.addEventListener('click', (e) => AppController.handlePhase4ClientSelect(e.currentTarget.dataset.client)));
+                    document.getElementById('add-vendor-btn')?.addEventListener('click', () => AppController.handlePhase4AddVendor());
+                    document.querySelectorAll('.add-item-btn').forEach(btn => btn.addEventListener('click', (e) => AppController.handlePhase4AddItem(parseInt(e.currentTarget.dataset.vendorIndex, 10))));
+                    document.querySelectorAll('.delete-item-btn').forEach(btn => btn.addEventListener('click', (e) => AppController.handlePhase4DeleteItem(parseInt(e.currentTarget.dataset.vendorIndex, 10), parseInt(e.currentTarget.dataset.itemIndex, 10))));
+                    document.querySelectorAll('.delete-vendor-btn').forEach(btn => btn.addEventListener('click', (e) => AppController.handlePhase4DeleteVendor(parseInt(e.currentTarget.dataset.vendorIndex, 10))));
+                    document.getElementById('go-to-phase5-btn')?.addEventListener('click', () => AppController.goToPhase5());
+                    
+                    document.querySelectorAll('input.phase4-input, select.phase4-input-type').forEach(input => {
+                        input.addEventListener('input', AppController.updatePhase4Sums);
+                        if(input.tagName === 'SELECT') input.addEventListener('change', AppController.updatePhase4Sums);
+                    });
+                    document.querySelectorAll('input[inputmode="numeric"]').forEach(input => {
+                        input.addEventListener('input', AppController.formatNumberInput);
+                    });
+                    if (document.querySelector('.vendor-container')) {
+                        AppController.updatePhase4Sums();
+                    }
+                    
+                    document.getElementById('verify-client-btn')?.addEventListener('click', () => AppController.handlePhase4Verify());
+                    break;
+                case 'phase5':
+                     document.getElementById('pdf-download-btn')?.addEventListener('click', () => showPdfPreview('phase5-print-area'));
+                     document.getElementById('excel-download-btn')?.addEventListener('click', AppController.handleExcelDownload);
+                     break;
+            }
+        },
+        attachDragAndDropListeners() {
+            document.querySelectorAll('.draggable-item').forEach(item => {
+                item.addEventListener('dragstart', e => {
+                    e.dataTransfer.setData('text/plain', e.target.dataset.value);
+                    const sourceZone = e.target.closest('.drop-zone');
+                    if (sourceZone) {
+                        e.dataTransfer.setData('source-zone-type', sourceZone.dataset.zoneType || 'source');
+                        e.dataTransfer.setData('source-zone-id', sourceZone.dataset.zoneId || '');
+                    }
+                });
+            });
+            document.querySelectorAll('.drop-zone').forEach(zone => {
+                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+                zone.addEventListener('dragleave', e => zone.classList.remove('drag-over'));
+                zone.addEventListener('drop', e => {
+                    e.preventDefault(); zone.classList.remove('drag-over');
+                    const value = e.dataTransfer.getData('text/plain');
+                    const sourceZoneType = e.dataTransfer.getData('source-zone-type');
+                    const sourceZoneId = e.dataTransfer.getData('source-zone-id');
+                    const targetZoneType = zone.dataset.zoneType;
+                    const targetZoneId = zone.dataset.zoneId;
+                    AppController.handlePhase2Drop(value, { type: sourceZoneType, id: sourceZoneId }, { type: targetZoneType, id: targetZoneId });
+                });
+            });
+        }
+    };
+
+    // --- 3. 컨트롤러 (Controller / Actions) ---
+    const AppController = {
+        async populateWelcomeScreen() {
+            const works = await DBManager.getAllWorks();
+            const listEl = document.getElementById('saved-works-list');
+            if (!listEl) return;
+
+            if (works.length === 0) {
+                listEl.innerHTML = '<p class="text-slate-500 text-center py-8">저장된 작업이 없습니다.</p>';
+                return;
+            }
+            works.sort((a, b) => b.id - a.id);
+
+            listEl.innerHTML = works.map(work => `
+                <div class="p-3 border rounded-md flex items-center justify-between hover:bg-slate-50">
+                    <div>
+                        <p class="font-semibold text-sm text-indigo-700">${work.name}</p>
+                        <p class="text-xs text-slate-500">저장일: ${new Date(work.savedAt).toLocaleString()}</p>
+                    </div>
+                    <div class="space-x-2">
+                        <button class="load-work-btn px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600" data-id="${work.id}">불러오기</button>
+                        <button class="delete-work-btn px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600" data-id="${work.id}">삭제</button>
+                    </div>
+                </div>
+            `).join('');
+            UIRenderer.attachEventListeners();
+        },
+        handleStartNewWork() {
+            AppState.init();
+            AppState.setState(state => ({ ...state, currentPhase: 'upload' }));
+        },
+        async handleSaveWork() {
+            const state = AppState.getState();
+            const { workInfo } = state.phases.phase2.config;
+            if (!workInfo) {
+                alert('저장하려면 2단계에서 작업 정보를 먼저 입력해야 합니다.');
+                return;
+            }
+
+            const timestamp = new Date();
+            const dateString = timestamp.getFullYear() +
+                ('0' + (timestamp.getMonth() + 1)).slice(-2) +
+                ('0' + timestamp.getDate()).slice(-2) +
+                ('0' + timestamp.getHours()).slice(-2) +
+                ('0' + timestamp.getMinutes()).slice(-2);
+
+            const workName = `${workInfo.clientName}_${workInfo.workYear}_${workInfo.workPeriod}_${dateString}`;
+            
+            const workId = state.currentWorkId || Date.now();
+
+            const workToSave = {
+                id: workId,
+                name: workName,
+                savedAt: timestamp.toISOString(),
+                state: state
+            };
+            
+            try {
+                await DBManager.saveWork(workToSave);
+                AppState.setState(s => ({...s, currentWorkId: workId}));
+                UIRenderer.showModal(
+                    '저장 완료',
+                    `작업이 <strong class="text-indigo-600">${workName}</strong> 이름으로 저장되었습니다.`,
+                    [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]
+                );
+            } catch (error) {
+                console.error("Save failed:", error);
+                UIRenderer.showModal(
+                    '저장 실패',
+                    '작업을 저장하는 중 오류가 발생했습니다. 콘솔을 확인해주세요.',
+                    [{ text: '확인', className: 'bg-red-600 text-white', onClick: () => UIRenderer.hideModal() }]
+                );
+            }
+        },
+        async handleLoadWork(id) {
+            const works = await DBManager.getAllWorks();
+            const workToLoad = works.find(w => w.id === id);
+            if (workToLoad) {
+                AppState.setState(workToLoad.state, { notify: false });
+                AppState.notify();
+            }
+        },
+        handleDeleteWork(id) {
+            UIRenderer.showModal('작업 삭제', '정말로 이 작업을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.', [
+                { text: '취소', className: 'bg-slate-300 text-slate-800', onClick: () => UIRenderer.hideModal() },
+                { text: '삭제', className: 'bg-red-600 text-white', onClick: async () => {
+                    await DBManager.deleteWork(id);
+                    UIRenderer.hideModal();
+                    AppController.populateWelcomeScreen();
+                }}
+            ]);
+        },
+        goToWelcome() {
+            UIRenderer.showModal('작업 목록으로 이동', '저장하지 않은 작업은 사라질 수 있습니다. 정말로 이동하시겠습니까?', [
+                { text: '취소', className: 'bg-slate-300 text-slate-800', onClick: () => UIRenderer.hideModal() },
+                { text: '이동', className: 'bg-indigo-600 text-white', onClick: () => {
+                    AppState.setState(s => ({...s, currentPhase: 'welcome'}));
+                    UIRenderer.hideModal();
+                }}
+            ]);
+        },
+        navigate(targetPhase) {
+             AppState.setState(s => ({ ...s, currentPhase: targetPhase }));
+        },
+        handleFile(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const data = new Uint8Array(event.target.result); const workbook = XLSX.read(data, { type: 'array' }); const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null }); AppState.setState(state => ({ ...state, fileName: file.name, currentPhase: 'phase1', phases: { ...state.phases, upload: { isComplete: true, rawData: rawData } } })); } catch (error) { alert("엑셀 파일을 읽는 중 오류가 발생했습니다: " + error.message); } }; reader.readAsArrayBuffer(file); },
+        resetAll() {
+            UIRenderer.showModal('모든 작업 초기화', '현재 진행중인 작업을 포함하여 모든 내용을 초기화하시겠습니까? 저장된 작업은 삭제되지 않습니다.', [
+                { text: '취소', className: 'bg-slate-300', onClick: () => UIRenderer.hideModal() },
+                { text: '확인', className: 'bg-red-600 text-white', onClick: () => {
+                    AppState.init(); 
+                    UIRenderer.hideModal();
+                    UIRenderer.render();
+                }}
+            ]);
+        },
+        handlePhase1RowSelect(rowIndex) {
+            AppState.setState(state => {
+                if (state.phases.phase1.isHeaderRowConfirmed) return state;
+                const currentSelection = state.phases.phase1.config.headerRow;
+                const newSelection = currentSelection === rowIndex ? null : rowIndex;
+                return { ...state, phases: { ...state.phases, phase1: { ...state.phases.phase1, config: { ...state.phases.phase1.config, headerRow: newSelection } } } };
+            });
+        },
+        confirmHeaderRow() { AppState.setState(state => ({ ...state, phases: { ...state.phases, phase1: { ...state.phases.phase1, isHeaderRowConfirmed: true } } })); },
+        changeHeaderRow() { AppState.setState(state => ({ ...state, phases: { ...state.phases, phase1: { ...state.phases.phase1, isHeaderRowConfirmed: false } } })); },
+        handlePhase1KeySelect(key) { 
+            AppState.setState(state => {
+                if (!state.phases.phase1.isHeaderRowConfirmed) return state;
+                return { ...state, phases: { ...state.phases, phase1: { ...state.phases.phase1, selectingKey: key } } };
+            });
+        },
+        handlePhase1ColSelect(colIndex) { 
+            AppState.setState(state => {
+                if (!state.phases.phase1.isHeaderRowConfirmed) return state;
+                const { selectingKey } = state.phases.phase1; 
+                if (!selectingKey) return state; 
+                const newConfig = { ...state.phases.phase1.config, [selectingKey]: colIndex }; 
+                return { ...state, phases: { ...state.phases, phase1: { ...state.phases.phase1, selectingKey: null, config: newConfig } } }; 
+            });
+        },
+        processPhase1() {
+            const state = AppState.getState();
+            const { rawData } = state.phases.upload;
+            const { headerRow, ...colConfig } = state.phases.phase1.config;
+            if (headerRow === null) { alert('제목 행을 선택해주세요.'); return; }
+            const cleanedData = DataTransformer.transformPhase1(rawData, headerRow);
+            const header = cleanedData[0];
+            const body = cleanedData.slice(1);
+            const validBody = body.filter(row => DataTransformer.parseYearMonth(row[colConfig.approvalDateCol]) !== null);
+            const processedDataForPhase2 = [header, ...validBody];
+            const uniqueClients = [...new Set(validBody.map(row => row[colConfig.clientCol]).filter(Boolean))];
+            AppState.setState(state => ({
+                ...state, currentPhase: 'phase2',
+                phases: {
+                    ...state.phases,
+                    phase1: { ...state.phases.phase1, isComplete: true, output: processedDataForPhase2 },
+                    phase2: { ...state.phases.phase2, uniqueClients: uniqueClients }
+                }
+            }));
+        },
+        processPhase2Setup() {
+            const clientName = document.getElementById('work-client-name').value;
+            const workYear = document.getElementById('work-year').value;
+            const workPeriod = document.getElementById('work-period').value;
+            if (!clientName || !workYear || !workPeriod) { alert('모든 작업 정보를 입력해주세요.'); return; }
+            AppState.setState(state => ({ ...state, phases: { ...state.phases, phase2: { ...state.phases.phase2, subPhase: 'cleansing', config: { ...state.phases.phase2.config, workInfo: { clientName, workYear, workPeriod } } } } }));
+        },
+        handlePhase2AddClient() {
+            const input = document.getElementById('add-client-input');
+            const newClientName = input.value.trim();
+            if (!newClientName) return;
+            AppState.setState(state => {
+                const { added } = state.phases.phase2.config.cleansing;
+                if (added.some(c => c.name === newClientName) || state.phases.phase2.uniqueClients.includes(newClientName)) {
+                    alert('이미 존재하거나 추가된 거래처입니다.'); return state;
+                }
+                const newAdded = [...added, { name: newClientName }];
+                return { ...state, phases: { ...state.phases, phase2: { ...state.phases.phase2, config: { ...state.phases.phase2.config, cleansing: { ...state.phases.phase2.config.cleansing, added: newAdded } } } } };
+            });
+            input.value = '';
+        },
+        handlePhase2AddMergeGroup() {
+            AppState.setState(state => {
+                const { merged } = state.phases.phase2.config.cleansing;
+                const newMerged = [...merged, { name: `통합 그룹 ${merged.length + 1}`, values: [] }];
+                return { ...state, phases: { ...state.phases, phase2: { ...state.phases.phase2, config: { ...state.phases.phase2.config, cleansing: { ...state.phases.phase2.config.cleansing, merged: newMerged } } } } };
+            });
+        },
+        handlePhase2MergeGroupNameChange(index, newName) {
+            AppState.setState(state => {
+                const newMerged = [...state.phases.phase2.config.cleansing.merged];
+                newMerged[index].name = newName;
+                return { ...state, phases: { ...state.phases, phase2: { ...state.phases.phase2, config: { ...state.phases.phase2.config, cleansing: { ...state.phases.phase2.config.cleansing, merged: newMerged } } } } };
+            });
+        },
+        handlePhase2Drop(value, source, target) {
+            AppState.setState(state => {
+                const cleansing = JSON.parse(JSON.stringify(state.phases.phase2.config.cleansing));
+                if (source.type === 'delete') cleansing.deleted = cleansing.deleted.filter(v => v !== value);
+                else if (source.type === 'merge') cleansing.merged[source.id].values = cleansing.merged[source.id].values.filter(v => v !== value);
+                if (target.type === 'delete') { if (!cleansing.deleted.includes(value)) cleansing.deleted.push(value); }
+                else if (target.type === 'merge') { if (!cleansing.merged[target.id].values.includes(value)) cleansing.merged[target.id].values.push(value); }
+                return { ...state, phases: { ...state.phases, phase2: { ...state.phases.phase2, config: { ...state.phases.phase2.config, cleansing } } } };
+            });
+        },
+        processPhase2Cleansing() {
+            const state = AppState.getState();
+            const { phase1, phase2, phase4 } = state.phases;
+            
+            const reconciledClientData = DataTransformer.reconcilePhase4Data(phase4.clientData, phase2.config.cleansing, phase2.uniqueClients);
+
+            const finalData = DataTransformer.transformPhase2(phase1.output, phase1.config, phase2.config);
+            
+            AppState.setState(s => ({ 
+                ...s, 
+                phases: { 
+                    ...s.phases, 
+                    phase2: { ...s.phases.phase2, subPhase: 'preview', output: finalData },
+                    phase4: { ...s.phases.phase4, clientData: reconciledClientData }
+                } 
+            }));
+        },
+        retryPhase2Cleansing() { AppState.setState(state => ({ ...state, phases: { ...state.phases, phase2: { ...state.phases.phase2, subPhase: 'cleansing' } } })); },
+        processPhase2Complete() {
+            AppState.setState(state => ({ ...state, currentPhase: 'phase3', phases: { ...state.phases, phase2: { ...state.phases.phase2, isComplete: true } } }));
+        },
+        confirmPhase3Amount() {
+            const input = document.getElementById('cash-receipt-amount');
+            const amount = parseFloat(input.value.replace(/,/g, '')) || 0;
+            if (isNaN(amount) || amount < 0) { alert('유효한 금액을 입력해주세요.'); return; }
+            const phase2Total = AppState.getState().phases.phase2.output.reduce((sum, row) => sum + (row[3] || 0), 0);
+            const totalAmount = phase2Total + amount;
+            AppState.setState(state => ({
+                ...state, phases: { ...state.phases, phase3: { ...state.phases.phase3, isAmountConfirmed: true, config: { cashReceiptAmount: amount }, output: totalAmount } }
+            }));
+        },
+        retryPhase3() { AppState.setState(state => ({ ...state, phases: { ...state.phases, phase3: { ...state.phases.phase3, isAmountConfirmed: false, config: { cashReceiptAmount: null }, output: null } } })); },
+        processPhase3Complete() { AppState.setState(state => ({ ...state, currentPhase: 'phase4', phases: { ...state.phases, phase3: { ...state.phases.phase3, isComplete: true } } })); },
+        handlePhase4ClientSelect(clientName) {
+            this.handlePhase4ReflectChanges();
+            AppState.setState(state => ({
+                ...state, phases: { ...state.phases, phase4: { ...state.phases.phase4, activeClient: clientName } }
+            }));
+        },
+        _getPhase4DOMData() {
+            const state = AppState.getState();
+            const { activeClient } = state.phases.phase4;
+            if (!activeClient) return null;
+
+            const clientState = state.phases.phase4.clientData[activeClient] || {};
+            const clientData = { 
+                vendors: [], 
+                isVerified: clientState.isVerified || false,
+                verificationStatus: clientState.verificationStatus || null
+            };
+            const vendorElements = document.querySelectorAll('.vendor-container');
+
+            vendorElements.forEach((vendorEl, v_idx) => {
+                const vendorName = vendorEl.querySelector(`.phase4-input-name[data-path="vendors[${v_idx}].name"]`).value;
+                const vendor = { name: vendorName, items: [] };
+
+                const itemElements = vendorEl.querySelectorAll('thead th[data-item-idx]');
+                const monthRows = vendorEl.querySelectorAll('tbody tr[data-month-idx]');
+
+                itemElements.forEach((th, i_idx) => {
+                    const real_i_idx = parseInt(th.dataset.itemIdx, 10);
+                    const selectElement = th.querySelector(`select`);
+                    if (selectElement) {
+                        const type = selectElement.value;
+                        const item = { type: type, monthlyAmounts: {} };
+
+                        monthRows.forEach(rowEl => {
+                            const monthEl = rowEl.querySelector('td:first-child');
+                            if(!monthEl) return;
+                            const month = monthEl.textContent.trim().replace('월', '');
+                            const yearMonth = `${state.phases.phase2.config.workInfo.workYear}-${String(month).padStart(2, '0')}`;
+                            const input = rowEl.querySelector(`input[data-item-idx="${real_i_idx}"]`);
+                            if (input) {
+                                item.monthlyAmounts[yearMonth] = parseFloat(input.value.replace(/,/g, '')) || 0;
+                            }
+                        });
+                        vendor.items.push(item);
+                    }
+                });
+                clientData.vendors.push(vendor);
+            });
+            return clientData;
+        },
+        updatePhase4Sums() {
+            document.querySelectorAll('.vendor-container').forEach(vendorEl => {
+                const itemElements = vendorEl.querySelectorAll('thead th[data-item-idx]');
+                const monthRows = vendorEl.querySelectorAll('tbody tr[data-month-idx]');
+                let grandTotal = 0;
+
+                itemElements.forEach(th => {
+                    const i_idx = th.dataset.itemIdx;
+                    let itemTotal = 0;
+                    vendorEl.querySelectorAll(`input[data-item-idx="${i_idx}"]`).forEach(input => {
+                        itemTotal += parseFloat(input.value.replace(/,/g, '')) || 0;
+                    });
+                    const itemTotalEl = vendorEl.querySelector(`tfoot .item-total[data-item-idx="${i_idx}"]`);
+                    if(itemTotalEl) itemTotalEl.textContent = itemTotal.toLocaleString();
+                    grandTotal += itemTotal;
+                });
+
+                monthRows.forEach(rowEl => {
+                    let monthTotal = 0;
+                    rowEl.querySelectorAll('input.phase4-input').forEach(input => {
+                        monthTotal += parseFloat(input.value.replace(/,/g, '')) || 0;
+                    });
+                    const monthTotalEl = rowEl.querySelector('.month-total');
+                    if(monthTotalEl) monthTotalEl.textContent = monthTotal.toLocaleString();
+                });
+                
+                const grandTotalEl = vendorEl.querySelector('tfoot .grand-total');
+                if(grandTotalEl) grandTotalEl.textContent = grandTotal.toLocaleString();
+            });
+             const verificationPanel = document.getElementById('verification-panel');
+            if(verificationPanel) {
+                const currentDOMData = AppController._getPhase4DOMData();
+                if(!currentDOMData) return;
+                const state = AppState.getState();
+                const { activeClient } = state.phases.phase4;
+                const clientNCSData = state.phases.phase2.output.filter(row => row[1] === activeClient);
+                const verificationResult = DataTransformer.calculatePhase4Verification(clientNCSData, currentDOMData.vendors);
+                
+                const tbody = verificationPanel.querySelector('tbody');
+                const tfoot = verificationPanel.querySelector('tfoot');
+                
+                tbody.innerHTML = verificationResult.monthly.map(row => `
+                    <tr>
+                        <td class="px-4 py-2">${row.month}</td>
+                        <td class="px-4 py-2 text-right">${row.ncs.toLocaleString()}</td>
+                        <td class="px-4 py-2 text-right">${row.vendor.toLocaleString()}</td>
+                        <td class="px-4 py-2 text-right ${row.diff !== 0 ? 'text-red-500 font-bold' : ''}">${row.diff.toLocaleString()}</td>
+                    </tr>`).join('');
+                
+                tfoot.innerHTML = `<tr class="font-bold bg-slate-100">
+                    <td class="px-4 py-2">합계</td>
+                    <td class="px-4 py-2 text-right">${verificationResult.total.ncs.toLocaleString()}</td>
+                    <td class="px-4 py-2 text-right">${verificationResult.total.vendor.toLocaleString()}</td>
+                    <td class="px-4 py-2 text-right ${verificationResult.total.diff !== 0 ? 'text-red-500 font-bold' : ''}">${verificationResult.total.diff.toLocaleString()}</td>
+                </tr>`;
+            }
+        },
+        handlePhase4AddVendor() {
+            const currentDOMData = this._getPhase4DOMData();
+            AppState.setState(state => {
+                const { activeClient } = state.phases.phase4;
+                if (!activeClient) return state;
+                const clientData = currentDOMData || { vendors: [], isVerified: false, verificationStatus: null };
+                const newVendorName = clientData.vendors.length === 0 ? activeClient : `${activeClient} ${clientData.vendors.length + 1}`;
+                clientData.vendors.push({ name: newVendorName, items: [{ type: '카과', monthlyAmounts: {} }] });
+                return { ...state, phases: { ...state.phases, phase4: { ...state.phases.phase4, clientData: { ...state.phases.phase4.clientData, [activeClient]: clientData } } } };
+            });
+        },
+        handlePhase4AddItem(vendorIndex) {
+            const currentDOMData = this._getPhase4DOMData();
+            AppState.setState(state => {
+                const { activeClient } = state.phases.phase4;
+                if (!activeClient) return state;
+                const clientData = currentDOMData;
+                clientData.vendors[vendorIndex].items.push({ type: '카과', monthlyAmounts: {} });
+                return { ...state, phases: { ...state.phases, phase4: { ...state.phases.phase4, clientData: { ...state.phases.phase4.clientData, [activeClient]: clientData } } } };
+            });
+        },
+        handlePhase4DeleteItem(vendorIndex, itemIndex) {
+            const currentDOMData = this._getPhase4DOMData();
+            AppState.setState(state => {
+                const { activeClient } = state.phases.phase4;
+                if (!activeClient) return state;
+                const clientData = currentDOMData;
+                if (clientData && clientData.vendors[vendorIndex] && clientData.vendors[vendorIndex].items) {
+                    clientData.vendors[vendorIndex].items.splice(itemIndex, 1);
+                }
+                return { ...state, phases: { ...state.phases, phase4: { ...state.phases.phase4, clientData: { ...state.phases.phase4.clientData, [activeClient]: clientData } } } };
+            });
+        },
+        handlePhase4DeleteVendor(vendorIndex) {
+            UIRenderer.showModal(
+                '매출처 삭제',
+                '이 매출처의 모든 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+                [
+                    { text: '취소', className: 'bg-slate-300 text-slate-800 hover:bg-slate-400', onClick: () => UIRenderer.hideModal() },
+                    { 
+                        text: '삭제', 
+                        className: 'bg-red-600 text-white hover:bg-red-700', 
+                        onClick: () => {
+                            const currentDOMData = this._getPhase4DOMData();
+                            AppState.setState(state => {
+                                const { activeClient } = state.phases.phase4;
+                                if (!activeClient) return state;
+                                const clientData = currentDOMData;
+                                clientData.vendors.splice(vendorIndex, 1);
+                                return { ...state, phases: { ...state.phases, phase4: { ...state.phases.phase4, clientData: { ...state.phases.phase4.clientData, [activeClient]: clientData } } } };
+                            });
+                            UIRenderer.hideModal();
+                        } 
+                    }
+                ]
+            );
+        },
+        formatNumberInput(event) {
+            const input = event.target;
+            const selectionStart = input.selectionStart;
+            const originalLength = input.value.length;
+            let value = input.value.replace(/,/g, '');
+            if (isNaN(value) || value.trim() === '') {
+                 input.value = '';
+            } else {
+                const numericValue = parseFloat(value);
+                input.value = numericValue.toLocaleString('ko-KR');
+            }
+            const newLength = input.value.length;
+            const newSelectionStart = selectionStart + (newLength - originalLength);
+            if (newSelectionStart >= 0) {
+                 input.selectionStart = newSelectionStart;
+                 input.selectionEnd = newSelectionStart;
+            }
+        },
+        handlePhase4ReflectChanges() {
+             const currentDOMData = this._getPhase4DOMData();
+             if(!currentDOMData) return;
+             AppState.setState(state => {
+                const { activeClient } = state.phases.phase4;
+                return { ...state, phases: { ...state.phases, phase4: { ...state.phases.phase4, clientData: { ...state.phases.phase4.clientData, [activeClient]: currentDOMData } } } };
+             });
+        },
+        handlePhase4Verify() {
+            this.handlePhase4ReflectChanges();
+            setTimeout(() => {
+                const state = AppState.getState();
+                const { activeClient } = state.phases.phase4;
+                const clientNCSData = state.phases.phase2.output.filter(row => row[1] === activeClient);
+                const clientVendorData = state.phases.phase4.clientData[activeClient]?.vendors || [];
+                const result = DataTransformer.calculatePhase4Verification(clientNCSData, clientVendorData);
+                
+                if (result.isTotalMatch && result.isMonthlyMatch) {
+                    UIRenderer.showModal('검증 완료', '월별 금액과 총액이 모두 일치합니다.', [
+                        { text: '수정', className: 'bg-slate-300 text-slate-800 hover:bg-slate-400', onClick: () => UIRenderer.hideModal() },
+                        { text: '확정', className: 'bg-indigo-600 text-white hover:bg-indigo-700', onClick: () => { this.handlePhase4ConfirmVerification('perfect'); UIRenderer.hideModal(); } }
+                    ]);
+                } else {
+                    let message = '';
+                    if (result.isTotalMatch && !result.isMonthlyMatch) {
+                        message = '월별 금액은 다르지만 총액은 일치합니다.';
+                    } else {
+                        const diff = result.total.diff;
+                        const diffText = diff > 0 
+                            ? `입력된 금액이 국세청 금액보다 ${diff.toLocaleString()}원 많습니다.` 
+                            : `입력된 금액이 국세청 금액보다 ${Math.abs(diff).toLocaleString()}원 적습니다.`;
+                        message = `금액이 일치하지 않습니다. ${diffText}`;
+                    }
+                    
+                    UIRenderer.showModal('확인 필요', `${message}<br><br>이대로 작업을 확정하시겠습니까?`, [
+                        { text: '수정', className: 'bg-slate-300 text-slate-800 hover:bg-slate-400', onClick: () => UIRenderer.hideModal() },
+                        { text: '무시하고 확정', className: 'bg-indigo-600 text-white hover:bg-indigo-700', onClick: () => { this.handlePhase4ConfirmVerification('forced'); UIRenderer.hideModal(); } }
+                    ]);
+                }
+            }, 100);
+        },
+        handlePhase4ConfirmVerification(status) {
+            AppState.setState(state => {
+                const { activeClient } = state.phases.phase4;
+                if (!activeClient) return state;
+                
+                const newClientData = JSON.parse(JSON.stringify(state.phases.phase4.clientData));
+                const currentClient = newClientData[activeClient] || { vendors: [] };
+
+                currentClient.isVerified = true;
+                currentClient.verificationStatus = status;
+                newClientData[activeClient] = currentClient;
+
+                const newState = {
+                    ...state,
+                    phases: {
+                        ...state.phases,
+                        phase4: {
+                            ...state.phases.phase4,
+                            clientData: newClientData
+                        }
+                    }
+                };
+                newState.phases.phase4.isComplete = AppController.checkAllClientsVerified(newState);
+
+                return newState;
+            });
+        },
+        checkAllClientsVerified(state) {
+            const finalClients = Array.from(new Set(state.phases.phase2.output.map(row => row[1])));
+            return finalClients.length > 0 && finalClients.every(client => state.phases.phase4.clientData[client]?.isVerified);
+        },
+        goToPhase5() {
+            const state = AppState.getState();
+            const verificationResult = DataTransformer.calculatePhase5InitialVerification(state);
+            AppState.setState(s => ({
+                ...s,
+                currentPhase: 'phase5',
+                phases: {
+                    ...s.phases,
+                    phase4: {...s.phases.phase4, isComplete: true},
+                    phase5: {
+                        ...s.phases.phase5,
+                        subPhase: 'verification',
+                        verificationResult: verificationResult,
+                        finalResult: null,
+                        referenceData: null
+                    }
+                }
+            }));
+            
+            const { diff } = verificationResult;
+            let message;
+            if (diff < 0) {
+                message = `1) 업체전송매출내역이 국세청 내역보다 ${Math.abs(diff).toLocaleString()}원 적습니다. 업체 전송 매출에 오류가 있을 가능성이 있습니다.`;
+            } else if (diff === 0) {
+                message = `2) 업체전송매출내역이 국세청 내역과 같습니다. 국세청 매출 이외의 내역(ex)오프라인 등)이 없으면 이대로 확정하시면 됩니다.`;
+            } else {
+                message = `3) 업체전송매출내역이 국세청 내역보다 ${diff.toLocaleString()}원 많습니다. 국세청에 표시되지 않은 매출이 입력되었습니다.`;
+            }
+
+            UIRenderer.showModal('최종 검증', `${message}<br><br>이대로 확정하시겠습니까?`, [
+                { text: '아니오 (4단계 재작업)', className: 'bg-slate-300 text-slate-800', onClick: () => { AppController.navigate('phase4'); UIRenderer.hideModal(); } },
+                { text: '예 (확정)', className: 'bg-indigo-600 text-white', onClick: () => { AppController.handlePhase5InitialConfirm(); } }
+            ]);
+        },
+        handlePhase5InitialConfirm() {
+            const extraContent = `
+                <div class="space-y-4 mt-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">현금영수증 발행금액을 어디에서 차감하시겠습니까?</label>
+                        <div class="mt-2 flex space-x-4">
+                            <label class="inline-flex items-center"><input type="radio" name="deduct-from" value="kaGwa" class="form-radio h-4 w-4 text-indigo-600"> <span class="ml-2">카과</span></label>
+                            <label class="inline-flex items-center"><input type="radio" name="deduct-from" value="geonByeol" class="form-radio h-4 w-4 text-indigo-600"> <span class="ml-2">건별</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="offline-card-sales" class="block text-sm font-medium text-gray-700">온라인 매출 이외에 카드매출금액은 얼마인가요? (실제 장부에 반영한 금액)</label>
+                        <input type="text" id="offline-card-sales" inputmode="numeric" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm" placeholder="0">
+                    </div>
+                </div>
+            `;
+            UIRenderer.showModal('추가 정보 입력', '최종 집계를 위해 아래 정보를 입력해주세요.', [
+                { text: '취소', className: 'bg-slate-300 text-slate-800', onClick: () => UIRenderer.hideModal() },
+                { text: '확인', className: 'bg-indigo-600 text-white', onClick: () => AppController.handlePhase5Finalize() }
+            ], extraContent);
+            document.getElementById('offline-card-sales').addEventListener('input', this.formatNumberInput);
+        },
+        handlePhase5Finalize() {
+            const deductFrom = document.querySelector('input[name="deduct-from"]:checked')?.value;
+            const offlineSalesInput = document.getElementById('offline-card-sales');
+            const offlineCardSales = parseFloat(offlineSalesInput.value.replace(/,/g, '')) || 0;
+
+            if (!deductFrom) {
+                alert('현금영수증 차감 항목을 선택해주세요.');
+                return;
+            }
+
+            const state = AppState.getState();
+            const config = { deductFrom, offlineCardSales };
+            const finalResult = DataTransformer.calculatePhase5FinalResults(state, config);
+            const referenceData = DataTransformer.calculatePhase5ReferenceData(state, finalResult, config);
+            
+            AppState.setState(s => ({ ...s, phases: { ...s.phases, phase5: { ...s.phases.phase5, subPhase: 'results', config, finalResult, referenceData } } }));
+            UIRenderer.hideModal();
+        },
+        handleExcelDownload() {
+            UIRenderer.showModal(
+                '엑셀 다운로드 옵션',
+                '세무프로그램에 입력된 거래처명을 사용하시겠습니까?<br><small>(이 작업은 프로그램의 코드를 늘리지 않고, 기존 코드를 사용하기 위해 필요한 작업입니다.)</small>',
+                [
+                    { text: '아니오', className: 'bg-slate-300 text-slate-800', onClick: () => {
+                        DataTransformer.generateExcel();
+                        UIRenderer.hideModal();
+                    }},
+                    { text: '예', className: 'bg-indigo-600 text-white', onClick: () => AppController.promptForNewClientNames() }
+                ]
+            );
+        },
+        promptForNewClientNames() {
+            const state = AppState.getState();
+            const originalClients = [...new Set(state.phases.phase2.output.map(row => row[1]))].sort();
+            
+            let inputsHTML = '<div class="space-y-2 mt-4 max-h-64 overflow-y-auto">';
+            originalClients.forEach(client => {
+                inputsHTML += `
+                    <div class="grid grid-cols-2 gap-2 items-center">
+                        <label class="text-sm font-medium text-gray-700">${client}</label>
+                        <input type="text" data-original-name="${client}" class="new-client-name-input mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" placeholder="변경할 이름 입력">
+                    </div>
+                `;
+            });
+            inputsHTML += '</div>';
+
+            UIRenderer.showModal(
+                '거래처명 변경',
+                '세무프로그램에 업로드할 거래처명을 입력해주세요.',
+                [
+                    { text: '취소', className: 'bg-slate-300 text-slate-800', onClick: () => UIRenderer.hideModal() },
+                    { text: '거래처명 변경 확인', className: 'bg-indigo-600 text-white', onClick: () => AppController.generateExcelWithNewNames() }
+                ],
+                inputsHTML
+            );
+        },
+        generateExcelWithNewNames() {
+            const nameMap = new Map();
+            document.querySelectorAll('.new-client-name-input').forEach(input => {
+                const originalName = input.dataset.originalName;
+                const newName = input.value.trim();
+                if (newName) {
+                    nameMap.set(originalName, newName);
+                }
+            });
+            DataTransformer.generateExcel(nameMap);
+            UIRenderer.hideModal();
+        }
+    };
+
+    // --- 4. 데이터 변환 로직 (Data Transformer) ---
+    const DataTransformer = {
+        parseYearMonth(dateValue) {
+            if (dateValue === null || dateValue === undefined) return null;
+            if (typeof dateValue === 'number' && dateValue > 1) {
+                try {
+                    const date = XLSX.SSF.parse_date_code(dateValue);
+                    if (date) return { year: date.y, month: date.m };
+                } catch(e) {}
+            }
+            const dateStr = String(dateValue).trim();
+            const match = dateStr.match(/^(\d{4})[-.\/\s]?(\d{1,2})/);
+            if (match) {
+                const year = parseInt(match[1], 10);
+                const month = parseInt(match[2], 10);
+                if (year > 1900 && year < 3000 && month >= 1 && month <= 12) return { year, month };
+            }
+            return null;
+        },
+        transformPhase1(data, headerRow) {
+            if (headerRow === null) return data;
+            const header = data[headerRow];
+            const dataStartIndex = headerRow + 1;
+            const body = data.slice(dataStartIndex);
+            const filteredBody = body.filter(row => row && row.some(cell => cell !== null && String(cell).trim() !== ''));
+            return [header, ...filteredBody];
+        },
+        transformPhase2(sourceData, phase1Config, phase2Config) {
+            const { approvalDateCol, clientCol, countCol, amountCol } = phase1Config;
+            const { workInfo, cleansing } = phase2Config;
+            const periodMap = {
+                '1기예정 (1~3월)': { start: 1, end: 3 }, '1기확정 (4~6월)': { start: 4, end: 6 },
+                '1기예정 및 확정 (1~6월)': { start: 1, end: 6 }, '2기예정 (7~9월)': { start: 7, end: 9 },
+                '2기확정 (10~12월)': { start: 10, end: 12 }, '2기예정 및 확정 (7~12월)': { start: 7, end: 12 }
+            };
+            const monthRange = periodMap[workInfo.workPeriod];
+            const mergeMap = new Map();
+            cleansing.merged.forEach(group => group.values.forEach(val => mergeMap.set(val, group.name)));
+            const sourceClients = new Set(sourceData.slice(1).map(row => row[clientCol]).filter(Boolean));
+            const finalClients = new Set();
+            sourceClients.forEach(client => {
+                if (cleansing.deleted.includes(client)) return;
+                finalClients.add(mergeMap.get(client) || client);
+            });
+            cleansing.added.forEach(client => finalClients.add(client.name));
+            const resultMap = new Map();
+            const sortedFinalClients = Array.from(finalClients).sort();
+            for (const client of sortedFinalClients) {
+                for (let m = monthRange.start; m <= monthRange.end; m++) {
+                    const yearMonth = `${workInfo.workYear}-${String(m).padStart(2, '0')}`;
+                    resultMap.set(`${yearMonth}|${client}`, { yearMonth, client, count: 0, amount: 0 });
+                }
+            }
+            sourceData.slice(1).forEach(row => {
+                let clientName = row[clientCol];
+                if (!clientName || cleansing.deleted.includes(clientName)) return;
+                clientName = mergeMap.get(clientName) || clientName;
+                const parsedDate = this.parseYearMonth(row[approvalDateCol]);
+                if (!parsedDate) return;
+                const { year, month } = parsedDate;
+                if (year === parseInt(workInfo.workYear, 10) && month >= monthRange.start && month <= monthRange.end) {
+                    const yearMonth = `${workInfo.workYear}-${String(month).padStart(2, '0')}`;
+                    const key = `${yearMonth}|${clientName}`;
+                    if (resultMap.has(key)) {
+                        const entry = resultMap.get(key);
+                        const countValue = parseFloat(String(row[countCol]).replace(/,/g, ''));
+                        const amountValue = parseFloat(String(row[amountCol]).replace(/,/g, ''));
+                        if (!isNaN(countValue)) entry.count += countValue;
+                        if (!isNaN(amountValue)) entry.amount += amountValue;
+                    }
+                }
+            });
+            return Array.from(resultMap.values()).map(d => [d.yearMonth, d.client, d.count, d.amount]);
+        },
+        reconcilePhase4Data(oldClientData, cleansingConfig, originalUniqueClients) {
+            const newClientData = {};
+            const { deleted, merged, added } = cleansingConfig;
+
+            // 1. Handle merged clients
+            merged.forEach(group => {
+                const mergedVendors = [];
+                group.values.forEach(oldClientName => {
+                    if (oldClientData[oldClientName] && oldClientData[oldClientName].vendors) {
+                        mergedVendors.push(...oldClientData[oldClientName].vendors);
+                    }
+                });
+                if (mergedVendors.length > 0) {
+                    newClientData[group.name] = {
+                        vendors: mergedVendors,
+                        isVerified: false, // Force re-verification
+                        verificationStatus: null
+                    };
+                }
+            });
+
+            // 2. Handle existing, non-deleted, non-merged clients
+            Object.keys(oldClientData).forEach(clientName => {
+                const isDeleted = deleted.includes(clientName);
+                const isInMerge = merged.some(g => g.values.includes(clientName));
+                if (!isDeleted && !isInMerge) {
+                    newClientData[clientName] = oldClientData[clientName];
+                }
+            });
+            
+            // 3. Add newly added clients (they will be empty)
+            added.forEach(client => {
+                if (!newClientData[client.name]) {
+                    newClientData[client.name] = { vendors: [], isVerified: false, verificationStatus: null };
+                }
+            });
+            
+            return newClientData;
+        },
+        calculatePhase4Verification(ncsData, vendorData) {
+            const monthlyResults = {};
+            const months = [...new Set(ncsData.map(row => row[0]))].sort();
+
+            months.forEach(month => {
+                monthlyResults[month] = { month, ncs: 0, vendor: 0, diff: 0 };
+            });
+
+            ncsData.forEach(row => {
+                const month = row[0];
+                const amount = row[3] || 0;
+                if (monthlyResults[month]) {
+                    monthlyResults[month].ncs += amount;
+                }
+            });
+
+            (vendorData || []).forEach(vendor => {
+                vendor.items.forEach(item => {
+                    if (item.type !== '현과') {
+                        Object.entries(item.monthlyAmounts).forEach(([month, amount]) => {
+                            if (monthlyResults[month]) {
+                                monthlyResults[month].vendor += amount || 0;
+                            }
+                        });
+                    }
+                });
+            });
+
+            let totalNCS = 0;
+            let totalVendor = 0;
+            Object.values(monthlyResults).forEach(res => {
+                res.diff = res.vendor - res.ncs;
+                totalNCS += res.ncs;
+                totalVendor += res.vendor;
+            });
+
+            const totalDiff = totalVendor - totalNCS;
+            const isTotalMatch = totalDiff === 0;
+            const isMonthlyMatch = Object.values(monthlyResults).every(res => res.diff === 0);
+
+            return {
+                monthly: Object.values(monthlyResults),
+                total: { ncs: totalNCS, vendor: totalVendor, diff: totalDiff },
+                isTotalMatch,
+                isMonthlyMatch
+            };
+        },
+        calculatePhase5InitialVerification(state) {
+            const { phase2, phase3, phase4 } = state.phases;
+            
+            let totalVendorSales = 0;
+            Object.values(phase4.clientData).forEach(client => {
+                (client.vendors || []).forEach(vendor => {
+                    vendor.items.forEach(item => {
+                        totalVendorSales += Object.values(item.monthlyAmounts).reduce((sum, amount) => sum + amount, 0);
+                    });
+                });
+            });
+
+            const ncsCardSales = phase2.output.reduce((sum, row) => sum + (row[3] || 0), 0);
+            const cashReceiptSales = phase3.config.cashReceiptAmount || 0;
+            const totalNCSSales = ncsCardSales + cashReceiptSales;
+
+            return {
+                totalVendorSales,
+                totalNCSSales,
+                diff: totalVendorSales - totalNCSSales
+            };
+        },
+        calculatePhase5FinalResults(state, config) {
+            const { phase3, phase4 } = state.phases;
+            const { deductFrom, offlineCardSales } = config;
+
+            const phase4Totals = { kaGwa: 0, geonByeol: 0, hyunGwa: 0, kaGwaSeonbul: 0 };
+            Object.values(phase4.clientData).forEach(client => {
+                 (client.vendors || []).forEach(vendor => {
+                    vendor.items.forEach(item => {
+                        const totalAmount = Object.values(item.monthlyAmounts).reduce((sum, amount) => sum + amount, 0);
+                        if (item.type === '카과') phase4Totals.kaGwa += totalAmount;
+                        else if (item.type === '건별') phase4Totals.geonByeol += totalAmount;
+                        else if (item.type === '현과') phase4Totals.hyunGwa += totalAmount;
+                        else if (item.type === '카과(선불)') phase4Totals.kaGwaSeonbul += totalAmount;
+                    });
+                });
+            });
+
+            const companyTotal = phase4Totals.kaGwa + phase4Totals.geonByeol + phase4Totals.hyunGwa + phase4Totals.kaGwaSeonbul;
+            
+            const cashReceiptAmount = phase3.config.cashReceiptAmount || 0;
+            const composition = { 
+                kaGwa: 0, 
+                geonByeol: 0, 
+                hyunGwa: cashReceiptAmount, 
+                kaGwaSeonbul: phase4Totals.kaGwaSeonbul,
+                total: companyTotal
+            };
+            
+            if (deductFrom === 'kaGwa') {
+                composition.kaGwa = (phase4Totals.kaGwa + phase4Totals.hyunGwa) - cashReceiptAmount;
+                composition.geonByeol = phase4Totals.geonByeol;
+            } else { // deductFrom === 'geonByeol'
+                composition.kaGwa = phase4Totals.kaGwa; 
+                composition.geonByeol = (phase4Totals.geonByeol + phase4Totals.hyunGwa) - cashReceiptAmount;
+            }
+
+            const finalBreakdown = { ...composition };
+            finalBreakdown.kaGwa += offlineCardSales;
+            finalBreakdown.total = companyTotal + offlineCardSales;
+
+            return { companyTotal, composition, finalBreakdown };
+        },
+        calculatePhase5ReferenceData(state, finalResult, config) {
+            const { upload, phase1, phase2, phase3 } = state.phases;
+
+            const ntsOnlineSales = (phase2.output || []).reduce((sum, row) => sum + (row[3] || 0), 0);
+            const ntsCashReceiptSales = phase3.config.cashReceiptAmount || 0;
+            
+            const { headerRow, clientCol, amountCol, approvalDateCol } = phase1.config;
+            let ntsCreditCardSales = 0;
+
+            if (upload.rawData.length > 0 && headerRow !== null && clientCol !== null && amountCol !== null && approvalDateCol !== null) {
+                const originalDataBody = upload.rawData.slice(headerRow + 1);
+                originalDataBody.forEach(row => {
+                    const clientName = row[clientCol];
+                    if (row && typeof clientName === 'string' && clientName.includes('신용카드') && !clientName.includes('합계') && this.parseYearMonth(row[approvalDateCol])) {
+                        const amount = parseFloat(String(row[amountCol]).replace(/,/g, '')) || 0;
+                        ntsCreditCardSales += amount;
+                    }
+                });
+            }
+            
+            // CHANGED: Corrected reference data calculation
+            const userCreditCardSales = config.offlineCardSales || 0;
+            const userCashReceiptSales = finalResult.composition.hyunGwa;
+            const userOtherSales = finalResult.composition.kaGwa + finalResult.composition.geonByeol + finalResult.composition.kaGwaSeonbul;
+
+            return { ntsOnlineSales, ntsCashReceiptSales, ntsCreditCardSales, userCreditCardSales, userCashReceiptSales, userOtherSales };
+        },
+        generateExcel(nameMap = new Map()) {
+            const state = AppState.getState();
+            const { phase4, phase5 } = state.phases;
+            const { deductFrom } = phase5.config;
+
+            // --- Sheet 1: 입력내용상세 ---
+            const ws1_data = [['거래처명', '월', '카과', '현과', '건별', '카과(선불)', '합계']];
+            const grandTotals = { kaGwa: 0, hyunGwa: 0, geonByeol: 0, kaGwaSeonbul: 0, total: 0 };
+
+            Object.entries(phase4.clientData).forEach(([clientName, clientData]) => {
+                if (!clientData.isVerified) return;
+                const monthlyTotals = {};
+                (clientData.vendors || []).forEach(vendor => {
+                    vendor.items.forEach(item => {
+                        Object.entries(item.monthlyAmounts).forEach(([month, amount]) => {
+                            if (!monthlyTotals[month]) {
+                                monthlyTotals[month] = { kaGwa: 0, hyunGwa: 0, geonByeol: 0, kaGwaSeonbul: 0 };
+                            }
+                            if(item.type === '카과') monthlyTotals[month].kaGwa += amount;
+                            else if(item.type === '현과') monthlyTotals[month].hyunGwa += amount;
+                            else if(item.type === '건별') monthlyTotals[month].geonByeol += amount;
+                            else if(item.type === '카과(선불)') monthlyTotals[month].kaGwaSeonbul += amount;
+                        });
+                    });
+                });
+                
+                let clientTotal = 0;
+                Object.entries(monthlyTotals).sort().forEach(([month, data]) => {
+                    const monthTotal = data.kaGwa + data.hyunGwa + data.geonByeol + data.kaGwaSeonbul;
+                    clientTotal += monthTotal;
+                    ws1_data.push([clientName, month, data.kaGwa || 0, data.hyunGwa || 0, data.geonByeol || 0, data.kaGwaSeonbul || 0, monthTotal]);
+                });
+                const clientTotalRow = { kaGwa: 0, hyunGwa: 0, geonByeol: 0, kaGwaSeonbul: 0 };
+                Object.values(monthlyTotals).forEach(data => {
+                    clientTotalRow.kaGwa += data.kaGwa;
+                    clientTotalRow.hyunGwa += data.hyunGwa;
+                    clientTotalRow.geonByeol += data.geonByeol;
+                    clientTotalRow.kaGwaSeonbul += data.kaGwaSeonbul;
+                });
+                ws1_data.push([`${clientName} 합계`, '', clientTotalRow.kaGwa, clientTotalRow.hyunGwa, clientTotalRow.geonByeol, clientTotalRow.kaGwaSeonbul, clientTotal]);
+                
+                grandTotals.kaGwa += clientTotalRow.kaGwa;
+                grandTotals.hyunGwa += clientTotalRow.hyunGwa;
+                grandTotals.geonByeol += clientTotalRow.geonByeol;
+                grandTotals.kaGwaSeonbul += clientTotalRow.kaGwaSeonbul;
+                grandTotals.total += clientTotal;
+            });
+            ws1_data.push([]); // Spacer row
+            ws1_data.push(['총합계', '', grandTotals.kaGwa, grandTotals.hyunGwa, grandTotals.geonByeol, grandTotals.kaGwaSeonbul, grandTotals.total]);
+
+            const ws1 = XLSX.utils.aoa_to_sheet(ws1_data);
+            
+            // --- Sheet 2: 매출업로드 양식 ---
+            const kaGwaData = [['카과영역'],['거래일', '업체명', '매출금액', '적요']];
+            const geonByeolData = [['건별영역'],['거래일', '업체명', '매출금액', '적요']];
+            const kaGwaSeonbulData = [['카과(선불)영역'],['거래일', '업체명', '매출금액', '적요']];
+
+            Object.entries(phase4.clientData).forEach(([originalClientName, clientData]) => {
+                 if (!clientData.isVerified) return;
+
+                const finalClientName = nameMap.get(originalClientName) || originalClientName;
+
+                (clientData.vendors || []).forEach(vendor => {
+                    const monthlyAggregates = {};
+                     vendor.items.forEach(item => {
+                        Object.entries(item.monthlyAmounts).forEach(([month, amount]) => {
+                            if (!monthlyAggregates[month]) {
+                                monthlyAggregates[month] = { kaGwa: 0, hyunGwa: 0, geonByeol: 0, kaGwaSeonbul: 0 };
+                            }
+                            if(item.type === '카과') monthlyAggregates[month].kaGwa += amount;
+                            else if(item.type === '현과') monthlyAggregates[month].hyunGwa += amount;
+                            else if(item.type === '건별') monthlyAggregates[month].geonByeol += amount;
+                            else if(item.type === '카과(선불)') monthlyAggregates[month].kaGwaSeonbul += amount;
+                        });
+                    });
+
+                    Object.entries(monthlyAggregates).sort().forEach(([month, data]) => {
+                        const transactionDate = `${month}-01`;
+                        const description = `${vendor.name} ${month.slice(5,7)}월`;
+                        let kaGwaAmount = 0;
+                        let geonByeolAmount = 0;
+
+                        if (deductFrom === 'kaGwa') {
+                            kaGwaAmount = data.kaGwa + data.hyunGwa;
+                            geonByeolAmount = data.geonByeol;
+                        } else { // deductFrom === 'geonByeol'
+                            kaGwaAmount = data.kaGwa;
+                            geonByeolAmount = data.geonByeol + data.hyunGwa;
+                        }
+                        
+                        if (kaGwaAmount !== 0) kaGwaData.push([transactionDate, finalClientName, kaGwaAmount, description]);
+                        if (geonByeolAmount !== 0) geonByeolData.push([transactionDate, finalClientName, geonByeolAmount, description]);
+                        if (data.kaGwaSeonbul !== 0) kaGwaSeonbulData.push([transactionDate, finalClientName, data.kaGwaSeonbul, description]);
+                    });
+                });
+            });
+
+            const ws2 = XLSX.utils.aoa_to_sheet([]);
+            XLSX.utils.sheet_add_aoa(ws2, kaGwaData, { origin: 'A1' });
+            XLSX.utils.sheet_add_aoa(ws2, geonByeolData, { origin: 'F1' });
+            XLSX.utils.sheet_add_aoa(ws2, kaGwaSeonbulData, { origin: 'K1' });
+
+            // --- Workbook creation and styling ---
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws1, "입력내용상세");
+            XLSX.utils.book_append_sheet(wb, ws2, "매출업로드 양식");
+            
+            const moneyFormat = '#,##0';
+            const headerStyle = { font: { bold: true }, fill: { fgColor: { rgb: "FFFDE99A" } }, alignment: { horizontal: 'center', vertical: 'center'} };
+            const totalStyle = { font: { bold: true }, fill: { fgColor: { rgb: "FFD3D3D3" } } };
+
+            // Style Sheet 1
+            const ws1Cols = [ {wch:30}, {wch:12}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:18} ];
+            ws1['!cols'] = ws1Cols;
+            Object.keys(ws1).forEach(cellAddress => {
+                if (cellAddress[0] === '!') return;
+                const cell = ws1[cellAddress];
+                const { c, r } = XLSX.utils.decode_cell(cellAddress);
+                const cellStyle = JSON.parse(JSON.stringify(cell.s || {}));
+
+                if (r === 0) { Object.assign(cellStyle, headerStyle); }
+                if (c >= 2 && r > 0 && typeof cell.v === 'number') {
+                    cell.t = 'n';
+                    cellStyle.numFmt = moneyFormat;
+                }
+                if(ws1_data[r] && (ws1_data[r][0].includes('합계'))) {
+                    Object.assign(cellStyle, totalStyle);
+                }
+                if (Object.keys(cellStyle).length > 0) cell.s = cellStyle;
+            });
+
+            // Style Sheet 2
+            const ws2Cols = [ {wch:12}, {wch:25}, {wch:15}, {wch:30}, {wch:5}, {wch:12}, {wch:25}, {wch:15}, {wch:30}, {wch:5}, {wch:12}, {wch:25}, {wch:15}, {wch:30} ];
+            ws2['!cols'] = ws2Cols;
+            Object.keys(ws2).forEach(cellAddress => {
+                if (cellAddress[0] === '!') return;
+                const cell = ws2[cellAddress];
+                const { c, r } = XLSX.utils.decode_cell(cellAddress);
+                const cellStyle = JSON.parse(JSON.stringify(cell.s || {}));
+
+                if (r === 0 || r === 1) { Object.assign(cellStyle, headerStyle); }
+                if ('CHM'.includes(XLSX.utils.encode_col(c)) && r > 1) { 
+                     if(typeof cell.v === 'number') {
+                        cell.t = 'n'; 
+                        cellStyle.numFmt = moneyFormat; 
+                    }
+                }
+                if (Object.keys(cellStyle).length > 0) cell.s = cellStyle;
+            });
+
+            const workInfo = AppState.getState().phases.phase2.config.workInfo;
+            const filename = `업로드용엑셀_${workInfo.clientName}_${workInfo.workYear}_${workInfo.workPeriod}.xlsx`;
+            XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary', cellStyles: true });
+        }
+    };
+
+    // --- PDF Generation Functions ---
+    function showPdfPreview(areaId) {
+        const originalElement = document.getElementById(areaId);
+        if (!originalElement) return;
+
+        const contentToPreview = originalElement.cloneNode(true);
+        contentToPreview.style.backgroundColor = 'white';
+        contentToPreview.querySelectorAll('*').forEach(el => el.style.color = '#111827');
+        contentToPreview.querySelectorAll('button').forEach(btn => btn.remove());
+        
+        const previewBody = document.getElementById('preview-body');
+        previewBody.innerHTML = '';
+        previewBody.appendChild(contentToPreview);
+        document.getElementById('preview-modal').style.display = 'flex';
+    }
+
+    function closePreviewModal() {
+        document.getElementById('preview-modal').style.display = 'none';
+        document.getElementById('preview-body').innerHTML = '';
+    }
+
+    async function generatePdfFromPreview() {
+        const modalActions = document.getElementById('modal-actions');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const previewBody = document.getElementById('preview-body');
+        const contentToPrint = previewBody.querySelector(':first-child');
+        
+        if (!contentToPrint) return;
+
+        modalActions.style.display = 'none';
+        loadingSpinner.style.display = 'block';
+
+        const state = AppState.getState();
+        const workInfo = state.phases.phase2.config.workInfo;
+        const filename = `매출분석_${workInfo.clientName}_${workInfo.workYear}_${workInfo.workPeriod}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+        try {
+            const canvas = await html2canvas(contentToPrint, {
+                scale: 2,
+                useCORS: true,
+                scrollX: 0,
+                scrollY: -window.scrollY
+            });
+            
+            const imgData = canvas.toDataURL('image/jpeg', 0.98);
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'pt',
+                format: 'a4'
+            });
+            
+            const pdfWidth = doc.internal.pageSize.getWidth();
+            const pdfHeight = doc.internal.pageSize.getHeight();
+            const imgProps = doc.getImageProperties(imgData);
+            const imgRatio = imgProps.width / imgProps.height;
+            let finalImgWidth, finalImgHeight;
+
+            if (imgRatio > (pdfWidth / pdfHeight)) {
+                finalImgWidth = pdfWidth - 40; // Add some margin
+                finalImgHeight = finalImgWidth / imgRatio;
+            } else {
+                finalImgHeight = pdfHeight - 40; // Add some margin
+                finalImgWidth = finalImgHeight * imgRatio;
+            }
+            
+            const xPos = (pdfWidth - finalImgWidth) / 2;
+            const yPos = (pdfHeight - finalImgHeight) / 2;
+
+            doc.addImage(imgData, 'JPEG', xPos, yPos, finalImgWidth, finalImgHeight);
+            doc.save(filename);
+
+        } catch (error) {
+            console.error("PDF 생성 중 오류 발생:", error);
+            alert("PDF를 생성하는 중에 오류가 발생했습니다. 콘솔을 확인해주세요.");
+        } finally {
+            loadingSpinner.style.display = 'none';
+            modalActions.style.display = 'block';
+            closePreviewModal();
+        }
+    }
+
+
+    // --- 앱 초기화 ---
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            await DBManager.init();
+            AppState.init();
+            UIRenderer.init();
+            UIRenderer.render();
+        } catch (error) {
+            console.error("앱 초기화 실패:", error);
+            document.body.innerHTML = '<div class="p-8 text-center text-red-600">앱을 초기화하는 데 실패했습니다. 브라우저가 IndexedDB를 지원하지 않거나 비공개 모드로 실행 중일 수 있습니다.</div>';
+        }
+    });
+  </script>
+</body>
+</html>
+
