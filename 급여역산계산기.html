@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>급여 역산 계산기 (실수령액 기준)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        /* 숫자 입력 필드에서 위/아래 화살표 제거 */
+        input[type='number']::-webkit-inner-spin-button,
+        input[type='number']::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type='number'] {
+            -moz-appearance: textfield;
+        }
+        .result-table th, .result-table td {
+            padding: 12px 16px;
+            text-align: left;
+        }
+        .result-table th {
+            width: 40%;
+        }
+        /* --- PDF 미리보기 및 로딩 모달 스타일 --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+            position: relative;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .modal-body {
+            /* PDF로 변환될 내용이 들어갈 곳 */
+        }
+        #loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen py-12">
+
+    <!-- PDF 미리보기 모달 -->
+    <div id="preview-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="text-xl font-bold text-gray-800">PDF 미리보기</h2>
+                <div id="modal-actions">
+                     <button onclick="generatePdfFromPreview()" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">확인 및 저장</button>
+                     <button onclick="closePreviewModal()" class="ml-2 px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">취소</button>
+                </div>
+            </div>
+            <div id="preview-body" class="modal-body">
+                <!-- 미리보기 내용이 여기에 삽입됩니다. -->
+            </div>
+            <div id="loading-spinner" style="display: none;">
+                <div class="text-center">
+                    <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-600">PDF 파일 생성 중...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="w-full max-w-4xl mx-auto p-4">
+        <div class="bg-white rounded-2xl shadow-lg p-8">
+            <header class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800">급여 역산 계산기</h1>
+                <p class="text-gray-500 mt-2">목표 실수령액을 입력하시면, 세전 급여를 계산해 드립니다.</p>
+            </header>
+
+            <main>
+                <!-- 1단계: 필수 정보 입력 -->
+                <section id="step1" class="mb-8">
+                    <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-blue-500 pb-2 mb-6">1. 필수 정보 입력</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label for="targetNetPay" class="block text-sm font-medium text-gray-600 mb-1">목표 실수령액 (원)</label>
+                            <input type="text" id="targetNetPay" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="예: 3,500,000" oninput="formatNumber(this)">
+                        </div>
+                        <div>
+                            <label for="dependents" class="block text-sm font-medium text-gray-600 mb-1">부양가족 수 (본인 포함)</label>
+                            <input type="number" id="dependents" value="1" min="1" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        </div>
+                        <div>
+                            <label for="taxYearSelect" class="block text-sm font-medium text-gray-600 mb-1">적용 세액표</label>
+                            <select id="taxYearSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                                <option value="간이세액표_2024.csv" selected>2024년 귀속</option>
+                                <option value="간이세액표_2023.csv">2023년 귀속</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <h3 class="text-lg font-medium text-gray-600 mb-3">비과세 항목 (월 기준)</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <input type="text" id="nonTaxableMeal" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="식대 (최대 20만)" oninput="formatNumber(this)">
+                            <input type="text" id="nonTaxableCar" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="자가운전보조금 (최대 20만)" oninput="formatNumber(this)">
+                            <input type="text" id="nonTaxableChild" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="육아수당 (만 8세 이하, 최대 20만)" oninput="formatNumber(this)">
+                            <input type="text" id="nonTaxableRAndD" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="연구인력개발비 (최대 20만)" oninput="formatNumber(this)">
+                            <input type="text" id="nonTaxableOther" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="기타 비과세" oninput="formatNumber(this)">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2단계: 공제 방식 상세 설정 -->
+                <section id="step2" class="mb-8">
+                    <details class="bg-gray-50 p-4 rounded-lg">
+                        <summary class="text-xl font-semibold text-gray-700 cursor-pointer">2. 4대 보험 및 기타 공제 설정 (선택)</summary>
+                        <div class="mt-6 space-y-6" id="insuranceSettings">
+                            <!-- 설정 항목이 JS로 여기에 동적 생성됩니다 -->
+                        </div>
+                    </details>
+                </section>
+
+                <!-- 계산 실행 버튼 -->
+                <div class="text-center mb-10">
+                    <button id="calculateBtn" class="bg-blue-600 text-white font-bold py-4 px-10 rounded-lg hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-lg">
+                        세전 급여 계산하기
+                    </button>
+                </div>
+                
+                <!-- 로딩 스피너 및 오류 메시지 -->
+                <div id="status" class="hidden text-center my-4">
+                    <div id="loading" class="hidden">
+                        <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="mt-2 text-gray-600">최적의 세전 급여를 찾고 있습니다...</p>
+                    </div>
+                    <div id="error" class="hidden p-4 bg-red-100 text-red-700 rounded-lg">
+                        <p id="errorMessage"></p>
+                    </div>
+                </div>
+
+                <!-- 3단계: 계산 결과 -->
+                <section id="step3" class="hidden">
+                    <div class="flex justify-between items-center border-b-2 border-blue-500 pb-2 mb-6">
+                        <h2 class="text-2xl font-semibold text-gray-700">3. 계산 결과</h2>
+                        <button onclick="showPreview('result-content')" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition">
+                            PDF 저장
+                        </button>
+                    </div>
+                    <div id="result-content" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                        <div class="p-6 bg-blue-50">
+                            <p class="text-lg text-gray-600">요청하신 실수령액 <strong id="resultTargetNet" class="text-blue-600"></strong>원을 지급하기 위한 세전 급여는 다음과 같습니다.</p>
+                            <p class="text-4xl font-bold text-gray-800 mt-2" id="finalGrossPay">0원</p>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-200">
+                                <!-- 급여 내역 -->
+                            <div class="bg-white p-6">
+                                <h3 class="text-xl font-bold text-green-600 mb-4">급여 내역 (지급)</h3>
+                                <table class="w-full text-sm result-table">
+                                    <tbody>
+                                        <tr>
+                                            <th class="font-medium text-gray-600">세전 급여 (과세 대상)</th>
+                                            <td class="font-semibold text-gray-800 text-right" id="resultTaxablePay">0원</td>
+                                        </tr>
+                                        <tr>
+                                            <th class="font-medium text-gray-600">비과세 소득</th>
+                                            <td class="font-semibold text-gray-800 text-right" id="resultNonTaxable">0원</td>
+                                        </tr>
+                                        <tr class="bg-green-50">
+                                            <th class="font-bold text-green-700">총 지급액 (세전)</th>
+                                            <td class="font-bold text-lg text-green-700 text-right" id="resultTotalPay">0원</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- 공제 내역 -->
+                            <div class="bg-white p-6">
+                                <h3 class="text-xl font-bold text-red-600 mb-4">공제 내역</h3>
+                                <table class="w-full text-sm result-table">
+                                    <tbody>
+                                        <tr>
+                                            <th>
+                                                <div id="thPension" class="font-medium text-gray-600"></div>
+                                                <div id="pensionBaseInfo" class="text-xs text-gray-400 font-normal"></div>
+                                            </th>
+                                            <td class="font-semibold text-gray-800 text-right align-top" id="deductPension">0원</td>
+                                        </tr>
+                                        <tr>
+                                            <th>
+                                                <div id="thHealth" class="font-medium text-gray-600"></div>
+                                                <div id="healthBaseInfo" class="text-xs text-gray-400 font-normal"></div>
+                                            </th>
+                                            <td class="font-semibold text-gray-800 text-right align-top" id="deductHealth">0원</td>
+                                        </tr>
+                                        <tr><th id="thCare" class="font-medium text-gray-600"></th><td class="font-semibold text-gray-800 text-right" id="deductCare">0원</td></tr>
+                                        <tr><th id="thEmployment" class="font-medium text-gray-600"></th><td class="font-semibold text-gray-800 text-right" id="deductEmployment">0원</td></tr>
+                                        <tr><th class="font-medium text-gray-600">기타 공제</th><td class="font-semibold text-gray-800 text-right" id="deductOther">0원</td></tr>
+                                        <tr><th class="font-medium text-gray-600">소득세 (간이세액)</th><td class="font-semibold text-gray-800 text-right" id="deductIncomeTax">0원</td></tr>
+                                        <tr><th class="font-medium text-gray-600">지방소득세 (소득세의 10%)</th><td class="font-semibold text-gray-800 text-right" id="deductLocalTax">0원</td></tr>
+                                        <tr class="bg-red-50">
+                                            <th class="font-bold text-red-700">총 공제액</th>
+                                            <td class="font-bold text-lg text-red-700 text-right" id="resultTotalDeduction">0원</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="p-6 bg-gray-50 text-center">
+                            <p class="text-lg font-medium text-gray-600">차인 지급액 (실수령액)</p>
+                            <p class="text-3xl font-bold text-blue-600 mt-1" id="resultFinalNetPay">0원</p>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+<script>
+// --- 데이터 설정 영역 ---
+const SETTINGS = {
+    insuranceRates: {
+        nationalPension: { 
+            name: '국민연금', 
+            rate: 0.045, 
+            displayRate: '4.5%',
+            minMonthlySalary: 400000, 
+            maxMonthlySalary: 6370000 
+        },
+        healthInsurance: { 
+            name: '건강보험', 
+            rate: 0.03545, 
+            displayRate: '3.545%',
+            longTermCareRate: 0.1295, 
+            longTermCareDisplayRate: '12.95%',
+            minMonthlySalary: 279266, 
+            maxMonthlySalary: 127056982 
+        },
+        employmentInsurance: { 
+            name: '고용보험', 
+            rate: 0.009,
+            displayRate: '0.9%'
+        }
+    },
+    nonTaxableLimits: { meal: 200000, car: 200000, child: 200000, RAndD: 200000 },
+    // 간이세액표는 CSV 파일로부터 동적으로 로드됩니다.
+    simplifiedTaxTable: [] 
+};
+
+// --- 애플리케이션 상태 ---
+let isTaxTableReady = false;
+
+// --- 애플리케이션 로직 ---
+document.addEventListener('DOMContentLoaded', function() {
+    const taxYearSelect = document.getElementById('taxYearSelect');
+    
+    // 페이지 로드 시 기본 선택된 파일 로드
+    loadTaxTable(); 
+
+    // 연도 선택 변경 시 파일 다시 로드
+    taxYearSelect.addEventListener('change', loadTaxTable);
+
+    const insuranceSettingsContainer = document.getElementById('insuranceSettings');
+    function createSettingControl(id, name, displayRate, limits = {}, rateLabelPrefix = '근로자') {
+        const div = document.createElement('div');
+        div.className = 'p-4 border rounded-md bg-white';
+        div.innerHTML = `
+            <p class="font-bold text-lg text-gray-800">${name}</p>
+            <div class="flex items-center space-x-4 mt-3">
+                <input type="radio" id="${id}Rate" name="${id}Type" value="rate" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" checked>
+                <label for="${id}Rate" class="text-sm">요율 기준 (${rateLabelPrefix} ${displayRate})</label>
+                <input type="radio" id="${id}Fixed" name="${id}Type" value="fixed" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500">
+                <label for="${id}Fixed" class="text-sm">고정 금액 (EDI)</label>
+            </div>
+            <div id="${id}RateOptions" class="mt-4 space-y-2">
+                ${Object.entries(limits).map(([key, value]) => `
+                    <div class="flex items-center justify-between text-sm">
+                        <label for="${id}${key}" class="text-gray-600">${key === 'min' ? '최저 기준소득월액' : '최고 기준소득월액'}</label>
+                        <input type="text" id="${id}${key}" value="${value.toLocaleString()}" class="w-1/2 p-2 border rounded-md text-right" oninput="formatNumber(this)">
+                    </div>
+                `).join('')}
+            </div>
+            <div id="${id}FixedOptions" class="mt-4 hidden">
+                <input type="text" id="${id}FixedAmount" class="w-full p-2 border rounded-md" placeholder="월 고지된 금액 입력" oninput="formatNumber(this)">
+            </div>
+        `;
+        insuranceSettingsContainer.appendChild(div);
+        div.querySelectorAll(`input[name="${id}Type"]`).forEach(radio => {
+            radio.addEventListener('change', () => toggleOptions(id));
+        });
+    }
+    
+    function createFixedDeductionControl(id, name, placeholder) {
+        const div = document.createElement('div');
+        div.className = 'p-4 border rounded-md bg-white';
+        div.innerHTML = `
+            <p class="font-bold text-lg text-gray-800">${name}</p>
+            <div class="mt-3">
+                <label for="${id}" class="text-sm text-gray-600">고정 금액 (임의)</label>
+                <input type="text" id="${id}" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="${placeholder}" value="0" oninput="formatNumber(this)">
+            </div>
+        `;
+        insuranceSettingsContainer.appendChild(div);
+    }
+    
+    function toggleOptions(id) {
+        const type = document.querySelector(`input[name="${id}Type"]:checked`).value;
+        document.getElementById(`${id}RateOptions`).style.display = type === 'rate' ? 'block' : 'none';
+        document.getElementById(`${id}FixedOptions`).style.display = type === 'fixed' ? 'block' : 'none';
+    }
+
+    const { nationalPension, healthInsurance, employmentInsurance } = SETTINGS.insuranceRates;
+    createSettingControl('pension', nationalPension.name, nationalPension.displayRate, { min: nationalPension.minMonthlySalary, max: nationalPension.maxMonthlySalary });
+    createSettingControl('health', healthInsurance.name, healthInsurance.displayRate, { min: healthInsurance.minMonthlySalary, max: healthInsurance.maxMonthlySalary });
+    createSettingControl('care', '장기요양보험', healthInsurance.longTermCareDisplayRate, {}, '건강보험료의');
+    createSettingControl('employment', employmentInsurance.name, employmentInsurance.displayRate);
+    createFixedDeductionControl('otherDeduction', '기타 공제', '0');
+
+    document.getElementById('calculateBtn').addEventListener('click', runCalculation);
+    updateResultTitles();
+});
+
+// --- 데이터 로딩 및 파싱 함수 ---
+async function loadTaxTable() {
+    isTaxTableReady = false; // 로딩 시작 시 상태 초기화
+    hideStatus();
+    const fileName = document.getElementById('taxYearSelect').value;
+    
+    try {
+        const response = await fetch('./' + fileName); // Fix: Explicitly define as relative path
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const csvText = await response.text();
+        parseCsvData(csvText);
+        console.log(`${fileName} 로딩 및 파싱 완료.`);
+    } catch (error) {
+        console.error(`${fileName} 파일을 불러오는데 실패했습니다:`, error);
+        showError(`${fileName} 파일을 불러올 수 없습니다. 파일 이름과 위치를 확인해주세요.`);
+    }
+}
+
+function parseCsvData(csvText) {
+    try {
+        const rows = csvText.split('\n').slice(5); 
+        SETTINGS.simplifiedTaxTable = rows.map(row => {
+            const columns = row.split(',');
+            if (columns.length < 13) return null;
+            
+            const taxValues = columns.slice(2, 13).map(val => parseInt(val.trim(), 10) || 0);
+
+            return {
+                min: parseInt(columns[0].trim(), 10) * 1000,
+                max: parseInt(columns[1].trim(), 10) * 1000,
+                tax: taxValues
+            };
+        }).filter(row => row && !isNaN(row.min));
+        
+        if (SETTINGS.simplifiedTaxTable.length < 1) {
+            throw new Error("CSV 파싱 후 유효한 데이터가 없습니다. 파일 형식을 확인해주세요.");
+        }
+        
+        isTaxTableReady = true;
+
+        // 연도 변경 시, 결과가 이미 있다면 자동 재계산
+        if (!document.getElementById('step3').classList.contains('hidden')) {
+            runCalculation();
+        }
+
+    } catch (parseError) {
+        console.error('CSV 데이터를 파싱하는 데 실패했습니다:', parseError);
+        isTaxTableReady = false;
+        showError('세액표 데이터 파싱에 실패했습니다. 올바른 CSV 파일인지 확인해주세요.');
+    }
+}
+
+
+// --- 유틸리티 함수 ---
+function formatNumber(input) {
+    let value = input.value.replace(/,/g, '');
+    input.value = isNaN(value) || value === '' ? '' : parseInt(value, 10).toLocaleString();
+}
+function parseNumber(str) {
+    return parseInt(String(str).replace(/,/g, ''), 10) || 0;
+}
+
+function showError(message) {
+    const statusEl = document.getElementById('status');
+    const errorEl = document.getElementById('error');
+    const loadingEl = document.getElementById('loading');
+    
+    statusEl.classList.remove('hidden');
+    loadingEl.classList.add('hidden');
+    errorEl.classList.remove('hidden');
+    document.getElementById('errorMessage').textContent = message;
+}
+
+function hideStatus() {
+    document.getElementById('status').classList.add('hidden');
+    document.getElementById('error').classList.add('hidden');
+    document.getElementById('loading').classList.add('hidden');
+}
+
+
+// --- 핵심 계산 로직 ---
+function getDeductions(grossPay, dependents) {
+    const nonTaxableMeal = Math.min(parseNumber(document.getElementById('nonTaxableMeal').value), SETTINGS.nonTaxableLimits.meal);
+    const nonTaxableCar = Math.min(parseNumber(document.getElementById('nonTaxableCar').value), SETTINGS.nonTaxableLimits.car);
+    const nonTaxableChild = Math.min(parseNumber(document.getElementById('nonTaxableChild').value), SETTINGS.nonTaxableLimits.child);
+    const nonTaxableRAndD = Math.min(parseNumber(document.getElementById('nonTaxableRAndD').value), SETTINGS.nonTaxableLimits.RAndD);
+    const nonTaxableOther = parseNumber(document.getElementById('nonTaxableOther').value);
+
+    const totalNonTaxable = nonTaxableMeal + nonTaxableCar + nonTaxableChild + nonTaxableRAndD + nonTaxableOther;
+    const taxablePay = Math.max(0, grossPay - totalNonTaxable);
+
+    let pension = 0, health = 0, care = 0, employment = 0;
+    let pensionBase = null, healthBase = null;
+    const { nationalPension, healthInsurance, employmentInsurance } = SETTINGS.insuranceRates;
+
+    if (document.querySelector('input[name="pensionType"]:checked').value === 'rate') {
+        pensionBase = Math.max(parseNumber(document.getElementById('pensionmin').value), Math.min(taxablePay, parseNumber(document.getElementById('pensionmax').value)));
+        const roundedPensionBase = Math.floor(pensionBase / 1000) * 1000;
+        pension = Math.floor((roundedPensionBase * nationalPension.rate) / 10) * 10;
+    } else {
+        pension = parseNumber(document.getElementById('pensionFixedAmount').value);
+    }
+    
+    if (document.querySelector('input[name="healthType"]:checked').value === 'rate') {
+        healthBase = Math.max(parseNumber(document.getElementById('healthmin').value), Math.min(taxablePay, parseNumber(document.getElementById('healthmax').value)));
+        health = Math.floor(healthBase * healthInsurance.rate / 10) * 10;
+    } else {
+        health = parseNumber(document.getElementById('healthFixedAmount').value);
+    }
+
+    if (document.querySelector('input[name="careType"]:checked').value === 'rate') {
+        care = Math.floor(health * healthInsurance.longTermCareRate / 10) * 10;
+    } else {
+        care = parseNumber(document.getElementById('careFixedAmount').value);
+    }
+
+    if (document.querySelector('input[name="employmentType"]:checked').value === 'rate') {
+        employment = Math.floor(taxablePay * employmentInsurance.rate / 10) * 10;
+    } else {
+        employment = parseNumber(document.getElementById('employmentFixedAmount').value);
+    }
+
+    const otherDeduction = parseNumber(document.getElementById('otherDeduction').value);
+
+    let incomeTax = 0;
+    const taxablePayInWon = taxablePay; 
+    const dependentIndex = Math.max(0, Math.min(dependents - 1, 10));
+
+    if (taxablePayInWon >= 10000000) {
+        const taxAt10MData = SETTINGS.simplifiedTaxTable.find(r => r.max === 10000000);
+        const taxAt10M = taxAt10MData ? taxAt10MData.tax[dependentIndex] : 1516850;
+
+        if (taxablePayInWon <= 14000000) {
+            incomeTax = taxAt10M + ((taxablePayInWon - 10000000) * 0.98 * 0.35) + 25000;
+        } else if (taxablePayInWon <= 28000000) {
+            incomeTax = taxAt10M + 1397000 + ((taxablePayInWon - 14000000) * 0.98 * 0.38);
+        } else if (taxablePayInWon <= 30000000) {
+            incomeTax = taxAt10M + 6610600 + ((taxablePayInWon - 28000000) * 0.98 * 0.40);
+        } else if (taxablePayInWon <= 45000000) {
+            incomeTax = taxAt10M + 7394600 + ((taxablePayInWon - 30000000) * 0.40);
+        } else if (taxablePayInWon <= 87000000) {
+            incomeTax = taxAt10M + 13394600 + ((taxablePayInWon - 45000000) * 0.42);
+        } else {
+            incomeTax = taxAt10M + 31034600 + ((taxablePayInWon - 87000000) * 0.45);
+        }
+    } else {
+        const taxData = SETTINGS.simplifiedTaxTable.find(row => taxablePayInWon >= row.min && taxablePayInWon < row.max);
+        incomeTax = (taxData && taxData.tax[dependentIndex] !== undefined) ? taxData.tax[dependentIndex] : 0;
+    }
+    incomeTax = Math.floor(incomeTax / 10) * 10;
+
+    const localTax = Math.floor(incomeTax * 0.1 / 10) * 10;
+    const totalDeduction = pension + health + care + employment + incomeTax + localTax + otherDeduction;
+    
+    return { grossPay, nonTaxable: totalNonTaxable, taxable: taxablePay, pension, health, care, employment, otherDeduction, incomeTax, localTax, totalDeduction, netPay: grossPay - totalDeduction, pensionBase, healthBase };
+}
+
+function findGrossPay(targetNetPay, dependents) {
+    let grossGuess = targetNetPay * 1.15;
+    let lastGuess = 0;
+    
+    for (let i = 0; i < 50; i++) {
+        let deductions = getDeductions(grossGuess, dependents);
+        let netPay = deductions.netPay;
+        let diff = targetNetPay - netPay;
+        
+        if (Math.abs(diff) < 10) return deductions;
+        if (Math.round(grossGuess) === Math.round(lastGuess)) return deductions;
+        
+        lastGuess = grossGuess;
+        let adjustment = diff * 0.9;
+        if (Math.abs(diff) < 1000) adjustment = diff;
+        grossGuess += adjustment;
+    }
+    return getDeductions(grossGuess, dependents);
+}
+
+
+// --- UI 업데이트 함수 ---
+function updateResultTitles() {
+    const { nationalPension, healthInsurance, employmentInsurance } = SETTINGS.insuranceRates;
+    document.getElementById('thPension').textContent = `${nationalPension.name} (${nationalPension.displayRate})`;
+    document.getElementById('thHealth').textContent = `${healthInsurance.name} (${healthInsurance.displayRate})`;
+    document.getElementById('thCare').textContent = `장기요양보험 (건강보험료의 ${healthInsurance.longTermCareDisplayRate})`;
+    document.getElementById('thEmployment').textContent = `${employmentInsurance.name} (${employmentInsurance.displayRate})`;
+}
+
+function runCalculation() {
+    if (!isTaxTableReady) {
+        showError('세액표 데이터가 아직 준비되지 않았습니다. 적용 세액표를 다시 선택하거나 페이지를 새로고침 해주세요.');
+        return;
+    }
+
+    const targetNetPay = parseNumber(document.getElementById('targetNetPay').value);
+    const dependents = parseNumber(document.getElementById('dependents').value);
+
+    if (targetNetPay <= 0 || dependents <= 0) {
+        alert('목표 실수령액과 부양가족 수를 정확히 입력해주세요.');
+        return;
+    }
+    const statusEl = document.getElementById('status');
+    const loadingEl = document.getElementById('loading');
+    const resultEl = document.getElementById('step3');
+    const calculateBtn = document.getElementById('calculateBtn');
+
+    hideStatus();
+    statusEl.classList.remove('hidden');
+    loadingEl.classList.remove('hidden');
+    resultEl.classList.add('hidden');
+    calculateBtn.disabled = true;
+    calculateBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    setTimeout(() => {
+        const result = findGrossPay(targetNetPay, dependents);
+        updateResultTitles();
+
+        document.getElementById('finalGrossPay').textContent = `${Math.round(result.grossPay).toLocaleString()}원`;
+        document.getElementById('resultTargetNet').textContent = `${targetNetPay.toLocaleString()}`;
+        document.getElementById('resultTaxablePay').textContent = `${result.taxable.toLocaleString()}원`;
+        document.getElementById('resultNonTaxable').textContent = `${result.nonTaxable.toLocaleString()}원`;
+        document.getElementById('resultTotalPay').textContent = `${Math.round(result.grossPay).toLocaleString()}원`;
+        
+        document.getElementById('deductPension').textContent = `${result.pension.toLocaleString()}원`;
+        document.getElementById('deductHealth').textContent = `${result.health.toLocaleString()}원`;
+        document.getElementById('deductCare').textContent = `${result.care.toLocaleString()}원`;
+        document.getElementById('deductEmployment').textContent = `${result.employment.toLocaleString()}원`;
+        document.getElementById('deductOther').textContent = `${result.otherDeduction.toLocaleString()}원`;
+        document.getElementById('deductIncomeTax').textContent = `${result.incomeTax.toLocaleString()}원`;
+        document.getElementById('deductLocalTax').textContent = `${result.localTax.toLocaleString()}원`;
+        document.getElementById('resultTotalDeduction').textContent = `${result.totalDeduction.toLocaleString()}원`;
+        document.getElementById('resultFinalNetPay').textContent = `${Math.round(result.netPay).toLocaleString()}원`;
+        
+        const pensionBaseInfo = document.getElementById('pensionBaseInfo');
+        if (result.pensionBase !== null) {
+            pensionBaseInfo.textContent = `(기준소득월액 ${result.pensionBase.toLocaleString()}원 적용)`;
+            pensionBaseInfo.classList.remove('hidden');
+        } else {
+            pensionBaseInfo.textContent = '';
+            pensionBaseInfo.classList.add('hidden');
+        }
+
+        const healthBaseInfo = document.getElementById('healthBaseInfo');
+        if (result.healthBase !== null) {
+            healthBaseInfo.textContent = `(기준소득월액 ${result.healthBase.toLocaleString()}원 적용)`;
+            healthBaseInfo.classList.remove('hidden');
+        } else {
+            healthBaseInfo.textContent = '';
+            healthBaseInfo.classList.add('hidden');
+        }
+
+        loadingEl.classList.add('hidden');
+        statusEl.classList.add('hidden');
+        resultEl.classList.remove('hidden');
+        calculateBtn.disabled = false;
+        calculateBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+        resultEl.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+}
+
+// --- PDF 생성 로직 ---
+const getEl = (id) => document.getElementById(id);
+
+function showPreview(areaId) {
+    const originalElement = getEl(areaId);
+    if (!originalElement) return;
+    const contentToPreview = originalElement.cloneNode(true);
+    
+    // 미리보기용 스타일 조정
+    contentToPreview.style.backgroundColor = 'white';
+    contentToPreview.querySelectorAll('*').forEach(el => el.style.color = '#111827');
+    
+    // PDF 제목 추가
+    const header = document.createElement('div');
+    header.className = 'text-center mb-6';
+    const targetNet = getEl('resultTargetNet').textContent;
+    const taxYearText = getEl('taxYearSelect').options[getEl('taxYearSelect').selectedIndex].text;
+    header.innerHTML = `<h1 class="text-2xl font-bold">급여 역산 계산 결과 (${taxYearText})</h1><p class="text-gray-600 mt-2">목표 실수령액: ${targetNet}원</p>`;
+    
+    const previewBody = getEl('preview-body');
+    previewBody.innerHTML = '';
+    previewBody.appendChild(header);
+    previewBody.appendChild(contentToPreview);
+    getEl('preview-modal').style.display = 'flex';
+}
+
+function closePreviewModal() {
+    getEl('preview-modal').style.display = 'none';
+    getEl('preview-body').innerHTML = '';
+}
+
+async function generatePdfFromPreview() {
+    const modalActions = getEl('modal-actions');
+    const loadingSpinner = getEl('loading-spinner');
+    const contentToPrint = getEl('preview-body');
+    
+    modalActions.style.display = 'none';
+    loadingSpinner.style.display = 'block';
+
+    const taxYearText = getEl('taxYearSelect').options[getEl('taxYearSelect').selectedIndex].text.replace(' 귀속', '');
+    const filename = `급여_역산_계산결과_${taxYearText}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+    try {
+        const canvas = await html2canvas(contentToPrint, {
+            scale: 2,
+            useCORS: true,
+            scrollX: 0,
+            scrollY: -window.scrollY
+        });
+        
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+            orientation: 'portrait',
+            unit: 'pt',
+            format: 'a4'
+        });
+        
+        const pdfWidth = doc.internal.pageSize.getWidth();
+        const pdfHeight = doc.internal.pageSize.getHeight();
+        const imgProps= doc.getImageProperties(imgData);
+        const imgWidth = imgProps.width;
+        const imgHeight = imgProps.height;
+        const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+
+        const finalImgWidth = imgWidth * ratio;
+        const finalImgHeight = imgHeight * ratio;
+        
+        const xPos = (pdfWidth - finalImgWidth) / 2;
+        const yPos = (pdfHeight - finalImgHeight) / 2;
+
+        doc.addImage(imgData, 'JPEG', xPos, yPos, finalImgWidth, finalImgHeight);
+        doc.save(filename);
+
+    } catch (error) {
+        console.error("PDF 생성 중 오류 발생:", error);
+        alert("PDF를 생성하는 중에 오류가 발생했습니다. 콘솔을 확인해주세요.");
+    } finally {
+        loadingSpinner.style.display = 'none';
+        modalActions.style.display = 'block';
+        closePreviewModal();
+    }
+}
+
+</script>
+</body>
+</html>
+
