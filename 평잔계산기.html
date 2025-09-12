@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>기간 평균잔액 계산기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS 라이브러리를 스타일링이 가능한 버전으로 변경 -->
+    <script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f8fafc; /* bg-slate-50 */
+        }
+        .table-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .table-container::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 4px;
+        }
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        .clickable-row:hover {
+            background-color: #dbeafe; /* blue-100 */
+            cursor: pointer;
+        }
+        .clickable-header:hover {
+            background-color: #bfdbfe; /* blue-200 */
+            cursor: pointer;
+        }
+        .selected-row, .selected-col {
+            background-color: #93c5fd !important; /* blue-300 */
+            color: #1e3a8a; /* blue-900 */
+        }
+        .selected-row td, .selected-row th {
+            color: #1e3a8a;
+        }
+        /* 계산 근거 테이블 스타일 */
+        .basis-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+        .basis-table th, .basis-table td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .basis-table th {
+            background-color: #f1f5f9; /* bg-slate-100 */
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            text-align: center;
+        }
+        .basis-table td:first-child { text-align: center; }
+    </style>
+</head>
+<body class="text-slate-800 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-7xl mx-auto bg-white rounded-xl shadow-2xl p-6 md:p-8 space-y-6">
+        <header class="mb-4 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-800">기간 평균잔액 계산기</h1>
+        </header>
+        
+        <main>
+            <!-- Calculation Area -->
+            <div id="calculation-area" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-center">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="start-date" class="block text-sm font-medium text-slate-500">평잔계산 시작일</label>
+                        <input type="date" id="start-date" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="end-date" class="block text-sm font-medium text-slate-500">평잔계산 종료일</label>
+                        <input type="date" id="end-date" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 items-end">
+                    <button id="calculate-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                        계산하기
+                    </button>
+                    <button id="excel-download-btn" class="hidden w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                        엑셀 다운로드
+                    </button>
+                </div>
+            </div>
+
+            <!-- 결과 표시 영역 디자인 변경 -->
+            <div id="result-area" class="hidden">
+                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6 p-6 bg-slate-50 rounded-lg border">
+                    <div class="text-center p-4 rounded-lg bg-white shadow-sm">
+                        <p class="text-sm font-semibold text-slate-500">총일수</p>
+                        <p id="result-total-days" class="text-xl font-bold text-slate-700 mt-1">-</p>
+                    </div>
+                    <div class="text-center p-4 rounded-lg bg-white shadow-sm">
+                        <p class="text-sm font-semibold text-slate-500">기초잔액</p>
+                        <p id="result-initial-balance" class="text-xl font-bold text-slate-700 mt-1">-</p>
+                    </div>
+                    <div class="text-center p-4 rounded-lg bg-white shadow-sm">
+                        <p class="text-sm font-semibold text-slate-500">최종잔액변동일자</p>
+                        <p id="result-last-change-date" class="text-xl font-bold text-slate-700 mt-1">-</p>
+                    </div>
+                     <div class="col-span-2 md:col-span-3 lg:col-span-2 grid grid-cols-2 gap-4">
+                        <div class="text-center p-4 rounded-lg bg-white shadow-sm">
+                            <p class="text-sm font-semibold text-slate-500">적수합계</p>
+                            <p id="result-sum-products" class="text-xl font-bold text-slate-700 mt-1">-</p>
+                        </div>
+                        <div class="text-center p-4 rounded-lg bg-indigo-50 border border-indigo-200 shadow-md">
+                            <p class="text-base font-bold text-indigo-800">평균잔액</p>
+                            <p id="result-average-balance" class="text-2xl font-extrabold text-indigo-700 mt-1">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Wizard and Paste Area -->
+            <div id="wizard-area" class="bg-slate-50 p-4 rounded-lg border border-dashed border-slate-300 mb-6 text-center">
+                 <p id="wizard-instruction" class="text-slate-600 text-lg">
+                    <span class="font-semibold text-indigo-600">1.</span> 엑셀에서 해당 범위를 복사해서 아래 미리보기 창에 붙여넣으세요.
+                </p>
+                <div id="wizard-actions" class="mt-4"></div>
+            </div>
+            
+            <div id="paste-area" class="min-h-[300px] bg-white rounded-lg p-4 flex flex-col items-center justify-center border-2 border-slate-300 hover:border-indigo-500 transition-all duration-300">
+                <div id="placeholder" class="text-center text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" />
+                    </svg>
+                    <p class="mt-2 font-semibold">이곳에 엑셀 데이터를 붙여넣으세요 (Ctrl+V)</p>
+                </div>
+                <div id="preview-container" class="hidden w-full h-full"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // DOM Elements
+        const pasteArea = document.getElementById('paste-area');
+        const placeholder = document.getElementById('placeholder');
+        const previewContainer = document.getElementById('preview-container');
+        const wizardInstruction = document.getElementById('wizard-instruction');
+        const wizardActions = document.getElementById('wizard-actions');
+        const calculationArea = document.getElementById('calculation-area');
+        const resultArea = document.getElementById('result-area');
+        const calculateBtn = document.getElementById('calculate-btn');
+        const excelDownloadBtn = document.getElementById('excel-download-btn');
+
+        // State
+        let tableData = [];
+        let wizardStep = 0;
+        let selectedItemIndex = -1;
+        let calculationDetails = [];
+        const config = {
+            headerRowIndex: -1,
+            initialBalanceRowIndex: -1,
+            dateColIndex: -1,
+            balanceColIndex: -1,
+            initialBalance: 0,
+            yearInfo: { type: null, year: null, yearRanges: [] }
+        };
+
+        // --- Event Listeners ---
+        pasteArea.addEventListener('paste', handlePaste);
+        calculateBtn.addEventListener('click', performCalculation);
+        excelDownloadBtn.addEventListener('click', downloadExcel);
+
+        // --- Main Functions ---
+        
+        function handlePaste(event) {
+            event.preventDefault();
+            const pastedText = (event.clipboardData || window.clipboardData).getData('text/plain');
+            if (pastedText.trim() === '') return;
+            placeholder.classList.add('hidden');
+            previewContainer.classList.remove('hidden');
+            tableData = pastedText.trim().split('\n').map(row => row.split('\t'));
+            renderTable();
+            startWizard();
+        }
+
+        function startWizard() {
+            wizardStep = 1;
+            runWizardStep();
+        }
+        
+        function advanceWizardStep() {
+            wizardStep++;
+            runWizardStep();
+        }
+        
+        function parseDateAsUTC(dateString) {
+            const cleanedString = String(dateString).split(' ')[0].replace(/\//g, '-');
+            const parts = cleanedString.split('-');
+            if (parts.length === 3) {
+                const year = parseInt(parts[0]);
+                const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+                const day = parseInt(parts[2]);
+                if (year > 1900 && month >= 0 && day > 0) {
+                   return new Date(Date.UTC(year, month, day));
+                }
+            }
+            return new Date(NaN);
+        }
+
+        function jsDateToExcelDate(date) {
+            const msInDay = 24 * 60 * 60 * 1000;
+            const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+            return (date.getTime() - excelEpoch.getTime()) / msInDay;
+        }
+
+        function runWizardStep() {
+            wizardActions.innerHTML = '';
+            removeTableInteractivity();
+            renderTable();
+
+            switch (wizardStep) {
+                case 1:
+                    wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">2.</span> 제목에 해당하는 <b class="text-rose-500">행</b>을 클릭하세요.`;
+                    makeRowsClickable(handleHeaderRowSelect);
+                    break;
+                case 2:
+                    wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">3.</span> 전기이월에 해당하는 <b class="text-rose-500">행</b>을 클릭하거나, 직접 입력하세요.`;
+                    
+                    const noBalanceBtn = document.createElement('button');
+                    noBalanceBtn.className = 'bg-slate-500 text-white px-4 py-2 rounded-lg hover:bg-slate-600';
+                    noBalanceBtn.textContent = '없음 (직접입력)';
+                    noBalanceBtn.onclick = () => {
+                         wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">3.</span> 기초잔액을 직접 입력하세요.`;
+                         wizardActions.innerHTML = '';
+                         removeTableInteractivity();
+                         renderTable();
+
+                         const balanceInput = document.createElement('input');
+                         balanceInput.type = 'number';
+                         balanceInput.placeholder = '예: 100000';
+                         balanceInput.className = 'rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2';
+                         
+                         const confirmBtn = document.createElement('button');
+                         confirmBtn.className = 'bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 ml-2';
+                         confirmBtn.textContent = '확인';
+                         
+                         confirmBtn.onclick = () => {
+                             if (balanceInput.value !== null && balanceInput.value.trim() !== '') {
+                                config.initialBalance = parseNumber(balanceInput.value);
+                                config.initialBalanceRowIndex = -1;
+                                advanceWizardStep();
+                            } else {
+                                alert('금액을 입력해주세요.');
+                            }
+                         };
+                         
+                         wizardActions.appendChild(balanceInput);
+                         wizardActions.appendChild(confirmBtn);
+                         balanceInput.focus();
+                    };
+                    wizardActions.appendChild(noBalanceBtn);
+                    makeRowsClickable(handleInitialBalanceRowSelect);
+                    break;
+                case 3:
+                    wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">4.</span> 날짜에 해당하는 <b class="text-rose-500">열</b>을 클릭하세요.`;
+                    makeHeadersClickable(handleDateColSelect);
+                    break;
+                case 4:
+                    wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">5.</span> 잔액에 해당하는 <b class="text-rose-500">열</b>을 클릭하세요.`;
+                    makeHeadersClickable(handleBalanceColSelect);
+                    break;
+                case 5:
+                    wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">6.</span> 모든 데이터가 같은 연도에 해당하나요?`;
+                    
+                    const yearYesBtn = document.createElement('button');
+                    yearYesBtn.className = 'bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 mr-2';
+                    yearYesBtn.textContent = '예';
+                    yearYesBtn.onclick = () => { config.yearInfo.type = 'single'; advanceWizardStep(); };
+                    
+                    const yearNoBtn = document.createElement('button');
+                    yearNoBtn.className = 'bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600';
+                    yearNoBtn.textContent = '아니오';
+                    yearNoBtn.onclick = () => { config.yearInfo.type = 'multiple'; advanceWizardStep(); };
+
+                    wizardActions.appendChild(yearYesBtn);
+                    wizardActions.appendChild(yearNoBtn);
+                    break;
+                case 6:
+                    if (config.yearInfo.type === 'single') {
+                        wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">6.</span> 데이터의 연도를 입력하세요.`;
+                        const yearInput = document.createElement('input');
+                        yearInput.type = 'number';
+                        yearInput.placeholder = '예: 2023';
+                        yearInput.className = 'rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2';
+                        const confirmBtn = document.createElement('button');
+                        confirmBtn.className = 'bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 ml-2';
+                        confirmBtn.textContent = '확인';
+                        confirmBtn.onclick = () => {
+                            const year = yearInput.value;
+                            if (year && !isNaN(year) && year.length === 4) {
+                                config.yearInfo.year = year;
+                                processData();
+                            } else {
+                                wizardInstruction.innerHTML = `<span class="font-semibold text-red-500">!</span> <span class="text-red-500">올바른 4자리 연도를 입력해주세요.</span>`;
+                                yearInput.focus();
+                                yearInput.select();
+                            }
+                        };
+                        wizardActions.appendChild(yearInput);
+                        wizardActions.appendChild(confirmBtn);
+                        yearInput.focus();
+                    } else {
+                        handleMultipleYears();
+                    }
+                    break;
+                case 7:
+                    wizardInstruction.innerHTML = `<span class="font-semibold text-green-600">✔</span> 데이터 설정이 완료되었습니다. 상단에서 기간을 입력하고 계산하세요.`;
+                    calculationArea.classList.remove('hidden');
+                    resultArea.classList.remove('hidden');
+                    break;
+            }
+        }
+        
+        function processData() {
+            if (config.yearInfo.type === 'single') {
+                tableData.forEach((row, rIdx) => {
+                    if (rIdx <= config.headerRowIndex) return;
+                    let dateStr = row[config.dateColIndex] || '';
+                    if (dateStr.match(/^\d{1,2}[-\/]\d{1,2}$/)) {
+                        row[config.dateColIndex] = `${config.yearInfo.year}-${dateStr.replace('/', '-')}`;
+                    }
+                });
+            } else {
+                 config.yearInfo.yearRanges.sort((a,b) => a.startRow - b.startRow);
+                 for (let i = 0; i < config.yearInfo.yearRanges.length; i++) {
+                    const range = config.yearInfo.yearRanges[i];
+                    const nextRange = config.yearInfo.yearRanges[i+1];
+                    const endRow = nextRange ? nextRange.startRow : tableData.length;
+                    for(let rIdx = range.startRow; rIdx < endRow; rIdx++) {
+                         if (rIdx <= config.headerRowIndex) continue;
+                         let dateStr = tableData[rIdx][config.dateColIndex] || '';
+                         if (dateStr.match(/^\d{1,2}[-\/]\d{1,2}$/)) {
+                            tableData[rIdx][config.dateColIndex] = `${range.year}-${dateStr.replace('/', '-')}`;
+                        }
+                    }
+                 }
+            }
+
+            let processedData = tableData.slice(0, config.headerRowIndex + 1);
+            const dataRows = tableData.slice(config.headerRowIndex + 1);
+            const validRows = dataRows.filter(row => {
+                const date = parseDateAsUTC(row[config.dateColIndex]);
+                return !isNaN(date.getTime());
+            });
+            
+            const uniqueDateData = [];
+            const seenDates = {};
+            for(let i = validRows.length - 1; i >= 0; i--) {
+                const date = parseDateAsUTC(validRows[i][config.dateColIndex]);
+                const dateStr = date.toISOString().split('T')[0];
+                if(!seenDates[dateStr]) {
+                    uniqueDateData.unshift(validRows[i]);
+                    seenDates[dateStr] = true;
+                }
+            }
+            
+            tableData = processedData.concat(uniqueDateData);
+            advanceWizardStep();
+        }
+
+        // --- Wizard Step Handlers ---
+
+        function handleHeaderRowSelect(rowIndex) {
+            config.headerRowIndex = rowIndex;
+            advanceWizardStep();
+        }
+        
+        function handleInitialBalanceRowSelect(rowIndex) {
+            config.initialBalanceRowIndex = rowIndex;
+            advanceWizardStep();
+        }
+
+        function handleDateColSelect(colIndex) {
+            config.dateColIndex = colIndex;
+            advanceWizardStep();
+        }
+
+        function handleBalanceColSelect(colIndex) {
+            config.balanceColIndex = colIndex;
+            if (config.initialBalanceRowIndex !== -1) {
+                const balanceStr = tableData[config.initialBalanceRowIndex][config.balanceColIndex] || '0';
+                config.initialBalance = parseNumber(balanceStr);
+            }
+            advanceWizardStep();
+        }
+
+        function handleMultipleYears() {
+            wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">6.</span> 데이터의 시작 연도와 마감 연도를 입력하세요.`;
+            wizardActions.innerHTML = `
+                <div class="flex justify-center items-center gap-2">
+                    <input type="number" id="start-year-input" placeholder="시작 연도 (예: 2022)" class="rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 w-32">
+                    <span>~</span>
+                    <input type="number" id="end-year-input" placeholder="마감 연도 (예: 2024)" class="rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 w-32">
+                    <button id="confirm-years-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">확인</button>
+                </div>
+            `;
+
+            document.getElementById('confirm-years-btn').onclick = () => {
+                const startYear = parseInt(document.getElementById('start-year-input').value);
+                const endYear = parseInt(document.getElementById('end-year-input').value);
+
+                if (!startYear || !endYear || startYear > endYear || String(startYear).length !== 4 || String(endYear).length !== 4) {
+                    alert("올바른 4자리 시작 연도와 마감 연도를 입력해주세요.");
+                    return;
+                }
+                
+                config.yearInfo.yearRanges = [];
+                promptForYearRowRecursive(startYear, endYear);
+            };
+        }
+
+        function promptForYearRowRecursive(startYear, endYear, currentYear = startYear) {
+            wizardActions.innerHTML = ''; // Clear previous buttons
+            removeTableInteractivity();
+            renderTable();
+
+            if (currentYear > endYear) {
+                processData();
+                return;
+            }
+
+            wizardInstruction.innerHTML = `<span class="font-semibold text-indigo-600">${currentYear}년</span> 데이터가 시작되는 <b class="text-rose-500">행</b>을 클릭하세요.`;
+            
+            makeRowsClickable((rowIndex) => {
+                const lastRow = config.yearInfo.yearRanges.slice(-1)[0]?.startRow ?? config.headerRowIndex;
+                if (rowIndex <= lastRow) {
+                    alert("잘못된 순서입니다. 이전 연도의 시작 행보다 아래에 있는 행을 선택해야 합니다.");
+                    promptForYearRowRecursive(startYear, endYear, currentYear); 
+                    return;
+                }
+                config.yearInfo.yearRanges.push({ year: currentYear, startRow: rowIndex });
+                promptForYearRowRecursive(startYear, endYear, currentYear + 1);
+            });
+        }
+
+        // --- Calculation Logic ---
+
+        function performCalculation() {
+            const startDateStr = document.getElementById('start-date').value;
+            const endDateStr = document.getElementById('end-date').value;
+
+            if (!startDateStr || !endDateStr) {
+                alert('시작일과 종료일을 모두 입력해주세요.');
+                return;
+            }
+
+            const startDate = parseDateAsUTC(startDateStr);
+            const endDate = parseDateAsUTC(endDateStr);
+
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate > endDate) {
+                alert('유효한 시작일과 종료일을 입력해주세요.');
+                return;
+            }
+
+            let dataRows = tableData.slice(config.headerRowIndex + 1)
+                .map(row => ({
+                    date: parseDateAsUTC(row[config.dateColIndex]),
+                    balance: parseNumber(row[config.balanceColIndex])
+                }))
+                .filter(row => !isNaN(row.date.getTime()))
+                .sort((a, b) => a.date - b.date);
+
+            let lastChangeDate = dataRows.length > 0 ? dataRows[dataRows.length - 1].date : null;
+            
+            let lastBalanceBeforeStart = config.initialBalance;
+            const beforeStartData = dataRows.filter(d => d.date < startDate);
+            if(beforeStartData.length > 0) {
+                lastBalanceBeforeStart = beforeStartData[beforeStartData.length-1].balance;
+            }
+            
+            let periodTransactions = dataRows.filter(d => d.date >= startDate && d.date <= endDate);
+            
+            if (!periodTransactions.find(t => t.date.getTime() === startDate.getTime())) {
+                periodTransactions.unshift({ date: startDate, balance: lastBalanceBeforeStart });
+            }
+            periodTransactions.sort((a,b)=> a.date-b.date);
+
+            calculationDetails = [];
+            let sumProducts = 0;
+            const msInDay = 24 * 60 * 60 * 1000;
+
+            for(let i = 0; i < periodTransactions.length; i++) {
+                const currentTx = periodTransactions[i];
+                const nextTxDate = (i + 1 < periodTransactions.length) ? periodTransactions[i+1].date : new Date(endDate.getTime() + msInDay);
+
+                const daysHeld = (nextTxDate - currentTx.date) / msInDay;
+                if (daysHeld <= 0) continue;
+
+                const product = currentTx.balance * daysHeld;
+                sumProducts += product;
+
+                calculationDetails.push({
+                    date: currentTx.date,
+                    balance: currentTx.balance,
+                    daysHeld: daysHeld,
+                    product: product
+                });
+            }
+            
+            const totalDays = ((endDate - startDate) / msInDay) + 1;
+            const averageBalance = totalDays > 0 ? sumProducts / totalDays : 0;
+
+            document.getElementById('result-total-days').textContent = totalDays.toLocaleString();
+            document.getElementById('result-initial-balance').textContent = formatNumber(config.initialBalance, 0);
+            document.getElementById('result-last-change-date').textContent = lastChangeDate ? lastChangeDate.toLocaleDateString('ko-KR', {timeZone: 'UTC'}) : 'N/A';
+            document.getElementById('result-sum-products').textContent = formatNumber(sumProducts, 0);
+            document.getElementById('result-average-balance').textContent = formatNumber(averageBalance, 2);
+            
+            excelDownloadBtn.classList.remove('hidden');
+            renderCalculationBasisTable();
+        }
+
+
+        // --- UI & Helper Functions ---
+
+        function renderCalculationBasisTable() {
+            let tableHTML = '<div class="table-container w-full h-full max-h-[500px] overflow-auto rounded-md border"><table class="basis-table">';
+            tableHTML += '<thead><tr><th>날짜</th><th>잔액</th><th>잔액 유지일수</th><th>잔액 누계 (적수)</th></tr></thead>';
+            
+            tableHTML += '<tbody>';
+            calculationDetails.forEach((row, i) => {
+                const rowClass = (i % 2 === 0) ? 'bg-white' : 'bg-slate-50';
+                tableHTML += `<tr class="${rowClass}">
+                    <td>${row.date.toLocaleDateString('ko-KR', {timeZone: 'UTC'})}</td>
+                    <td>${formatNumber(row.balance, 0)}</td>
+                    <td>${row.daysHeld.toLocaleString()}</td>
+                    <td>${formatNumber(row.product, 0)}</td>
+                </tr>`;
+            });
+            tableHTML += '</tbody></table></div>';
+            previewContainer.innerHTML = tableHTML;
+        }
+
+        function downloadExcel() {
+            const wb = XLSX.utils.book_new();
+            const sheetData = [];
+            const resultTitle = "기간 평균잔액 계산 결과";
+            const basisTitle = "계산 근거 상세내역";
+
+            // --- Styles ---
+            const titleStyle = { font: { bold: true, sz: 16 }, alignment: { horizontal: "center", vertical: "center" } };
+            const headerStyle = { font: { bold: true, sz: 11, color: { rgb: "FFFFFFFF" } }, fill: { fgColor: { rgb: "FF4338CA" } }, alignment: { horizontal: "center", vertical: "center" } };
+            const summaryHeaderStyle = { font: { bold: true, sz: 10 }, fill: { fgColor: { rgb: "FFEEF2FF" } }, alignment: { horizontal: "center", vertical: "center" } };
+            const summaryValueStyle = { font: { sz: 10 }, alignment: { horizontal: "center", vertical: "center" } };
+            const numberStyle = { numFmt: "#,##0" };
+            const decimalStyle = { numFmt: "#,##0.00" };
+            const dateStyle = { numFmt: "yyyy.mm.dd" };
+
+            // --- Header Section ---
+            sheetData.push([resultTitle, null, null, null, null, null]);
+            sheetData.push([]); 
+            sheetData.push(["조회 기간", "총일수", "기초잔액", "최종잔액변동일자", "적수합계", "평균잔액"]);
+            sheetData.push([
+                `${document.getElementById('start-date').value} ~ ${document.getElementById('end-date').value}`,
+                parseInt(document.getElementById('result-total-days').textContent.replace(/,/g, '')),
+                parseInt(document.getElementById('result-initial-balance').textContent.replace(/,/g, '')),
+                document.getElementById('result-last-change-date').textContent,
+                parseInt(document.getElementById('result-sum-products').textContent.replace(/,/g, '')),
+                parseFloat(document.getElementById('result-average-balance').textContent.replace(/,/g, ''))
+            ]);
+            sheetData.push([]); 
+            sheetData.push([]); 
+            
+            // --- Calculation Details Section ---
+            sheetData.push([basisTitle, null, null, null]);
+            sheetData.push(["날짜", "잔액", "잔액 유지일수", "잔액 누계 (적수)"]);
+
+            calculationDetails.forEach(row => {
+                sheetData.push([
+                    jsDateToExcelDate(row.date),
+                    row.balance,
+                    row.daysHeld,
+                    row.product
+                ]);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+            // --- Apply Styles & Merges ---
+            ws['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // Title merge
+                { s: { r: 6, c: 0 }, e: { r: 6, c: 3 } }  // Basis Title merge
+            ];
+            if(ws['A1']) ws['A1'].s = titleStyle;
+            if(ws['A7']) ws['A7'].s = titleStyle;
+
+            // Summary Styles
+            ['A3', 'B3', 'C3', 'D3', 'E3', 'F3'].forEach(cell => { if(ws[cell]) ws[cell].s = summaryHeaderStyle; });
+            if(ws['A4']) ws['A4'].s = summaryValueStyle;
+            if(ws['B4']) ws['B4'].s = { ...summaryValueStyle, ...numberStyle };
+            if(ws['C4']) ws['C4'].s = { ...summaryValueStyle, ...numberStyle };
+            if(ws['D4']) ws['D4'].s = summaryValueStyle;
+            if(ws['E4']) ws['E4'].s = { ...summaryValueStyle, ...numberStyle };
+            if(ws['F4']) ws['F4'].s = { ...summaryValueStyle, ...decimalStyle };
+            
+            // Basis Table Styles
+            ['A8', 'B8', 'C8', 'D8'].forEach(cell => { if(ws[cell]) ws[cell].s = headerStyle; });
+            for (let i = 0; i < calculationDetails.length; i++) {
+                const R = 8 + i;
+                const dateCell = XLSX.utils.encode_cell({r:R, c:0});
+                if(ws[dateCell]) {
+                  ws[dateCell].t = 'n';
+                  ws[dateCell].s = dateStyle;
+                }
+                const balanceCell = XLSX.utils.encode_cell({r:R, c:1});
+                if(ws[balanceCell]) ws[balanceCell].s = numberStyle;
+                const daysCell = XLSX.utils.encode_cell({r:R, c:2});
+                if(ws[daysCell]) ws[daysCell].s = numberStyle;
+                const productCell = XLSX.utils.encode_cell({r:R, c:3});
+                if(ws[productCell]) ws[productCell].s = numberStyle;
+            }
+
+            // Column Widths
+            ws['!cols'] = [{wch: 25}, {wch: 15}, {wch: 15}, {wch: 18}, {wch: 18}, {wch: 18}];
+
+            XLSX.utils.book_append_sheet(wb, ws, "평균잔액계산");
+            XLSX.writeFile(wb, "평균잔액_계산결과.xlsx");
+        }
+
+
+        function showConfirmButton(handler) {
+            const confirmBtn = document.createElement('button');
+            confirmBtn.id = 'confirm-selection';
+            confirmBtn.className = 'bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-slate-400 ml-2';
+            confirmBtn.textContent = '확인';
+            confirmBtn.disabled = true;
+            confirmBtn.onclick = () => handler(selectedItemIndex);
+            wizardActions.appendChild(confirmBtn);
+        }
+
+        function makeRowsClickable(handler, useConfirmButton = true) {
+            if(useConfirmButton) showConfirmButton(handler);
+            const rows = document.querySelectorAll('#preview-container tr');
+            
+            rows.forEach(row => {
+                const rowIndex = parseInt(row.dataset.rowIndex);
+                if (isNaN(rowIndex)) return;
+                row.classList.add('clickable-row');
+                row.onclick = () => {
+                    selectedItemIndex = rowIndex;
+                    document.querySelectorAll('#preview-container tr').forEach(r => r.classList.remove('selected-row'));
+                    row.classList.add('selected-row');
+                    if(useConfirmButton) {
+                        document.getElementById('confirm-selection').disabled = false;
+                    } else {
+                        handler(rowIndex);
+                    }
+                };
+            });
+        }
+        
+        function makeHeadersClickable(handler) {
+            showConfirmButton(handler);
+            const headers = document.querySelectorAll('#preview-container thead th');
+
+            headers.forEach((th, index) => {
+                th.classList.add('clickable-header');
+                th.onclick = () => {
+                     selectedItemIndex = index;
+                     renderTable({type: 'col', index: index}); // Re-render to show temporary selection
+                     document.getElementById('confirm-selection').disabled = false;
+                };
+            });
+        }
+
+        function removeTableInteractivity() {
+            document.querySelectorAll('.clickable-row, .clickable-header').forEach(el => {
+                el.classList.remove('clickable-row', 'clickable-header');
+                el.onclick = null;
+            });
+        }
+
+        function renderTable(tempSelection = null) {
+            let table = '<div class="table-container w-full h-full max-h-[500px] overflow-auto rounded-md border"><table class="w-full text-sm text-left text-slate-600">';
+            
+            const headerRowIndex = (config.headerRowIndex === -1) ? 0 : config.headerRowIndex;
+            const headerCells = tableData[headerRowIndex] || [];
+            table += '<thead class="text-xs text-slate-700 uppercase bg-slate-200 sticky top-0">';
+            table += `<tr data-row-index="${headerRowIndex}">`;
+            headerCells.forEach((cell, i) => {
+                let thClasses = [];
+                if (i === config.dateColIndex || i === config.balanceColIndex || (tempSelection?.type === 'col' && tempSelection.index === i)) {
+                    thClasses.push('selected-col');
+                }
+                table += `<th scope="col" class="px-4 py-3 whitespace-nowrap ${thClasses.join(' ')}">${escapeHtml(cell)}</th>`;
+            });
+            table += '</tr></thead>';
+
+            table += '<tbody>';
+            tableData.forEach((cells, i) => {
+                if (config.headerRowIndex !== -1 && i === config.headerRowIndex) return;
+
+                let rowClasses = (i % 2 === 0) ? ['bg-white'] : ['bg-slate-50'];
+                rowClasses.push('border-b');
+
+                table += `<tr class="${rowClasses.join(' ')}" data-row-index="${i}">`;
+                cells.forEach((cell, cIdx) => {
+                    let cellContent = (cIdx === config.balanceColIndex) ? formatNumber(parseNumber(cell), 0) : escapeHtml(cell);
+                    let tdClasses = [];
+                     if (cIdx === config.dateColIndex || cIdx === config.balanceColIndex || (tempSelection?.type === 'col' && tempSelection.index === cIdx)) {
+                        tdClasses.push('selected-col');
+                    }
+                    table += `<td class="px-4 py-2 whitespace-nowrap ${tdClasses.join(' ')}">${cellContent}</td>`;
+                });
+                table += '</tr>';
+            });
+            table += '</tbody></table></div>';
+            previewContainer.innerHTML = table;
+        }
+
+        function formatNumber(num, decimals = 2) {
+            const numVal = parseFloat(num);
+            if (isNaN(numVal)) return num;
+            return numVal.toLocaleString('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+        }
+        
+        function parseNumber(str) {
+            if(typeof str !== 'string') return typeof str === 'number' ? str : 0;
+            return parseFloat(String(str).replace(/,/g, '')) || 0;
+        }
+
+        function escapeHtml(unsafe) {
+            if(typeof unsafe !== 'string') return unsafe;
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
+
