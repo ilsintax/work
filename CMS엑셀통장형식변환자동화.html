@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>CMS 엑셀 통장형식 변환 자동화</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        .preview-table {
+            border-collapse: collapse;
+            min-width: 100%; /* 컨테이너를 채우되, 내용이 많으면 더 넓어지도록 설정 */
+            font-size: 0.8rem;
+            table-layout: auto; /* 내용에 따라 열 너비 자동 조절 */
+        }
+        .preview-table th, .preview-table td {
+            border: 1px solid #e2e8f0; padding: .4rem .6rem; text-align: left;
+            white-space: nowrap; /* 내용을 한 줄로 표시하여 가로 스크롤 유도 */
+        }
+        .selectable-row:hover { background-color: #f0f9ff; cursor: pointer; }
+        .selectable-col:hover { background-color: #f0f9ff; cursor: pointer; }
+        .highlighted-row { background-color: #bae6fd !important; }
+        .highlighted-col { background-color: #c7d2fe !important; }
+        /* 4단계 열 선택 하이라이트 */
+        .highlight-map-withdrawalDate { background-color: #fecaca !important; }
+        .highlight-map-settlementDate { background-color: #fed7aa !important; }
+        .highlight-map-clientName { background-color: #fde68a !important; }
+        .highlight-map-withdrawalAmount { background-color: #d9f99d !important; }
+        .highlight-map-fee { background-color: #bfdbfe !important; }
+        
+        .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.2s; }
+        .drop-zone.drag-over { background-color: #e0f2fe; border-color: #3b82f6; }
+        .selection-box { cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+        .selection-box.selecting { border-color: #4f46e5; box-shadow: 0 0 0 2px #c7d2fe; background-color: #eef2ff; }
+        .modal { transition: opacity 0.25s ease; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<div id="app" class="max-w-7xl mx-auto p-4 md:p-8">
+    <!-- JS 렌더링 영역 -->
+</div>
+
+<!-- 모달 -->
+<div id="modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50 p-4">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+        <h2 id="modal-title" class="text-xl font-bold mb-4 text-slate-800"></h2>
+        <div id="modal-content" class="text-slate-600 mb-6"></div>
+        <div id="modal-buttons" class="flex justify-end space-x-3"></div>
+    </div>
+</div>
+
+<script>
+    /******************************************************************************
+     * CMS 엑셀 통장형식 변환 자동화
+     ******************************************************************************/
+
+    // --- 1. 상태 관리 (State Management) ---
+    const AppState = {
+        _state: {},
+        _listeners: [],
+        init() {
+            this._state = {
+                currentPhase: 'upload', // upload, header_select, status_col_select, status_classify, column_map, fee_logic, final_preview, download
+                fileName: null,
+                rawData: [],
+                headerRowIndex: null,
+                dataWithHeader: [],
+                statusColIndex: null,
+                uniqueStatusValues: [],
+                successfulStatuses: [],
+                filteredData: [],
+                columnMap: {
+                    withdrawalDate: null, settlementDate: null, clientName: null, withdrawalAmount: null, fee: null
+                },
+                selectingKey: null, // columnMap의 key
+                feeLogic: null, // 'deduct' or 'full'
+                finalData: [],
+            };
+            this.notify(); // 초기화 후 UI를 다시 렌더링하도록 알림
+        },
+        getState() { return this._state; },
+        setState(updater) {
+            const oldState = JSON.parse(JSON.stringify(this._state));
+            this._state = typeof updater === 'function' ? updater(oldState) : { ...oldState, ...updater };
+            console.log("State Updated:", this._state);
+            this.notify();
+        },
+        subscribe(listener) { this._listeners.push(listener); },
+        notify() { this._listeners.forEach(listener => listener()); },
+    };
+
+    // --- 2. UI 렌더링 (UI Rendering) ---
+    const UIRenderer = {
+        init() {
+            this.appEl = document.getElementById('app');
+            this.modalEl = document.getElementById('modal');
+            AppState.subscribe(() => this.render());
+            this.render(); // 초기 렌더링
+        },
+        render() {
+            const state = AppState.getState();
+            let html = '';
+            switch (state.currentPhase) {
+                case 'upload': html = this.renderUploadView(); break;
+                case 'header_select': html = this.renderHeaderSelectView(state); break;
+                case 'status_col_select': html = this.renderStatusColSelectView(state); break;
+                case 'status_classify': html = this.renderStatusClassifyView(state); break;
+                case 'column_map': html = this.renderColumnMapView(state); break;
+                // fee_logic은 모달로 처리
+                case 'final_preview': html = this.renderFinalPreview(state); break;
+                default: html = this.renderUploadView();
+            }
+            this.appEl.innerHTML = html;
+            this.attachEventListeners();
+        },
+        renderUploadView() {
+            return `
+                <header class="text-center mb-8">
+                    <h1 class="text-4xl font-bold text-slate-900">CMS 엑셀 통장형식 변환 자동화</h1>
+                    <p class="text-slate-600 mt-2">복잡한 CMS 정산 데이터를 통장 형식으로 손쉽게 변환하세요.</p>
+                </header>
+
+                <div class="mb-8 p-6 border-l-4 border-blue-500 bg-blue-50 rounded-r-lg">
+                    <h2 class="text-xl font-bold text-blue-800 mb-3">📢 CMS 통장내역 처리 추천 방법</h2>
+                    <ul class="list-disc list-inside space-y-2 text-slate-700">
+                        <li>작업 전 회계 프로그램에 <strong class="text-blue-600">'CMS 가상 통장 계좌'의 거래처코드</strong>를 먼저 생성해주세요.</li>
+                        <li>변환 후 다운로드한 엑셀에서 <strong class="text-green-600">'입금'</strong>은 일반 통장의 <strong class="text-green-600">'매출 입금'</strong>으로, <strong class="text-red-600">'출금'</strong>은 <strong class="text-red-600">'통장 대체'</strong>로 처리하시면 편리합니다.</li>
+                    </ul>
+                    <div class="mt-4 p-4 border-t border-blue-200">
+                        <h3 class="font-semibold text-amber-800">※ 수수료를 제하고 입금되는 경우 (Ex: 100,000원 출금, 1,000원 수수료, 최종 99,000원 입금되는 경우)</h3>
+                        <p class="text-sm text-slate-600 mt-1">
+                            다운로드된 엑셀의 <strong class="text-red-600">'수수료 출금'</strong> 항목은, 수수료에 대한 세금계산서 발급 시 <strong class="text-indigo-600">'외상매입금 반제'</strong>로, 미발급 시 <strong class="text-indigo-600">'수수료 비용'</strong>으로 처리하시면 됩니다.
+                        </p>
+                    </div>
+                </div>
+
+                <div id="drop-zone" class="flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition">
+                    <svg class="w-12 h-12 mb-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <span class="text-slate-600 font-medium text-lg">클릭 또는 드래그하여 XLSX/XLS 파일 업로드</span>
+                    <input id="file-input" type="file" accept=".xlsx,.xls" class="hidden"/>
+                </div>`;
+        },
+        renderHeaderSelectView(state) {
+            const tableHTML = this.generateTableHTML(state.rawData.slice(0, 30), {
+                selectable: 'row',
+                highlightedRow: state.headerRowIndex
+            });
+            return `
+                <div class="space-y-6">
+                    <header>
+                        <h1 class="text-3xl font-bold text-slate-900">1단계: 제목 행 지정</h1>
+                        <p class="text-slate-600 mt-2">데이터의 제목(헤더)에 해당하는 행을 클릭하세요.</p>
+                    </header>
+                    <div class="flex items-center space-x-3">
+                        <button id="confirm-header-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" ${state.headerRowIndex === null ? 'disabled' : ''}>확인</button>
+                    </div>
+                    <div class="overflow-x-auto border rounded-lg bg-white shadow-sm">${tableHTML}</div>
+                </div>`;
+        },
+        renderStatusColSelectView(state) {
+            const tableHTML = this.generateTableHTML(state.dataWithHeader.slice(0, 30), {
+                selectable: 'col',
+                highlightedCol: state.statusColIndex
+            });
+            return `
+                <div class="space-y-6">
+                    <header>
+                        <h1 class="text-3xl font-bold text-slate-900">2단계: 출금 상태 열 지정</h1>
+                        <p class="text-slate-600 mt-2">'출금 성공', '실패' 등 상태가 표시된 열을 클릭하세요.</p>
+                    </header>
+                    <div class="flex items-center space-x-3">
+                        <button id="confirm-status-col-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" ${state.statusColIndex === null ? 'disabled' : ''}>확인</button>
+                    </div>
+                    <div class="overflow-x-auto border rounded-lg bg-white shadow-sm">${tableHTML}</div>
+                </div>`;
+        },
+        renderStatusClassifyView(state) {
+            const availableStatuses = state.uniqueStatusValues.filter(s => !state.successfulStatuses.includes(s));
+            return `
+                <div class="space-y-6">
+                    <header>
+                        <h1 class="text-3xl font-bold text-slate-900">3단계: 출금 성공 분류</h1>
+                        <p class="text-slate-600 mt-2">왼쪽 목록에서 '출금 성공'에 해당하는 모든 항목을 클릭하여 오른쪽으로 이동시키세요.</p>
+                    </header>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="p-4 border rounded-lg bg-slate-50">
+                            <h3 class="font-semibold mb-3 text-center">전체 상태 목록</h3>
+                            <div class="flex flex-col space-y-2 h-64 overflow-y-auto">
+                                ${availableStatuses.map(status => `<button class="status-item text-left p-2 bg-white border rounded-md hover:bg-blue-50" data-status="${status}">${status}</button>`).join('')}
+                            </div>
+                        </div>
+                        <div class="p-4 border rounded-lg bg-green-50">
+                            <h3 class="font-semibold mb-3 text-center text-green-800">✅ 출금 성공 분류</h3>
+                            <div class="flex flex-col space-y-2 h-64 overflow-y-auto">
+                                ${state.successfulStatuses.map(status => `<button class="status-item text-left p-2 bg-green-100 border border-green-200 rounded-md hover:bg-red-50" data-status="${status}">${status}</button>`).join('')}
+                            </div>
+                        </div>
+                    </div>
+                     <div class="flex items-center space-x-3">
+                        <button id="confirm-classify-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" ${state.successfulStatuses.length === 0 ? 'disabled' : ''}>분류 완료</button>
+                    </div>
+                </div>`;
+        },
+        renderColumnMapView(state) {
+            const mapConfig = [
+                { key: 'withdrawalDate', label: '출금일' }, { key: 'settlementDate', label: '정산일' },
+                { key: 'clientName', label: '거래처명' }, { key: 'withdrawalAmount', label: '출금금액' },
+                { key: 'fee', label: '수수료' }
+            ];
+            const header = state.filteredData[0] || [];
+            const selectionBoxes = mapConfig.map(item => {
+                const colIndex = state.columnMap[item.key];
+                const valueText = colIndex !== null ? `[${colIndex + 1}열] ${header[colIndex]}` : '미선택';
+                return `
+                    <div data-key="${item.key}" class="selection-box p-3 border-2 rounded-lg ${state.selectingKey === item.key ? 'selecting' : ''}">
+                        <label class="font-medium text-sm pointer-events-none">${item.label}</label>
+                        <span class="block font-bold text-indigo-600 pointer-events-none text-sm mt-1">${valueText}</span>
+                    </div>`;
+            }).join('');
+
+            const allSelected = Object.values(state.columnMap).every(val => val !== null);
+
+            return `
+                <div class="space-y-6">
+                    <header>
+                        <h1 class="text-3xl font-bold text-slate-900">4단계: 데이터 열 선택</h1>
+                        <p class="text-slate-600 mt-2">아래 항목을 클릭한 뒤, 테이블에서 해당하는 데이터 열을 선택해주세요.</p>
+                    </header>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">${selectionBoxes}</div>
+                     <div class="flex items-center space-x-3">
+                        <button id="confirm-map-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" ${!allSelected ? 'disabled' : ''}>확인</button>
+                    </div>
+                    <div class="overflow-x-auto border rounded-lg bg-white shadow-sm">
+                        ${this.generateTableHTML(state.filteredData.slice(0, 30), { 
+                            selectable: 'col',
+                            columnMap: state.columnMap
+                        })}
+                    </div>
+                </div>`;
+        },
+        renderFinalPreview(state) {
+            const tableHTML = this.generateTableHTML(state.finalData, { isFinal: true });
+            return `
+                 <div class="space-y-6">
+                    <header>
+                        <h1 class="text-3xl font-bold text-slate-900">최종 변환 결과</h1>
+                        <p class="text-slate-600 mt-2">변환된 통장 형식의 데이터를 확인하고, 엑셀 파일로 저장하세요.</p>
+                    </header>
+                     <div class="flex items-center space-x-3">
+                        <button id="download-excel-btn" class="px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 text-lg">엑셀 저장</button>
+                        <button id="reset-btn" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">처음부터 다시하기</button>
+                    </div>
+                    <div class="overflow-x-auto border rounded-lg bg-white shadow-sm">
+                       ${tableHTML}
+                    </div>
+                </div>`;
+        },
+        generateTableHTML(data, options = {}) {
+            if (!data || data.length === 0) return '<p class="p-4 text-center">표시할 데이터가 없습니다.</p>';
+            let html = '<table class="preview-table">';
+            
+            data.forEach((row, rowIndex) => {
+                if (options.isFinal && rowIndex === 0) {
+                    html += '<thead><tr>';
+                    row.forEach(cell => html += `<th>${cell ?? ''}</th>`);
+                    html += '</tr></thead><tbody>';
+                    return;
+                }
+
+                const rowClass = options.selectable === 'row' ? `selectable-row ${options.highlightedRow === rowIndex ? 'highlighted-row' : ''}` : '';
+                html += `<tr data-row-index="${rowIndex}" class="${rowClass}">`;
+                (row || []).forEach((cell, colIndex) => {
+                    let cellContent = cell ?? '';
+                    if (options.isFinal && colIndex === 0 && cell instanceof Date) {
+                        const year = cell.getFullYear();
+                        const month = String(cell.getMonth() + 1).padStart(2, '0');
+                        const day = String(cell.getDate()).padStart(2, '0');
+                        cellContent = `${year}-${month}-${day}`;
+                    }
+
+                    const colClassArr = [];
+                    if (options.selectable === 'col') {
+                        colClassArr.push('selectable-col');
+                    }
+                    if (options.highlightedCol === colIndex) {
+                        colClassArr.push('highlighted-col');
+                    }
+                    if (options.columnMap) {
+                        for (const key in options.columnMap) {
+                            if (options.columnMap[key] === colIndex) {
+                                colClassArr.push(`highlight-map-${key}`);
+                            }
+                        }
+                    }
+                    const colClass = colClassArr.join(' ');
+                    html += `<td data-col-index="${colIndex}" class="${colClass}">${cellContent}</td>`;
+                });
+                html += '</tr>';
+            });
+            if(options.isFinal) html += '</tbody>';
+            html += '</table>';
+            return html;
+        },
+        showModal(title, content, buttons) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-content').innerHTML = content;
+            const buttonsEl = document.getElementById('modal-buttons');
+            buttonsEl.innerHTML = '';
+            buttons.forEach(btnInfo => {
+                const button = document.createElement('button');
+                button.textContent = btnInfo.text;
+                button.className = `px-4 py-2 rounded-md font-semibold ${btnInfo.className}`;
+                button.onclick = () => {
+                    this.hideModal();
+                    if(btnInfo.onClick) btnInfo.onClick();
+                };
+                buttonsEl.appendChild(button);
+            });
+            this.modalEl.classList.remove('hidden');
+        },
+        hideModal() {
+            this.modalEl.classList.add('hidden');
+        },
+        attachEventListeners() {
+            // 각 단계(Phase)에 맞는 이벤트 리스너만 선별적으로 할당하여 오류를 해결합니다.
+            const state = AppState.getState();
+
+            // 모든 단계에서 공통으로 사용될 수 있는 리스너
+            document.getElementById('reset-btn')?.addEventListener('click', () => AppState.init());
+
+            switch (state.currentPhase) {
+                case 'upload':
+                    const dropZone = document.getElementById('drop-zone');
+                    const fileInput = document.getElementById('file-input');
+                    if (dropZone) {
+                        dropZone.onclick = () => fileInput.click();
+                        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+                        dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
+                        dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); AppController.handleFile(e.dataTransfer.files[0]); };
+                        fileInput.onchange = (e) => AppController.handleFile(e.target.files[0]);
+                    }
+                    break;
+                case 'header_select':
+                    document.querySelectorAll('.selectable-row').forEach(row =>
+                        row.onclick = (e) => AppController.handleHeaderSelect(parseInt(e.currentTarget.dataset.rowIndex, 10))
+                    );
+                    document.getElementById('confirm-header-btn')?.addEventListener('click', () => AppController.confirmHeader());
+                    break;
+                case 'status_col_select':
+                    document.querySelectorAll('.selectable-col').forEach(col =>
+                        col.onclick = (e) => AppController.handleStatusColSelect(parseInt(e.currentTarget.dataset.colIndex, 10))
+                    );
+                    document.getElementById('confirm-status-col-btn')?.addEventListener('click', () => AppController.confirmStatusCol());
+                    break;
+                case 'status_classify':
+                    document.querySelectorAll('.status-item').forEach(item =>
+                        item.onclick = (e) => AppController.toggleClassifyStatus(e.currentTarget.dataset.status)
+                    );
+                    document.getElementById('confirm-classify-btn')?.addEventListener('click', () => AppController.confirmClassify());
+                    break;
+                case 'column_map':
+                    document.querySelectorAll('.selection-box').forEach(box =>
+                        box.onclick = (e) => AppController.handleKeySelect(e.currentTarget.dataset.key)
+                    );
+                    document.querySelectorAll('#app .selectable-col').forEach(col =>
+                        col.onclick = (e) => AppController.handleColMap(parseInt(e.currentTarget.dataset.colIndex, 10))
+                    );
+                    document.getElementById('confirm-map-btn')?.addEventListener('click', () => AppController.confirmMap());
+                    break;
+                case 'final_preview':
+                    document.getElementById('download-excel-btn')?.addEventListener('click', () => AppController.downloadExcel());
+                    break;
+            }
+        },
+    };
+
+    // --- 3. 컨트롤러 (Controller / Actions) ---
+    const AppController = {
+        handleFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null });
+                    AppState.setState({ rawData, fileName: file.name, currentPhase: 'header_select' });
+                } catch (error) {
+                    UIRenderer.showModal('오류', "엑셀 파일을 읽는 중 오류가 발생했습니다: " + error.message, [{ text: '확인', className: 'bg-indigo-600 text-white'}]);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        },
+        handleHeaderSelect(rowIndex) {
+            AppState.setState({ headerRowIndex: rowIndex });
+        },
+        confirmHeader() {
+            const { rawData, headerRowIndex } = AppState.getState();
+            const dataWithHeader = rawData.slice(headerRowIndex);
+            AppState.setState({ dataWithHeader, currentPhase: 'status_col_select' });
+        },
+        handleStatusColSelect(colIndex) {
+            AppState.setState({ statusColIndex: colIndex });
+        },
+        confirmStatusCol() {
+            const { dataWithHeader, statusColIndex } = AppState.getState();
+            const values = dataWithHeader.slice(1).map(row => row[statusColIndex]).filter(val => val !== null && val !== undefined);
+            const uniqueStatusValues = [...new Set(values)];
+            AppState.setState({ uniqueStatusValues, currentPhase: 'status_classify' });
+        },
+        toggleClassifyStatus(status) {
+            AppState.setState(state => {
+                const { successfulStatuses } = state;
+                const newStatuses = successfulStatuses.includes(status)
+                    ? successfulStatuses.filter(s => s !== status)
+                    : [...successfulStatuses, status];
+                return { ...state, successfulStatuses: newStatuses };
+            });
+        },
+        confirmClassify() {
+            const { dataWithHeader, statusColIndex, successfulStatuses } = AppState.getState();
+            const header = dataWithHeader[0];
+            const body = dataWithHeader.slice(1);
+            const filteredRows = body.filter(row => successfulStatuses.includes(row[statusColIndex]));
+            AppState.setState({ filteredData: [header, ...filteredRows], currentPhase: 'column_map' });
+        },
+        handleKeySelect(key) {
+            AppState.setState(state => ({ ...state, selectingKey: state.selectingKey === key ? null : key }));
+        },
+        handleColMap(colIndex) {
+            const { selectingKey } = AppState.getState();
+            if (!selectingKey) return;
+            AppState.setState(state => {
+                const newColumnMap = { ...state.columnMap, [selectingKey]: colIndex };
+                return { ...state, columnMap: newColumnMap, selectingKey: null };
+            });
+        },
+        confirmMap() {
+            UIRenderer.showModal(
+                '5단계: 수수료 처리 방식 선택',
+                'CMS 출금액이 입금될 때 수수료 처리 방식을 선택해주세요.',
+                [
+                    { text: '수수료를 제외하고 입금', className: 'bg-blue-600 text-white', onClick: () => this.processFinalData('deduct') },
+                    { text: '출금된 금액 그대로 입금', className: 'bg-green-600 text-white', onClick: () => this.processFinalData('full') },
+                ]
+            );
+        },
+        processFinalData(feeLogic) {
+            const state = AppState.getState();
+            const finalData = DataTransformer.transformToStatement(state.filteredData, state.columnMap, feeLogic);
+            AppState.setState({ finalData, feeLogic, currentPhase: 'final_preview' });
+        },
+        downloadExcel() {
+            const { finalData, fileName } = AppState.getState();
+            DataTransformer.downloadAsExcel(finalData, fileName);
+        }
+    };
+
+    // --- 4. 데이터 변환 로직 (Data Transformer) ---
+    const DataTransformer = {
+        parseDate(value) {
+            if (!value) return null;
+            if (typeof value === 'number') { // Handle Excel numeric date
+                return new Date(Math.round((value - 25569) * 86400 * 1000));
+            }
+            const s = String(value).replace(/\./g, '-').trim();
+            const d = new Date(s);
+            return isNaN(d) ? null : d;
+        },
+        transformToStatement(data, map, feeLogic) {
+            const body = data.slice(1);
+            
+            const settlementAggregator = new Map();
+            const allEntries = [];
+
+            body.forEach(row => {
+                const withdrawalDate = this.parseDate(row[map.withdrawalDate]);
+                const settlementDate = this.parseDate(row[map.settlementDate]);
+                const clientName = row[map.clientName];
+                const amount = parseFloat(String(row[map.withdrawalAmount] || '0').replace(/,/g, '')) || 0;
+                const fee = parseFloat(String(row[map.fee] || '0').replace(/,/g, '')) || 0;
+
+                if (feeLogic === 'deduct') {
+                    // 수수료 차감 로직: 입금 1줄, 수수료 출금 1줄, 총 2줄 생성
+                    if (withdrawalDate) {
+                        // 1. 전체 출금액을 입금으로 기록
+                        allEntries.push({
+                            date: withdrawalDate,
+                            deposit: amount,
+                            withdrawal: 0,
+                            client: clientName,
+                            memo: `${clientName}_CMS출금`
+                        });
+                        // 2. 수수료를 별도 출금으로 기록
+                        if (fee > 0) {
+                            allEntries.push({
+                                date: withdrawalDate,
+                                deposit: 0,
+                                withdrawal: fee,
+                                client: clientName,
+                                memo: `${clientName}_CMS출금수수료` // 요청사항에 따라 적요 변경
+                            });
+                        }
+                    }
+                    // 정산일 집계는 (출금액 - 수수료) 기준
+                    if (settlementDate) {
+                        const key = settlementDate.toISOString().split('T')[0];
+                        const currentTotal = settlementAggregator.get(key) || 0;
+                        settlementAggregator.set(key, currentTotal + (amount - fee));
+                    }
+                } else { // 'full' 로직 (출금액 그대로 입금)
+                    if (withdrawalDate) {
+                        allEntries.push({
+                            date: withdrawalDate,
+                            deposit: amount,
+                            withdrawal: 0,
+                            client: clientName,
+                            memo: `${clientName}_CMS출금`
+                        });
+                    }
+                     // 정산일 집계는 전체 출금액 기준
+                    if (settlementDate) {
+                        const key = settlementDate.toISOString().split('T')[0];
+                        const currentTotal = settlementAggregator.get(key) || 0;
+                        settlementAggregator.set(key, currentTotal + amount);
+                    }
+                }
+            });
+
+            // 집계된 정산 데이터를 기반으로 대체 출금 데이터 생성
+            for (const [dateStr, totalAmount] of settlementAggregator.entries()) {
+                allEntries.push({
+                    date: new Date(dateStr),
+                    deposit: 0,
+                    withdrawal: totalAmount,
+                    client: '통장대체',
+                    memo: 'CMS통장대체'
+                });
+            }
+
+            // 데이터 합치고 날짜순으로 정렬
+            allEntries.sort((a, b) => {
+                if (!a.date || !b.date) return 0;
+                if (a.date.getTime() === b.date.getTime()) return 0;
+                return a.date - b.date;
+            });
+
+            // 최종 형식으로 변환 및 잔액 계산
+            const finalTable = [['날짜', '입금', '출금', '잔액', '거래처', '적요']];
+            let balance = 0;
+            allEntries.forEach(entry => {
+                balance = balance + entry.deposit - entry.withdrawal;
+                finalTable.push([
+                    entry.date,
+                    entry.deposit,
+                    entry.withdrawal,
+                    balance,
+                    entry.client,
+                    entry.memo
+                ]);
+            });
+
+            return finalTable;
+        },
+        downloadAsExcel(data, originalFileName) {
+            const wb = XLSX.utils.book_new();
+            const ws_data = data.map(row => [...row]); // 데이터 복사
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+            // 열 너비 설정
+            ws['!cols'] = [ {wch:12}, {wch:15}, {wch:15}, {wch:15}, {wch:20}, {wch:30} ];
+
+            // 셀 서식 적용
+            for (let R = 1; R < ws_data.length; ++R) {
+                // 날짜 형식
+                const dateCell = ws[XLSX.utils.encode_cell({c:0, r:R})];
+                if (dateCell && dateCell.v instanceof Date) {
+                    dateCell.t = 'd';
+                    dateCell.z = 'yyyy-mm-dd';
+                }
+                
+                // 숫자 형식 (입금, 출금, 잔액)
+                for (let C of [1, 2, 3]) {
+                    const numCell = ws[XLSX.utils.encode_cell({c:C, r:R})];
+                    if (numCell && typeof numCell.v === 'number') {
+                        numCell.t = 'n';
+                        numCell.z = '#,##0';
+                    }
+                }
+            }
+
+            XLSX.utils.book_append_sheet(wb, ws, "통장형식_변환결과");
+            const finalFileName = originalFileName.replace(/\.(xlsx|xls)$/, '_통장변환.xlsx');
+            XLSX.writeFile(wb, finalFileName);
+        }
+    };
+
+    // --- 앱 초기화 ---
+    document.addEventListener('DOMContentLoaded', () => {
+        AppState.init();
+        UIRenderer.init();
+    });
+</script>
+</body>
+</html>
+
