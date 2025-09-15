@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>다른 서식의 Excel 데이터 취합 도구</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS 라이브러리 추가 -->
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .step-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            transition: all 0.3s ease-in-out;
+        }
+        .step-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+        }
+        .btn-primary {
+            background-color: #4f46e5;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background-color: #4338ca;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .btn-secondary:hover {
+            background-color: #d1d5db;
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px #c7d2fe;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #e5e7eb;
+            padding: 0.75rem;
+            text-align: left;
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+        thead th {
+            background-color: #f3f4f6;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .table-container {
+            max-height: 25rem; 
+            overflow: auto;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+        }
+        .hidden {
+            display: none;
+        }
+        /* 인터랙션 스타일 */
+        .clickable-row:hover { background-color: #dbeafe; cursor: pointer; }
+        .clickable-col:hover { background-color: #bfdbfe; cursor: pointer; }
+        .selected-row { background-color: #93c5fd !important; }
+        .selected-col { background-color: #60a5fa !important; color: white; }
+        .mapped-col { background-color: #a7f3d0 !important; }
+
+        .wizard-instruction {
+            background-color: #eef2ff;
+            border-left: 4px solid #4f46e5;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.25rem;
+        }
+        
+        .list-container {
+            max-height: 34rem; /* 오른쪽 전체 영역과 높이를 맞추고 스크롤을 복원합니다. */
+            overflow-y: auto;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            background-color: #f9fafb;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .shake {
+            animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 sm:p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-slate-800">다른 서식의 Excel 데이터 취합 도구</h1>
+            <p class="text-slate-600 mt-2">여러 엑셀 파일을 하나의 시트로 손쉽게 병합하세요.</p>
+        </header>
+
+        <!-- 도구 소개 섹션 -->
+        <div class="step-card bg-slate-50 border border-slate-200">
+            <h2 class="step-title text-slate-800 border-slate-300 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                이 도구는 언제 유용할까요?
+            </h2>
+            <div class="space-y-3 text-slate-600">
+                <p>엑셀 데이터를 합치다 보면, 열과 행 구성이 조금씩 달라서 매번 복사·붙여넣기를 반복해야 하는 경우가 있죠.</p>
+                <p class="font-semibold text-indigo-700">이 도구를 사용하면 서로 다른 서식의 엑셀 파일도 간단하게 한 장의 시트로 깔끔하게 합칠 수 있습니다.</p>
+                <ul class="list-disc list-inside space-y-2 pl-2">
+                    <li>엑셀 시트에서 직접 <strong class="text-slate-800">복사/붙여넣기</strong>(CTRL+C, CTRL+V) 하셔도 되고,</li>
+                    <li>엑셀 <strong class="text-slate-800">파일 자체를 그대로 첨부</strong>하셔도 됩니다.</li>
+                    <li>심지어 <strong class="text-slate-800">여러 시트가 들어 있는 파일</strong>이나, <strong class="text-slate-800">여러 개로 나뉜 엑셀 파일</strong>도 문제없습니다!</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- 사용 방법 가이드 -->
+        <div class="step-card bg-indigo-50 border border-indigo-200">
+            <h2 class="step-title text-indigo-800 border-indigo-300">사용 방법 가이드</h2>
+            <div class="space-y-4 text-slate-700">
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 w-8 h-8 bg-indigo-500 text-white rounded-full flex items-center justify-center font-bold mr-4">1</div>
+                    <div>
+                        <h3 class="font-bold text-lg">공통 항목 개수와 제목 입력</h3>
+                        <p>먼저, 합치려는 데이터에서 공통으로 들어있는 값이 몇 개인지 입력하고, 제목도 정해주세요.</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 w-8 h-8 bg-indigo-500 text-white rounded-full flex items-center justify-center font-bold mr-4">2</div>
+                    <div>
+                        <h3 class="font-bold text-lg">데이터 가져오기 및 범위 확정</h3>
+                        <p>세 가지 방법 중 하나를 골라 데이터를 첨부합니다. (붙여넣기 / 단일 파일 / 여러 파일)</p>
+                        <p class="mt-1 text-indigo-600 font-semibold">→ 그다음 제목 행과 마지막 행을 선택하여 데이터 범위를 확정해 주세요.</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 w-8 h-8 bg-indigo-500 text-white rounded-full flex items-center justify-center font-bold mr-4">3</div>
+                    <div>
+                        <h3 class="font-bold text-lg">열 연결하기</h3>
+                        <p>각 제목에 해당하는 열을 클릭하면, 그 열에 데이터가 쏙 들어가며 추가됩니다.</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 w-8 h-8 bg-indigo-500 text-white rounded-full flex items-center justify-center font-bold mr-4">4</div>
+                    <div>
+                        <h3 class="font-bold text-lg">구분값 설정하기</h3>
+                        <p>기본으로는 파일명, 시트명, 작업 순번이 구분값으로 저장돼요. 필요하다면 원하는 값으로 직접 수정해도 됩니다.</p>
+                    </div>
+                </div>
+                 <div class="flex items-start">
+                    <div class="flex-shrink-0 w-8 h-8 bg-indigo-500 text-white rounded-full flex items-center justify-center font-bold mr-4">5</div>
+                    <div>
+                        <h3 class="font-bold text-lg">완성된 엑셀 저장하기</h3>
+                        <p>모든 데이터 추가 작업이 끝났다면, 마지막으로 <span class="font-bold">[엑셀로 다운로드]</span> 버튼을 눌러주세요.</p>
+                        <p class="mt-2 p-3 bg-green-100 text-green-800 rounded-lg font-semibold">이제 여러 개의 데이터가 한 시트로 깔끔하게 합쳐진 결과를 확인할 수 있습니다!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- STEP 1: 최종 결과물 설정 -->
+        <div id="setup-section" class="step-card">
+            <h2 class="step-title">1. 최종 결과물 열(Column) 설정</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div>
+                    <label for="column-count" class="block text-sm font-medium text-gray-700 mb-1">필수 공통 데이터 개수(날짜, 금액 등)</label>
+                    <input type="number" id="column-count" class="input-field" placeholder="예: 4" min="1">
+                </div>
+                <div class="md:col-span-2">
+                    <button id="confirm-count-btn" class="btn btn-secondary w-full md:w-auto">필드 생성</button>
+                </div>
+            </div>
+            <div id="header-fields-container" class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <div id="setup-confirm-container" class="mt-6 hidden">
+                <button id="confirm-setup-btn" class="btn btn-primary w-full">설정 완료 및 다음 단계로</button>
+            </div>
+        </div>
+
+        <!-- App Main Area (Hidden initially) -->
+        <div id="app-area" class="hidden space-y-8">
+            <!-- STEP 2: 데이터 추가 -->
+            <div class="step-card">
+                <h2 class="step-title">2. 데이터 추가하기</h2>
+                <div class="w-full space-y-6">
+                    <!-- Input Area -->
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">데이터 가져오기</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <label for="single-file-upload" class="btn btn-secondary w-full cursor-pointer">
+                                    <span>단일 파일 선택 (여러 시트 포함)</span>
+                                    <input id="single-file-upload" type="file" class="hidden" accept=".xlsx, .xls, .csv">
+                                </label>
+                                <label for="multi-file-upload" class="btn btn-secondary w-full cursor-pointer">
+                                    <span>여러 파일 한번에 선택</span>
+                                    <input id="multi-file-upload" type="file" class="hidden" accept=".xlsx, .xls, .csv" multiple>
+                                </label>
+                            </div>
+                             <div class="mt-4 text-center text-gray-500">또는</div>
+                            <div id="paste-area" class="mt-4 min-h-[100px] bg-white rounded-lg p-4 flex items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-500 transition-all duration-300 cursor-copy" contenteditable="true" placeholder="이곳에 붙여넣으세요 (Ctrl+V)">
+                                <div id="paste-placeholder" class="text-center text-slate-400 pointer-events-none">
+                                     <p class="font-semibold">이곳에 엑셀 데이터를 붙여넣으세요</p>
+                                     <p class="text-sm">(Ctrl+V)</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="distinguisher-value" class="block text-sm font-medium text-gray-700 mb-1">이 데이터의 구분값</label>
+                            <input type="text" id="distinguisher-value" class="input-field" placeholder="예: A팀, B팀, 홍길동 등">
+                        </div>
+                    </div>
+                    <!-- Mapping & Preview Area -->
+                    <div id="mapping-area" class="hidden space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            <div id="source-list-container" class="md:col-span-1 hidden list-container"></div>
+                            <div id="mapping-wizard" class="w-full md:col-span-3">
+                                 <div id="wizard-instruction" class="wizard-instruction"></div>
+                                 <div id="preview-container" class="table-container"></div>
+                                 <div id="wizard-actions" class="mt-4 flex justify-end">
+                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: 최종 결과 -->
+            <div id="result-section" class="step-card">
+                <div class="flex flex-wrap justify-between items-center gap-4">
+                    <h2 class="step-title mb-0 border-b-0">3. 최종 결과</h2>
+                    <button id="download-excel-btn" class="btn btn-primary">엑셀로 다운로드</button>
+                </div>
+                <p id="result-count" class="text-sm text-gray-500 mt-2">현재 0개의 행이 추가되었습니다.</p>
+                <div id="result-table-container" class="mt-4 table-container">
+                    <p class="text-center text-gray-500">아직 추가된 데이터가 없습니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 전역 상태 변수
+        let targetHeaders = [];
+        const distinguisherHeader = '구분';
+        let combinedData = [];
+        let sourceData = []; // 원본 데이터
+        let processedData = []; // 잘라낸 데이터
+        let pasteCounter = 1;
+        let currentMode = null; // 'single-file', 'multi-file', 'paste'
+
+        let singleFileState = {
+            workbook: null,
+            sheetNames: [],
+            completedSheets: [],
+            currentSheet: '',
+        };
+        
+        let multiFileState = {
+            files: [],
+            completedFiles: [],
+            currentFile: null,
+        }
+
+        let wizardState = {};
+
+        const getEl = id => document.getElementById(id);
+
+        // --- 이벤트 리스너 바인딩 ---
+        getEl('confirm-count-btn').addEventListener('click', createHeaderInputs);
+        getEl('confirm-setup-btn').addEventListener('click', completeSetup);
+        getEl('single-file-upload').addEventListener('change', handleSingleFileUpload);
+        getEl('multi-file-upload').addEventListener('change', handleMultiFileUpload);
+        getEl('paste-area').addEventListener('paste', handlePaste);
+        getEl('download-excel-btn').addEventListener('click', downloadExcel);
+
+        // --- 1단계: 설정 ---
+        function createHeaderInputs() {
+            const count = parseInt(getEl('column-count').value);
+            if (isNaN(count) || count < 1) return alert('유효한 열 개수를 입력하세요.');
+            
+            const container = getEl('header-fields-container');
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                container.innerHTML += `
+                    <div>
+                        <label for="header-name-${i}" class="block text-sm font-medium text-gray-700 mb-1">공통 열 #${i + 1} 제목</label>
+                        <input type="text" id="header-name-${i}" class="input-field header-input" placeholder="예: 날짜, 거래처, 금액, 적요...">
+                    </div>`;
+            }
+            getEl('setup-confirm-container').classList.remove('hidden');
+        }
+
+        function completeSetup() {
+            targetHeaders = Array.from(document.querySelectorAll('.header-input')).map(input => input.value.trim()).filter(Boolean);
+            
+            if (targetHeaders.length !== parseInt(getEl('column-count').value)) return alert('모든 제목을 입력해주세요.');
+
+            getEl('setup-section').classList.add('hidden');
+            getEl('app-area').classList.remove('hidden');
+            renderResultTable();
+        }
+
+        // --- 2단계: 데이터 처리 ---
+        function resetForNewData(mode) {
+            currentMode = mode;
+            getEl('mapping-area').classList.add('hidden');
+            getEl('source-list-container').classList.add('hidden');
+            singleFileState = { workbook: null, sheetNames: [], completedSheets: [], currentSheet: '' };
+            multiFileState = { files: [], completedFiles: [], currentFile: null };
+        }
+
+        function handleSingleFileUpload(event) {
+            resetForNewData('single-file');
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                singleFileState.workbook = workbook;
+                singleFileState.sheetNames = workbook.SheetNames;
+                singleFileState.completedSheets = [];
+
+                getEl('mapping-area').classList.remove('hidden');
+                
+                const mappingWizard = getEl('mapping-wizard');
+                if (singleFileState.sheetNames.length > 1) {
+                    getEl('source-list-container').classList.remove('hidden');
+                    mappingWizard.classList.add('md:col-span-3');
+                    mappingWizard.classList.remove('md:col-span-4');
+                    renderSourceList();
+                    const instructionEl = getEl('wizard-instruction');
+                    instructionEl.innerHTML = '<p class="font-bold">시트 선택</p><p>왼쪽 목록에서 작업할 시트를 선택하세요.</p>';
+                    getEl('preview-container').innerHTML = '';
+                } else {
+                    getEl('source-list-container').classList.add('hidden');
+                    mappingWizard.classList.add('md:col-span-4');
+                    mappingWizard.classList.remove('md:col-span-3');
+                    loadSheetData(singleFileState.sheetNames[0]);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            event.target.value = '';
+        }
+
+        function handleMultiFileUpload(event) {
+            resetForNewData('multi-file');
+            const files = event.target.files;
+            if (!files.length) return;
+
+            multiFileState.files = Array.from(files);
+            multiFileState.completedFiles = [];
+
+            getEl('mapping-area').classList.remove('hidden');
+            const mappingWizard = getEl('mapping-wizard');
+            getEl('source-list-container').classList.remove('hidden');
+            mappingWizard.classList.add('md:col-span-3');
+            mappingWizard.classList.remove('md:col-span-4');
+            renderSourceList();
+            const instructionEl = getEl('wizard-instruction');
+            instructionEl.innerHTML = '<p class="font-bold">파일 선택</p><p>왼쪽 목록에서 작업할 파일을 선택하세요.</p>';
+            getEl('preview-container').innerHTML = '';
+            event.target.value = '';
+        }
+        
+        function renderSourceList() {
+            const container = getEl('source-list-container');
+            let items = [];
+            let completedItems = [];
+            let title = '';
+            let clickHandler;
+
+            if (currentMode === 'single-file') {
+                title = '시트 목록';
+                items = singleFileState.sheetNames;
+                completedItems = singleFileState.completedSheets;
+                clickHandler = (name) => loadSheetData(name);
+            } else if (currentMode === 'multi-file') {
+                title = '파일 목록';
+                items = multiFileState.files.map(f => f.name);
+                completedItems = multiFileState.completedFiles.map(f => f.name);
+                 clickHandler = (name) => {
+                    const file = multiFileState.files.find(f => f.name === name);
+                    if (file) loadFileData(file);
+                };
+            }
+
+            container.innerHTML = `<h3 class="font-semibold text-lg mb-2 border-b pb-1">${title}</h3>`;
+            const ul = document.createElement('ul');
+            ul.className = 'space-y-1';
+            items.forEach(name => {
+                const isCompleted = completedItems.includes(name);
+                const li = document.createElement('li');
+                li.className = 'p-2 rounded-md hover:bg-slate-100 cursor-pointer transition-colors';
+                li.textContent = name;
+                if(isCompleted) {
+                    li.innerHTML += '<span class="text-green-500 font-bold ml-2">✔</span>';
+                }
+                li.onclick = () => clickHandler(name);
+                ul.appendChild(li);
+            });
+            container.appendChild(ul);
+        }
+
+        function loadSheetData(sheetName) {
+            if (!singleFileState.workbook) return;
+            const worksheet = singleFileState.workbook.Sheets[sheetName];
+            sourceData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval:'' });
+            singleFileState.currentSheet = sheetName;
+            getEl('distinguisher-value').value = sheetName;
+            startWizard();
+        }
+
+        function loadFileData(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                sourceData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
+                multiFileState.currentFile = file;
+                getEl('distinguisher-value').value = file.name;
+                startWizard();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handlePaste(event) {
+            resetForNewData('paste');
+            event.preventDefault();
+            const text = (event.clipboardData || window.clipboardData).getData('text');
+            sourceData = text.trim().split('\n').map(row => row.split('\t'));
+            getEl('distinguisher-value').value = `${pasteCounter}번`;
+            pasteCounter++;
+            getEl('paste-area').innerHTML = '';
+            getEl('mapping-area').classList.remove('hidden');
+            const mappingWizard = getEl('mapping-wizard');
+            mappingWizard.classList.add('md:col-span-4');
+            mappingWizard.classList.remove('md:col-span-3');
+            startWizard();
+        }
+        
+        function startWizard() {
+            processedData = []; 
+            wizardState = {
+                step: 1,
+                selectedHeaderRow: -1,
+                selectedLastRow: -1,
+                headerRowIndex: -1,
+                mapping: {},
+                currentMappingHeader: '',
+            };
+            runWizardStep();
+        }
+
+        function runWizardStep() {
+            const instructionEl = getEl('wizard-instruction');
+            const wizardActionsEl = getEl('wizard-actions');
+            wizardActionsEl.innerHTML = ''; 
+
+            switch (wizardState.step) {
+                case 1: // 제목 행 선택
+                    instructionEl.innerHTML = `<p class="font-bold">단계 1/4: 제목 행 선택</p><p>데이터의 제목(헤더)에 해당하는 <b class="text-indigo-600">행</b>을 클릭하고 아래 버튼을 누르세요.</p>`;
+                    const confirmHeaderBtn = document.createElement('button');
+                    confirmHeaderBtn.textContent = '제목 행으로 지정';
+                    confirmHeaderBtn.className = 'btn btn-secondary';
+                    confirmHeaderBtn.disabled = true;
+                    confirmHeaderBtn.onclick = () => {
+                        wizardState.step = 2;
+                        runWizardStep();
+                    };
+                    wizardActionsEl.appendChild(confirmHeaderBtn);
+                    renderPreviewTable({ data: sourceData, clickable: 'row', mode: 'header' });
+                    break;
+                case 2: // 마지막 행 선택
+                    instructionEl.innerHTML = `<p class="font-bold">단계 2/4: 마지막 행 선택</p><p>데이터의 <b class="text-indigo-600">마지막 행</b>을 클릭하여 데이터 범위를 지정하고 아래 버튼을 누르세요.</p>`;
+                    const confirmRangeBtn = document.createElement('button');
+                    confirmRangeBtn.textContent = '데이터 범위 확정';
+                    confirmRangeBtn.className = 'btn btn-secondary';
+                    confirmRangeBtn.disabled = true;
+                    confirmRangeBtn.onclick = () => {
+                        processedData = sourceData.slice(wizardState.selectedHeaderRow, wizardState.selectedLastRow + 1);
+                        wizardState.headerRowIndex = 0;
+                        wizardState.step = 3;
+                        runWizardStep();
+                    };
+                    wizardActionsEl.appendChild(confirmRangeBtn);
+                    renderPreviewTable({ data: sourceData, clickable: 'row', mode: 'last_row' });
+                    break;
+                case 3: // 열 매핑
+                    const nextHeader = targetHeaders.find(h => wizardState.mapping[h] === undefined);
+                    if (nextHeader) {
+                        wizardState.currentMappingHeader = nextHeader;
+                        instructionEl.innerHTML = `<p class="font-bold">단계 3/4: 열 매핑 (${Object.keys(wizardState.mapping).length + 1}/${targetHeaders.length})</p><p>'<span class="font-bold text-indigo-600">${nextHeader}</span>'에 해당하는 <b class="text-indigo-600">열</b>을 클릭하세요.</p>`;
+                        renderPreviewTable({ data: processedData, clickable: 'col' });
+                    } else {
+                        wizardState.step = 4;
+                        runWizardStep();
+                    }
+                    break;
+                case 4: // 추가 확인
+                    instructionEl.innerHTML = `<p class="font-bold text-green-600">✔ 모든 설정 완료!</p><p>아래 버튼을 눌러 최종 결과에 데이터를 추가하세요.</p>`;
+                    const addDataBtn = document.createElement('button');
+                    addDataBtn.className = 'btn btn-primary w-full justify-center';
+                    addDataBtn.textContent = '결과에 이 데이터 추가';
+                    addDataBtn.onclick = addDataToResult;
+                    wizardActionsEl.appendChild(addDataBtn);
+                    renderPreviewTable({ data: processedData });
+                    break;
+            }
+        }
+        
+        function renderPreviewTable({ data, clickable = null, mode = null } = {}) {
+            const container = getEl('preview-container');
+            if (!data || data.length === 0) {
+                container.innerHTML = `<p class="p-4 text-center text-gray-500">데이터가 없습니다.</p>`;
+                return;
+            }
+            let html = '<table>';
+            const displayHeaderIndex = (wizardState.step < 3) ? -1 : wizardState.headerRowIndex;
+
+            if (displayHeaderIndex !== -1) {
+                html += '<thead><tr>';
+                data[displayHeaderIndex].forEach((cell, i) => {
+                    html += `<th class="${getColumnClasses(i, clickable)}" data-col-index="${i}">${cell}</th>`;
+                });
+                html += '</tr></thead>';
+            }
+
+            html += '<tbody>';
+            data.forEach((row, i) => {
+                if (i === displayHeaderIndex) return;
+                html += `<tr class="${getRowClasses(i, clickable, mode)}" data-row-index="${i}">`;
+                row.forEach((cell, j) => {
+                    const isHeader = (displayHeaderIndex === -1 && i === wizardState.selectedHeaderRow);
+                    const cellTag = isHeader ? 'th' : 'td';
+                    html += `<${cellTag} class="${getColumnClasses(j, clickable)}" data-col-index="${j}">${cell}</${cellTag}>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            attachTableListeners({data, clickable, mode});
+        }
+
+        function getRowClasses(rowIndex, clickable, mode) {
+            let classes = [];
+            if (clickable === 'row') classes.push('clickable-row');
+            if (mode === 'header' && rowIndex === wizardState.selectedHeaderRow) classes.push('selected-row');
+            if (mode === 'last_row') {
+                if(rowIndex === wizardState.selectedLastRow) classes.push('selected-row');
+                else if (rowIndex === wizardState.selectedHeaderRow) classes.push('bg-blue-200'); // Keep header visually distinct
+            }
+            return classes.join(' ');
+        }
+
+        function getColumnClasses(colIndex, clickable) {
+            let classes = [];
+            if (clickable === 'col') classes.push('clickable-col');
+            if (Object.values(wizardState.mapping).includes(colIndex)) classes.push('mapped-col');
+            if (wizardState.currentMappingHeader && wizardState.mapping[wizardState.currentMappingHeader] === colIndex) classes.push('selected-col');
+            return classes.join(' ');
+        }
+
+        function attachTableListeners({data, clickable, mode}) {
+            if (!clickable) return;
+            const container = getEl('preview-container');
+
+            if (clickable === 'row') {
+                container.querySelectorAll('tr').forEach(row => {
+                    row.onclick = () => {
+                        const clickedIndex = parseInt(row.dataset.rowIndex);
+                        if (mode === 'header') {
+                            wizardState.selectedHeaderRow = clickedIndex;
+                            getEl('wizard-actions').querySelector('button').disabled = false;
+                        } else if (mode === 'last_row') {
+                            if (clickedIndex < wizardState.selectedHeaderRow) {
+                                return alert('마지막 행은 제목 행보다 아래에 있어야 합니다.');
+                            }
+                            wizardState.selectedLastRow = clickedIndex;
+                            getEl('wizard-actions').querySelector('button').disabled = false;
+                        }
+                        renderPreviewTable({ data, clickable, mode });
+                    };
+                });
+            } else if (clickable === 'col') {
+                container.querySelectorAll('th, td').forEach(cell => {
+                    cell.onclick = () => {
+                         const colIndex = parseInt(cell.dataset.colIndex);
+                         if (Object.values(wizardState.mapping).includes(colIndex)) {
+                             return alert('이미 다른 항목에 매핑된 열입니다. 다른 열을 선택해주세요.');
+                         }
+                         wizardState.mapping[wizardState.currentMappingHeader] = colIndex;
+                         runWizardStep();
+                    };
+                });
+            }
+        }
+        
+        function addDataToResult() {
+            const distinguisherInput = getEl('distinguisher-value');
+            const distinguisherValue = distinguisherInput.value.trim();
+            if (!distinguisherValue) {
+                const instructionEl = getEl('wizard-instruction');
+                instructionEl.innerHTML = `<p class="font-bold text-red-600">! 구분자 값을 입력하고 다시 시도하세요.</p>`;
+                distinguisherInput.classList.add('border-red-500', 'shake');
+                distinguisherInput.focus();
+
+                setTimeout(() => {
+                    distinguisherInput.classList.remove('border-red-500', 'shake');
+                    runWizardStep();
+                }, 1500);
+                return;
+            }
+            
+            const dataStartIndex = wizardState.headerRowIndex + 1;
+            
+            for(let i = dataStartIndex; i < processedData.length; i++) {
+                const sourceRow = processedData[i];
+                if (!sourceRow) continue;
+                const newRow = {};
+                let isEmptyRow = true;
+                targetHeaders.forEach(targetHeader => {
+                    const colIndex = wizardState.mapping[targetHeader];
+                    const value = sourceRow[colIndex] || '';
+                    newRow[targetHeader] = value;
+                    if (value && String(value).trim() !== '') isEmptyRow = false;
+                });
+                
+                if (!isEmptyRow) {
+                    newRow[distinguisherHeader] = distinguisherValue;
+                    combinedData.push(newRow);
+                }
+            }
+            
+            if (currentMode === 'single-file') {
+                if (!singleFileState.completedSheets.includes(singleFileState.currentSheet)) {
+                    singleFileState.completedSheets.push(singleFileState.currentSheet);
+                }
+            } else if (currentMode === 'multi-file') {
+                if (!multiFileState.completedFiles.includes(multiFileState.currentFile)) {
+                    multiFileState.completedFiles.push(multiFileState.currentFile);
+                }
+            }
+            renderSourceList();
+            renderResultTable();
+            resetProcessingFields();
+        }
+
+        function resetProcessingFields() {
+            getEl('distinguisher-value').value = '';
+            const instructionEl = getEl('wizard-instruction');
+            const previewContainer = getEl('preview-container');
+            const wizardActionsEl = getEl('wizard-actions');
+
+            if (currentMode === 'single-file' && singleFileState.sheetNames.length > 1) {
+                instructionEl.innerHTML = '<p class="font-bold">시트 선택</p><p>왼쪽 목록에서 다음 작업할 시트를 선택하세요.</p>';
+                previewContainer.innerHTML = '';
+                wizardActionsEl.innerHTML = '';
+            } else if (currentMode === 'multi-file') {
+                instructionEl.innerHTML = '<p class="font-bold">파일 선택</p><p>왼쪽 목록에서 다음 작업할 파일을 선택하세요.</p>';
+                previewContainer.innerHTML = '';
+                wizardActionsEl.innerHTML = '';
+            } else {
+                 getEl('paste-area').innerHTML = `<div id="paste-placeholder" class="text-center text-slate-400 pointer-events-none"><p class="font-semibold">이곳에 엑셀 데이터를 붙여넣으세요</p><p class="text-sm">(Ctrl+V)</p></div>`;
+                 getEl('mapping-area').classList.add('hidden');
+                 sourceData = [];
+            }
+        }
+
+        // --- 3단계: 결과 표시 및 다운로드 ---
+        function renderResultTable() {
+            getEl('result-count').textContent = `현재 ${combinedData.length}개의 행이 추가되었습니다.`;
+            const container = getEl('result-table-container');
+            if (combinedData.length === 0) {
+                container.innerHTML = `<p class="text-center text-gray-500">아직 추가된 데이터가 없습니다.</p>`;
+                return;
+            }
+
+            const headers = [...targetHeaders, distinguisherHeader];
+            let html = '<table><thead><tr>';
+            headers.forEach(h => html += `<th>${h}</th>`);
+            html += '</tr></thead><tbody>';
+
+            combinedData.forEach(row => {
+                html += '<tr>';
+                headers.forEach(h => html += `<td>${row[h] || ''}</td>`);
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function downloadExcel() {
+            if (combinedData.length === 0) return alert('다운로드할 데이터가 없습니다.');
+            
+            const headers = [...targetHeaders, distinguisherHeader];
+            const rows = combinedData.map(row => headers.map(h => row[h] || ''));
+            
+            const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "MergedData");
+            XLSX.writeFile(workbook, "merged_data.xlsx");
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+
