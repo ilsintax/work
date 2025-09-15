@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>통장 적요 자동 생성기 (다중 작업 지원)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .step-card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); padding: 2rem; margin-bottom: 2rem; }
+        .step-title { font-size: 1.5rem; font-weight: 700; color: #1f2937; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.6rem 1.2rem; font-weight: 600; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+        .btn-primary { background-color: #4f46e5; color: white; }
+        .btn-primary:hover:not(:disabled) { background-color: #4338ca; }
+        .btn-secondary { background-color: #f3f4f6; color: #374151; border-color: #d1d5db;}
+        .btn-secondary:hover { background-color: #e5e7eb; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .input-field { width: 100%; padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 0.5rem; }
+        .hidden { display: none; }
+        .table-container { max-height: 25rem; overflow: auto; border: 1px solid #d1d5db; border-radius: 0.5rem; }
+        .preview-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+        .preview-table th, .preview-table td { border: 1px solid #e2e8f0; padding: .375rem .5rem; text-align: left; white-space: nowrap; }
+        .preview-table thead th { background-color: #f9fafb; position: sticky; top: 0; z-index: 10; }
+        .selectable-row:hover { background-color: #eef2ff; cursor: pointer; }
+        .selectable-col:hover { background-color: #e0e7ff; cursor: pointer; }
+        .selected { background-color: #c7d2fe !important; }
+        .wizard-instruction { background-color: #eef2ff; border-left: 4px solid #4f46e5; padding: 1rem; margin-bottom: 1rem; border-radius: 0.25rem; }
+        .list-container { max-height: 28rem; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 0.5rem; padding: 1rem; background-color: #f9fafb;}
+        .source-item { padding: 0.75rem; border-radius: 0.5rem; cursor: pointer; transition: background-color 0.2s; font-medium; }
+        .source-item:hover { background-color: #eef2ff; }
+        .source-item.completed { color: #16a34a; }
+        .mismatched-balance { background-color: #fee2e2 !important; }
+        .memo-item { cursor: pointer; transition: background-color 0.2s; }
+        .memo-item:hover { background-color: #f1f5f9; }
+        .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .modal-content { background-color: white; padding: 2rem; border-radius: 0.5rem; width: 90%; max-width: 1200px; max-height: 90vh; display: flex; flex-direction: column; }
+        .modal-body { overflow-y: auto; }
+    </style>
+</head>
+<body class="bg-slate-100 p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-slate-800">통장 적요 자동 생성기 (다중 작업 지원)</h1>
+            <p class="text-slate-600 mt-2">여러 개의 엑셀 파일/시트를 하나의 통합된 보고서로 손쉽게 변환하세요.</p>
+        </header>
+
+        <!-- 도구 주요 기능 안내 -->
+        <div class="step-card bg-indigo-50 border border-indigo-200">
+            <h2 class="step-title text-indigo-800 border-indigo-300 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                도구 설명
+            </h2>
+            <div class="space-y-3 text-slate-700">
+                <p>이 도구는 다양한 형식의 통장 거래 내역을 쉽고 빠르게 정리할 수 있도록 돕습니다.</p>
+                <ul class="list-disc list-inside space-y-2 pl-2">
+                    <li>
+                        <strong>데이터 불러오기:</strong> 엑셀 시트에서 바로 <strong class="text-indigo-600">복사/붙여넣기</strong>(Ctrl+C, V) 하거나, <strong class="text-indigo-600">엑셀 파일을 직접 첨부</strong>할 수 있습니다.
+                    </li>
+                    <li>
+                        <strong>다중 데이터 처리:</strong> 여러 시트가 포함된 파일이나, <strong class="text-indigo-600">여러 개의 엑셀 파일을 한 번에</strong> 문제없이 처리합니다.
+                    </li>
+                     <li>
+                        <strong>자동 적요 정리:</strong> 여러 적요 열을 선택했을 때 내용이 완전히 동일하면 <strong class="text-indigo-600">하나의 적요만 반영</strong>하며, 빈칸은 자동으로 건너뜁니다.
+                    </li>
+                    <li>
+                        <strong>잔액 흐름 검증:</strong> 기초 잔액을 입력하면 입출금 흐름을 자동으로 계산하여, <strong class="text-indigo-600">누락된 거래가 없는지 쉽게 확인</strong>할 수 있습니다.
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- STEP 1: 데이터 소스 추가 -->
+        <div id="source-input-section" class="step-card">
+            <h2 class="step-title">1. 변환할 데이터 추가</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">데이터 가져오기</label>
+                    <div class="space-y-3">
+                        <label for="single-file-upload" class="btn btn-secondary w-full cursor-pointer">단일 파일 선택 (여러 시트 포함 가능)</label>
+                        <input id="single-file-upload" type="file" class="hidden" accept=".xlsx, .xls">
+                        <label for="multi-file-upload" class="btn btn-secondary w-full cursor-pointer">여러 파일 한번에 선택</label>
+                        <input id="multi-file-upload" type="file" class="hidden" accept=".xlsx, .xls" multiple>
+                        <div id="paste-area" class="mt-2 p-4 min-h-[80px] border-2 border-dashed rounded-lg text-center flex items-center justify-center text-slate-500 cursor-pointer hover:border-indigo-400" contenteditable="true">엑셀 데이터 복사 후 여기에 붙여넣기 (Ctrl+V)</div>
+                    </div>
+                </div>
+                <div id="source-list-container" class="list-container hidden">
+                    <h3 class="font-semibold text-lg mb-2 border-b pb-1 text-slate-700">작업 목록</h3>
+                    <ul id="source-list" class="space-y-1"></ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 2: 데이터 처리 마법사 -->
+        <div id="wizard-section" class="step-card hidden">
+            <h2 id="wizard-title" class="step-title"></h2>
+            <div id="wizard-instruction" class="wizard-instruction"></div>
+            <div id="wizard-content" class="mt-4"></div>
+            <div id="wizard-actions" class="mt-6 flex justify-end space-x-3"></div>
+        </div>
+
+        <!-- STEP 3: 최종 결과 -->
+        <div id="result-section" class="step-card hidden">
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <h2 class="step-title mb-0 border-b-0">최종 결과 요약</h2>
+                <button id="download-excel-btn" class="btn btn-primary">모든 결과 엑셀로 다운로드</button>
+            </div>
+            <p id="result-summary" class="text-sm text-gray-500 mt-2"></p>
+            <div id="result-table-container" class="mt-4 table-container"></div>
+        </div>
+    </div>
+
+    <!-- 미리보기 모달 -->
+    <div id="preview-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4 pb-4 border-b">
+                <h2 id="modal-title" class="text-xl font-bold"></h2>
+                <button id="modal-close-btn" class="text-2xl font-bold">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <!-- 탭 및 테이블 내용이 여기에 동적으로 삽입됩니다 -->
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+    /******************************************************************************
+     * 상태 관리 및 주요 변수
+     ******************************************************************************/
+    let AppState = {
+        sources: [],          // { id, name, type, rawData, status: 'pending' | 'completed' }
+        results: [],          // { id, title, sujiraData, originalData, isBalanceCorrect }
+        currentWizard: null   // { sourceId, step, config, data }
+    };
+
+    /******************************************************************************
+     * DOM 요소 캐싱
+     ******************************************************************************/
+    const getEl = id => document.getElementById(id);
+    const DOM = {
+        sourceInputSection: getEl('source-input-section'),
+        sourceListContainer: getEl('source-list-container'),
+        sourceList: getEl('source-list'),
+        wizardSection: getEl('wizard-section'),
+        wizardTitle: getEl('wizard-title'),
+        wizardInstruction: getEl('wizard-instruction'),
+        wizardContent: getEl('wizard-content'),
+        wizardActions: getEl('wizard-actions'),
+        resultSection: getEl('result-section'),
+        resultSummary: getEl('result-summary'),
+        resultTableContainer: getEl('result-table-container'),
+        previewModal: getEl('preview-modal'),
+        modalTitle: getEl('modal-title'),
+        modalBody: getEl('modal-body'),
+        modalCloseBtn: getEl('modal-close-btn'),
+    };
+    
+    /******************************************************************************
+     * 이벤트 리스너
+     ******************************************************************************/
+    getEl('single-file-upload').addEventListener('change', handleFileUpload);
+    getEl('multi-file-upload').addEventListener('change', handleFileUpload);
+    getEl('paste-area').addEventListener('paste', handlePaste);
+    getEl('download-excel-btn').addEventListener('click', downloadFinalExcel);
+    DOM.modalCloseBtn.addEventListener('click', () => DOM.previewModal.classList.add('hidden'));
+
+
+    /******************************************************************************
+     * 데이터 입력 및 소스 관리
+     ******************************************************************************/
+    function handleFileUpload(event) {
+        const files = Array.from(event.target.files);
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = e => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                if (workbook.SheetNames.length > 1) {
+                    workbook.SheetNames.forEach(sheetName => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+                        addSource({ name: `${file.name} / ${sheetName}`, type: 'sheet', rawData });
+                    });
+                } else {
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+                    addSource({ name: file.name, type: 'file', rawData });
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+        event.target.value = ''; // Reset file input
+    }
+
+    function handlePaste(event) {
+        event.preventDefault();
+        const text = (event.clipboardData || window.clipboardData).getData('text');
+        const rawData = text.trim().split('\n').map(row => row.split('\t'));
+        addSource({ name: `통장 #${AppState.sources.filter(s => s.type === 'paste').length + 1}`, type: 'paste', rawData });
+        event.target.textContent = '엑셀 데이터 복사 후 여기에 붙여넣기 (Ctrl+V)';
+    }
+
+    function addSource({ name, type, rawData }) {
+        if (!rawData || rawData.length === 0) return;
+        const source = {
+            id: Date.now() + Math.random(),
+            name, type, rawData, status: 'pending'
+        };
+        AppState.sources.push(source);
+        renderSourceList();
+    }
+
+    /******************************************************************************
+     * UI 렌더링 함수
+     ******************************************************************************/
+    function renderSourceList() {
+        DOM.sourceListContainer.classList.remove('hidden');
+        DOM.sourceList.innerHTML = '';
+        AppState.sources.forEach(source => {
+            const li = document.createElement('li');
+            li.className = `source-item ${source.status}`;
+            li.textContent = source.name;
+            if (source.status === 'completed') {
+                li.innerHTML += '<span class="text-green-500 font-bold ml-2">✔ 완료</span>';
+            }
+            li.onclick = () => startWizard(source.id);
+            DOM.sourceList.appendChild(li);
+        });
+    }
+
+    function renderWizard() {
+        if (!AppState.currentWizard) {
+            DOM.wizardSection.classList.add('hidden');
+            return;
+        }
+
+        const { sourceId, step, config, data } = AppState.currentWizard;
+        const source = AppState.sources.find(s => s.id === sourceId);
+
+        DOM.wizardSection.classList.remove('hidden');
+        DOM.wizardTitle.textContent = `'${source.name}' 데이터 처리`;
+
+        let instruction = '', content = '', actions = '';
+        
+        switch (step) {
+            case 1: // 제목 행 선택
+                instruction = '<b>[1/7] 제목 행 선택 및 작업 제목 설정:</b> 데이터의 제목(헤더)에 해당하는 행을 클릭하세요.';
+                const titleInput = `<div class="my-4"><label for="wizard-job-title" class="block text-sm font-medium text-slate-700">이 작업의 제목 (시트 이름)</label><input type="text" id="wizard-job-title" value="${config.title}" onchange="WIZARD_ACTIONS.updateTitle(this.value)" class="input-field mt-1"></div>`;
+                content = titleInput + generateTableHTML(data, { selectable: 'row', selectedRow: config.headerRow });
+                actions = `<button class="btn btn-primary" ${config.headerRow === undefined ? 'disabled' : ''} onclick="WIZARD_ACTIONS.processHeaderRow()">다음</button>`;
+                break;
+            case 2: // 날짜 열 선택
+                instruction = '<b>[2/7] 날짜 열 선택:</b> 거래 일자가 포함된 열을 클릭하세요.';
+                content = generateTableHTML(data, { selectable: 'col', selectedCol: config.dateCol });
+                actions = `<button class="btn btn-secondary" onclick="WIZARD_ACTIONS.prevStep()">이전</button> <button class="btn btn-primary" ${config.dateCol === undefined ? 'disabled' : ''} onclick="WIZARD_ACTIONS.processDateCol()">다음</button>`;
+                break;
+            case 3: // 입금 열 선택
+                instruction = '<b>[3/7] 입금 열 선택:</b> 입금액이 포함된 열을 클릭하세요.';
+                content = generateTableHTML(data, { selectable: 'col', selectedCol: config.depositCol });
+                actions = `<button class="btn btn-secondary" onclick="WIZARD_ACTIONS.prevStep()">이전</button> <button class="btn btn-primary" ${config.depositCol === undefined ? 'disabled' : ''} onclick="WIZARD_ACTIONS.nextStep()">다음</button>`;
+                break;
+            case 4: // 출금 열 선택
+                instruction = '<b>[4/7] 출금 열 선택:</b> 출금액이 포함된 열을 클릭하세요.';
+                content = generateTableHTML(data, { selectable: 'col', selectedCol: config.withdrawalCol });
+                actions = `<button class="btn btn-secondary" onclick="WIZARD_ACTIONS.prevStep()">이전</button> <button class="btn btn-primary" ${config.withdrawalCol === undefined ? 'disabled' : ''} onclick="WIZARD_ACTIONS.nextStep()">다음</button>`;
+                break;
+            case 5: // 잔액 열 선택
+                instruction = '<b>[5/7] 잔액 열 선택:</b> 거래 후 잔액이 포함된 열을 클릭하세요.';
+                content = generateTableHTML(data, { selectable: 'col', selectedCol: config.balanceCol });
+                actions = `<button class="btn btn-secondary" onclick="WIZARD_ACTIONS.prevStep()">이전</button> <button class="btn btn-primary" ${config.balanceCol === undefined ? 'disabled' : ''} onclick="WIZARD_ACTIONS.nextStep()">다음</button>`;
+                break;
+             case 6: // 기초잔액 입력
+                instruction = '<b>[6/7] 기초 잔액 입력:</b> 계산의 기준이 될 기초 잔액을 입력하세요.';
+                content = `<div><label for="base-balance-input" class="block text-sm font-medium text-slate-700">기초 잔액</label><input type="number" id="base-balance-input" value="${config.baseBalance}" onchange="WIZARD_ACTIONS.updateBaseBalance(this.value)" class="input-field mt-1 w-full md:w-1/3"></div>`;
+                actions = `<button class="btn btn-secondary" onclick="WIZARD_ACTIONS.prevStep()">이전</button> <button class="btn btn-primary" onclick="WIZARD_ACTIONS.nextStep()">다음</button>`;
+                break;
+            case 7: // 적요 열 선택
+                instruction = `<b>[7/7] 적요 열 선택 및 필터링:</b> 적요 #${config.activeMemoIndex + 1}에 해당하는 열을 선택하세요.`;
+                const tabs = config.memoConfigs.map((mc, i) => `<button onclick="WIZARD_ACTIONS.switchMemoTab(${i})" class="px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 ${i === config.activeMemoIndex ? 'border-indigo-500 text-indigo-600' : 'border-transparent'}">적요 #${i+1}</button>`).join('');
+                const activeMemo = config.memoConfigs[config.activeMemoIndex];
+                let memoContent = `<div class="border-b mb-4">${tabs}</div>` + generateTableHTML(data, { selectable: 'col', selectedCol: activeMemo.colIndex });
+                if (activeMemo.colIndex !== undefined) {
+                    const uniqueValues = [...new Set(data.slice(1).map(row => row[activeMemo.colIndex]).filter(v => v))];
+                    const included = uniqueValues.filter(v => !activeMemo.excludedValues.includes(v));
+                    const excluded = activeMemo.excludedValues;
+                    memoContent += `<div class="grid grid-cols-2 gap-4 mt-4"><div><h3 class="font-semibold mb-2">포함될 내용</h3><div class="list-container h-48">${included.map(v => `<div class="memo-item p-2" onclick="WIZARD_ACTIONS.toggleMemoExclusion('${v}')">${v}</div>`).join('')}</div></div><div><h3 class="font-semibold mb-2">제외될 내용</h3><div class="list-container h-48">${excluded.map(v => `<div class="memo-item p-2" onclick="WIZARD_ACTIONS.toggleMemoExclusion('${v}')">${v}</div>`).join('')}</div></div></div>`;
+                }
+                content = memoContent;
+                actions = `<button class="btn btn-secondary" onclick="WIZARD_ACTIONS.prevStep()">이전</button> <button class="btn btn-secondary" onclick="WIZARD_ACTIONS.addMemoTab()">추가 적요</button> <button class="btn btn-primary" onclick="WIZARD_ACTIONS.finishWizard()">이 작업 완료</button>`;
+                break;
+        }
+
+        DOM.wizardInstruction.innerHTML = instruction;
+        DOM.wizardContent.innerHTML = content;
+        DOM.wizardActions.innerHTML = actions;
+    }
+
+    function renderResult() {
+        DOM.resultSection.classList.remove('hidden');
+        DOM.resultSummary.textContent = `총 ${AppState.results.length}개의 작업이 완료되었습니다.`;
+        if (AppState.results.length === 0) {
+            DOM.resultTableContainer.innerHTML = `<p class="text-center text-gray-500">아직 완료된 작업이 없습니다.</p>`;
+            return;
+        }
+        
+        let html = '<table class="preview-table"><thead><tr><th>#</th><th>작업명</th><th>결과</th><th>미리보기</th><th>삭제</th></tr></thead><tbody>';
+        AppState.results.forEach((res, i) => {
+            const status = res.isBalanceCorrect ? '<span class="text-green-600 font-semibold">잔액 일치</span>' : '<span class="text-red-600 font-semibold">잔액 불일치</span>';
+            const previewButton = `<button class="btn btn-secondary btn-sm" onclick="showResultPreview(${res.id})">보기</button>`;
+            const deleteButton = `<button class="btn btn-secondary btn-sm text-red-600 border-red-300 hover:bg-red-100" onclick="deleteResult(${res.id})">삭제</button>`;
+            html += `<tr><td>${i+1}</td><td>${res.title}</td><td>${status}</td><td>${previewButton}</td><td>${deleteButton}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        DOM.resultTableContainer.innerHTML = html;
+    }
+
+    function generateTableHTML(data, options = {}) {
+        if (!data || data.length === 0) return '<p class="p-4 text-center">데이터 없음</p>';
+        let tableHtml = '<table class="preview-table">';
+        
+        tableHtml += '<tbody>';
+        data.slice(0, 20).forEach((row, rowIndex) => {
+            const isSelectedHeaderRow = options.selectable === 'row' && options.selectedRow === rowIndex;
+            const isProcessedHeader = AppState.currentWizard && AppState.currentWizard.step > 1 && rowIndex === 0;
+
+            let rowClasses = [];
+            if (options.selectable === 'row') rowClasses.push('selectable-row');
+            if (isSelectedHeaderRow) rowClasses.push('selected');
+
+            let rowHtml = `<tr class="${rowClasses.join(' ')}" onclick="WIZARD_ACTIONS.handleRowClick(${rowIndex})">`;
+            
+            (row || []).forEach((cell, colIndex) => {
+                const isSelectedCol = options.selectable === 'col' && options.selectedCol === colIndex;
+                const cellTag = isProcessedHeader ? 'th' : 'td';
+                
+                let cellClasses = 'p-2';
+                if (isSelectedCol) cellClasses += ' selected';
+                if (isProcessedHeader) cellClasses += ' bg-slate-50';
+
+                rowHtml += `<${cellTag} class="${cellClasses}" onclick="WIZARD_ACTIONS.handleColClick(${colIndex})">${cell ?? ''}</${cellTag}>`;
+            });
+            
+            rowHtml += '</tr>';
+            tableHtml += rowHtml;
+        });
+        tableHtml += '</tbody></table>';
+        
+        return `<div class="table-container">${tableHtml}</div>`;
+    }
+
+    function generateFinalPreviewTableHTML(data, highlightMismatched) {
+        let html = '<table class="preview-table"><thead><tr>';
+        data[0].forEach(cell => html += `<th>${cell}</th>`);
+        html += '</tr></thead><tbody>';
+        data.slice(1).forEach(row => {
+            let rowClass = '';
+            if (highlightMismatched) {
+                const calculated = row[3];
+                const original = row[4];
+                if (Math.abs(calculated - original) >= 1) {
+                    rowClass = 'mismatched-balance';
+                }
+            }
+            html += `<tr class="${rowClass}">`;
+            row.forEach(cell => html += `<td>${cell ?? ''}</td>`);
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return `<div class="table-container">${html}</div>`;
+    }
+
+    /******************************************************************************
+     * 마법사(Wizard) 로직
+     ******************************************************************************/
+    function startWizard(sourceId) {
+        const source = AppState.sources.find(s => s.id === sourceId);
+        if (!source || source.status === 'completed') return;
+
+        AppState.currentWizard = {
+            sourceId: source.id,
+            step: 1,
+            config: {
+                title: source.name, // 기본 제목 설정
+                baseBalance: 0,
+                memoConfigs: [{ colIndex: undefined, excludedValues: [] }],
+                activeMemoIndex: 0,
+            },
+            data: source.rawData
+        };
+        renderWizard();
+    }
+    
+    const WIZARD_ACTIONS = {
+        prevStep: () => { AppState.currentWizard.step--; renderWizard(); },
+        nextStep: () => { AppState.currentWizard.step++; renderWizard(); },
+        updateTitle: (newTitle) => {
+            if (AppState.currentWizard) {
+                AppState.currentWizard.config.title = newTitle;
+            }
+        },
+        handleRowClick: (rowIndex) => {
+            if (AppState.currentWizard.step === 1) {
+                AppState.currentWizard.config.headerRow = rowIndex;
+                renderWizard();
+            }
+        },
+        handleColClick: (colIndex) => {
+            const { step, config } = AppState.currentWizard;
+            if (step === 2) config.dateCol = colIndex;
+            else if (step === 3) config.depositCol = colIndex;
+            else if (step === 4) config.withdrawalCol = colIndex;
+            else if (step === 5) config.balanceCol = colIndex;
+            else if (step === 7) {
+                const activeMemo = config.memoConfigs[config.activeMemoIndex];
+                if (activeMemo.colIndex !== colIndex) {
+                    activeMemo.colIndex = colIndex;
+                    activeMemo.excludedValues = []; // Reset exclusions when column changes
+                }
+            }
+            renderWizard();
+        },
+        processHeaderRow: () => {
+            const { headerRow } = AppState.currentWizard.config;
+            let data = AppState.currentWizard.data;
+            const header = data[headerRow];
+            const body = data.slice(headerRow + 1).filter(row => row && row.some(cell => cell != null && cell !== ''));
+            AppState.currentWizard.data = [header, ...body];
+            WIZARD_ACTIONS.nextStep();
+        },
+        processDateCol: () => {
+            const { dateCol } = AppState.currentWizard.config;
+            const data = DataTransformer.transformPhase2(AppState.currentWizard.data, dateCol);
+            AppState.currentWizard.data = data;
+            WIZARD_ACTIONS.nextStep();
+        },
+        updateBaseBalance: (value) => { AppState.currentWizard.config.baseBalance = parseFloat(value) || 0; },
+        addMemoTab: () => {
+            const { config } = AppState.currentWizard;
+            config.memoConfigs.push({ colIndex: undefined, excludedValues: [] });
+            config.activeMemoIndex = config.memoConfigs.length - 1;
+            renderWizard();
+        },
+        switchMemoTab: (index) => {
+            AppState.currentWizard.config.activeMemoIndex = index;
+            renderWizard();
+        },
+        toggleMemoExclusion: (value) => {
+            const memo = AppState.currentWizard.config.memoConfigs[AppState.currentWizard.config.activeMemoIndex];
+            const index = memo.excludedValues.indexOf(value);
+            if (index > -1) memo.excludedValues.splice(index, 1);
+            else memo.excludedValues.push(value);
+            renderWizard();
+        },
+        finishWizard: () => {
+            const { sourceId, config, data } = AppState.currentWizard;
+            const source = AppState.sources.find(s => s.id === sourceId);
+            
+            const result = DataTransformer.transformFinal(data, config);
+            AppState.results.push({ id: source.id, title: config.title, ...result }); // Use config.title
+
+            source.status = 'completed';
+            AppState.currentWizard = null;
+            
+            renderSourceList();
+            renderWizard();
+            renderResult();
+        }
+    };
+    window.WIZARD_ACTIONS = WIZARD_ACTIONS; // Make it accessible from inline onclick
+
+    /******************************************************************************
+     * 데이터 변환 로직
+     ******************************************************************************/
+    const DataTransformer = {
+        transformPhase2(data, dateCol) {
+            let [header, ...body] = data;
+            const parseDate = (value) => {
+                if (!value) return null;
+                const dateStr = String(value).trim().split(' ')[0];
+                if (typeof value === 'number' && value > 10000) return new Date(Math.round((value - 25569) * 86400 * 1000));
+                
+                const d = new Date(dateStr.replace(/\./g, '-').replace(/\//g, '-'));
+                if (!isNaN(d.getTime())) return d;
+                
+                if (/^\d{8}$/.test(dateStr)) {
+                    const d2 = new Date(`${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)}`);
+                    if (!isNaN(d2.getTime())) return d2;
+                }
+                return null;
+            };
+
+            let bodyWithDates = body.map(row => ({ row, date: parseDate(row[dateCol]) })).filter(item => item.date);
+
+            if (bodyWithDates.length < 2) {
+                return [header, ...bodyWithDates.map(item => item.row)];
+            }
+            
+            const firstDate = bodyWithDates[0].date.getTime();
+            const lastDate = bodyWithDates[bodyWithDates.length - 1].date.getTime();
+
+            if (firstDate > lastDate) {
+                bodyWithDates.reverse();
+            }
+
+            const cleanedBody = bodyWithDates.map(item => {
+                const newRow = [...item.row];
+                newRow[dateCol] = item.date.toISOString().split('T')[0];
+                return newRow;
+            });
+            
+            return [header, ...cleanedBody];
+        },
+        transformFinal(data, config) {
+            const [header, ...body] = data;
+            const { dateCol, depositCol, withdrawalCol, balanceCol, baseBalance, memoConfigs } = config;
+            
+            const finalHeader = ['일자', '입금', '출금', '잔액', '(참고용)잔액', '적요'];
+            let runningBalance = baseBalance || 0;
+
+            const finalBody = body.map(row => {
+                const deposit = parseFloat(String(row[depositCol] || '0').replace(/,/g, '')) || 0;
+                const withdrawal = parseFloat(String(row[withdrawalCol] || '0').replace(/,/g, '')) || 0;
+                const originalBalance = parseFloat(String(row[balanceCol] || '0').replace(/,/g, '')) || 0;
+                runningBalance += (deposit - withdrawal);
+
+                const memoParts = memoConfigs
+                    .map(mc => {
+                        if (mc.colIndex === undefined) return null;
+                        const value = row[mc.colIndex];
+                        return (value && !mc.excludedValues.includes(value)) ? String(value).trim() : null;
+                    })
+                    .filter(Boolean);
+                
+                const jukyo = [...new Set(memoParts)].join(' / ');
+                return [row[dateCol], deposit, withdrawal, runningBalance, originalBalance, jukyo];
+            });
+
+            const lastRow = finalBody[finalBody.length - 1];
+            const isBalanceCorrect = !lastRow || Math.abs(lastRow[3] - lastRow[4]) < 1;
+            
+            return { sujiraData: [finalHeader, ...finalBody], originalData: data, isBalanceCorrect };
+        }
+    };
+    
+    /******************************************************************************
+     * 최종 결과 및 다운로드
+     ******************************************************************************/
+    function showResultPreview(resultId) {
+        const result = AppState.results.find(r => r.id === resultId);
+        if (!result) return;
+
+        DOM.modalTitle.textContent = `'${result.title}' 미리보기`;
+        DOM.modalBody.innerHTML = `
+            <div class="border-b mb-4">
+                <button id="tab-sujira" class="px-4 py-2 border-b-2 border-indigo-500">수지라 업로드용</button>
+                <button id="tab-original" class="px-4 py-2 border-b-2 border-transparent text-slate-500">원본 데이터</button>
+            </div>
+            <div id="sujira-preview">
+                ${generateFinalPreviewTableHTML(result.sujiraData, true)}
+            </div>
+            <div id="original-preview" class="hidden">
+                ${generateFinalPreviewTableHTML(result.originalData, false)}
+            </div>
+        `;
+
+        const sujiraTab = getEl('tab-sujira');
+        const originalTab = getEl('tab-original');
+        const sujiraPreview = getEl('sujira-preview');
+        const originalPreview = getEl('original-preview');
+
+        sujiraTab.onclick = () => {
+            sujiraTab.className = "px-4 py-2 border-b-2 border-indigo-500";
+            originalTab.className = "px-4 py-2 border-b-2 border-transparent text-slate-500";
+            sujiraPreview.classList.remove('hidden');
+            originalPreview.classList.add('hidden');
+        };
+        originalTab.onclick = () => {
+            originalTab.className = "px-4 py-2 border-b-2 border-indigo-500";
+            sujiraTab.className = "px-4 py-2 border-b-2 border-transparent text-slate-500";
+            originalPreview.classList.remove('hidden');
+            sujiraPreview.classList.add('hidden');
+        };
+
+        DOM.previewModal.classList.remove('hidden');
+    }
+
+    function deleteResult(resultId) {
+        // Find and remove the result
+        const resultIndex = AppState.results.findIndex(r => r.id === resultId);
+        if (resultIndex > -1) {
+            AppState.results.splice(resultIndex, 1);
+        }
+
+        // Find the source and revert its status
+        const source = AppState.sources.find(s => s.id === resultId);
+        if (source) {
+            source.status = 'pending';
+        }
+
+        // Re-render the affected parts of the UI
+        renderResult();
+        renderSourceList();
+    }
+
+    function downloadFinalExcel() {
+        if (AppState.results.length === 0) return alert('다운로드할 데이터가 없습니다.');
+        const workbook = XLSX.utils.book_new();
+        AppState.results.forEach(res => {
+            const safeTitle = res.title.replace(/[/\\?*:[\]]/g, '').substring(0, 25);
+            const sujiraSheet = XLSX.utils.aoa_to_sheet(res.sujiraData);
+            const originalSheet = XLSX.utils.aoa_to_sheet(res.originalData);
+            XLSX.utils.book_append_sheet(workbook, sujiraSheet, `${safeTitle} (수지라)`);
+            XLSX.utils.book_append_sheet(workbook, originalSheet, `${safeTitle} (원본)`);
+        });
+        XLSX.writeFile(workbook, "통합_변환_결과.xlsx");
+    }
+    </script>
+</body>
+</html>
+
