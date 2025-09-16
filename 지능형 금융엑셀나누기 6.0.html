@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>지능형 금융 데이터 변환기 v6.0 (다중 작업 지원)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .preview-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+        .preview-table th, .preview-table td {
+            border: 1px solid #e2e8f0; padding: .375rem .5rem; text-align: left;
+            white-space: nowrap; min-width: 20px;
+        }
+        .preview-table th { background-color: #f8fafc; font-weight: 600; }
+        .selectable:hover { background-color: #f0f9ff; cursor: pointer; }
+        .highlighted { background-color: #bae6fd !important; }
+        .highlight-p3-tradeTypeCol { background-color: #a7f3d0 !important; }
+        .highlight-p3-stockNameCol { background-color: #fde68a !important; }
+        .highlight-p3-stockQtyCol { background-color: #fecaca !important; }
+        .highlight-p3-unitPriceCol { background-color: #d8b4fe !important; }
+        .highlight-p3-stockBalanceCol { background-color: #bfdbfe !important; }
+        .highlight-p3-additionalCol1, .highlight-p3-additionalCol2 { background-color: #d1d5db !important; }
+        
+        .drop-zone { min-height: 80px; border: 2px dashed #cbd5e1; background-color: #f8fafc; transition: all 0.2s; }
+        .drop-zone.drag-over { background-color: #e0f2fe; border-color: #3b82f6; }
+        .draggable-item { cursor: grab; }
+        .draggable-item:active { cursor: grabbing; }
+        .sidebar-btn { transition: all 0.2s; }
+        .sidebar-btn.active { background-color: #eef2ff; color: #4338ca; font-weight: 600; border-right: 3px solid #4f46e5;}
+        .sidebar-btn.completed::after { content: '✔'; margin-left: auto; color: #16a34a; font-weight: bold; }
+        .sidebar-btn:disabled { color: #9ca3af; cursor: not-allowed; background-color: #f9fafb; }
+        .path-nav-btn { transition: all 0.2s; border-bottom: 2px solid transparent; }
+        .path-nav-btn.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
+        .path-nav-btn.completed { color: #16a34a; }
+        .selection-box { cursor: pointer; transition: all 0.2s; }
+        .selection-box.selecting { border-color: #4f46e5; box-shadow: 0 0 0 2px #c7d2fe; }
+        .modal { transition: opacity 0.25s ease; }
+        .task-item { transition: all 0.2s; }
+        .task-item.active { background-color: #eef2ff; border-left-color: #4f46e5; }
+        #paste-area:empty::before {
+            content: attr(placeholder);
+            color: #64748b; /* text-slate-500 */
+            cursor: text;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
+        <header class="text-center">
+            <h1 class="text-4xl font-bold text-slate-900">지능형 금융 데이터 변환기 v6.0</h1>
+            <p class="text-slate-600 mt-2">여러 개의 엑셀 파일/시트를 하나의 워크플로우에서 처리하세요.</p>
+        </header>
+
+        <!-- 1. 데이터 소스 추가 -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-bold border-b pb-3 mb-4">1. 변환할 데이터 추가</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <div class="space-y-3">
+                        <label for="single-file-upload" class="w-full text-center block px-4 py-2 bg-gray-100 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 cursor-pointer">단일파일선택(여러 시트 포함 가능)</label>
+                        <input id="single-file-upload" type="file" class="hidden" accept=".xlsx, .xls">
+                        <label for="multi-file-upload" class="w-full text-center block px-4 py-2 bg-gray-100 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 cursor-pointer">여러 파일 한번에 선택</label>
+                        <input id="multi-file-upload" type="file" class="hidden" accept=".xlsx, .xls" multiple>
+                        <div id="paste-area" class="p-4 min-h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-slate-500 hover:border-indigo-400" contenteditable="true" placeholder="엑셀 데이터 복사 후 여기에 붙여넣기 (Ctrl+V)"></div>
+                    </div>
+                </div>
+                <div id="source-list-container" class="bg-slate-50 p-4 rounded-md border max-h-60 overflow-y-auto">
+                    <h3 class="font-semibold text-lg mb-2 text-slate-700">작업 목록</h3>
+                    <ul id="source-list" class="space-y-2">
+                        <p class="text-slate-500 text-center py-4">파일을 추가하거나 데이터를 붙여넣으세요.</p>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 변환 작업 -->
+        <div id="wizard-container" class="bg-white p-6 rounded-lg shadow-md hidden">
+             <h2 class="text-xl font-bold border-b pb-3 mb-4 flex items-center gap-2">
+                <span>2. 시트명(입력 및 수정 가능):</span>
+                <input type="text" id="active-task-name-input" class="text-indigo-600 font-bold p-1 border-b-2 border-transparent focus:border-indigo-500 outline-none bg-transparent flex-1 min-w-0">
+            </h2>
+            <div id="app" class="flex h-full min-h-[500px]">
+                <aside id="sidebar" class="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 p-4 space-y-2">
+                    <!-- JS 렌더링 영역 -->
+                </aside>
+                <main class="flex-1 p-4 md:p-8 overflow-y-auto bg-slate-50 rounded-r-lg">
+                    <div id="main-content" class="max-w-6xl mx-auto">
+                        <!-- JS 렌더링 영역 -->
+                    </div>
+                </main>
+            </div>
+        </div>
+        
+        <!-- 3. 결과 다운로드 -->
+        <div id="download-section" class="bg-white p-6 rounded-lg shadow-md hidden">
+            <h2 class="text-xl font-bold border-b pb-3 mb-4">3. 결과 다운로드</h2>
+            <p class="text-slate-600 mb-4">작업이 완료된 데이터들을 단계별로 다운로드할 수 있습니다. 각 작업은 별도의 시트로 저장됩니다.</p>
+            <div class="flex flex-wrap gap-4">
+                <button id="download-phase3-btn" class="px-5 py-2.5 bg-sky-500 text-white rounded-md hover:bg-sky-600 disabled:bg-sky-300">3단계: 적요 생성 결과</button>
+                <button id="download-phase4-btn" class="px-5 py-2.5 bg-rose-500 text-white rounded-md hover:bg-rose-600 disabled:bg-rose-300">4단계: 제거된 항목</button>
+                <button id="download-phase5-btn" class="px-5 py-2.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:bg-emerald-300">5단계: 최종 변환 결과</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 모달 -->
+    <div id="modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 id="modal-title" class="text-xl font-bold mb-4 text-slate-800"></h2>
+            <p id="modal-message" class="text-slate-600 mb-6"></p>
+            <div id="modal-buttons" class="flex justify-end space-x-3">
+                <!-- 버튼 동적 생성 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+    /******************************************************************************
+     * 지능형 금융 데이터 변환기 v6.0 (다중 작업 지원)
+     ******************************************************************************/
+    
+    // --- 1. 상태 관리 (State Management) ---
+    const AppState = {
+        _state: {},
+        _listeners: [],
+        init() {
+            this._state = {
+                sources: [], // { id, name, rawData, status ('pending', 'active', 'completed'), currentPhase, phases: {...} }
+                activeSourceId: null,
+            };
+        },
+        getState() { return this._state; },
+        setState(updater) {
+            const oldState = JSON.parse(JSON.stringify(this._state));
+            this._state = typeof updater === 'function' ? updater(oldState) : { ...oldState, ...updater };
+            console.log("State Updated:", this._state);
+            this.notify();
+        },
+        subscribe(listener) { this._listeners.push(listener); },
+        notify() { this._listeners.forEach(listener => listener()); },
+        getActiveSource() {
+            if (!this._state.activeSourceId) return null;
+            return this._state.sources.find(s => s.id === this._state.activeSourceId);
+        }
+    };
+
+    // --- 2. UI 렌더링 (UI Rendering) ---
+    const UIRenderer = {
+        init() {
+            // Cache DOM elements
+            this.sourceListEl = document.getElementById('source-list');
+            this.wizardContainerEl = document.getElementById('wizard-container');
+            this.activeTaskNameInputEl = document.getElementById('active-task-name-input');
+            this.sidebarEl = document.getElementById('sidebar');
+            this.mainContentEl = document.getElementById('main-content');
+            this.downloadSectionEl = document.getElementById('download-section');
+            this.modalEl = document.getElementById('modal');
+            this.modalTitleEl = document.getElementById('modal-title');
+            this.modalMessageEl = document.getElementById('modal-message');
+            this.modalButtonsEl = document.getElementById('modal-buttons');
+            AppState.subscribe(() => this.render());
+
+            // Attach listeners for static elements ONCE to prevent duplication
+            document.getElementById('single-file-upload').addEventListener('change', AppController.handleFileUpload);
+            document.getElementById('multi-file-upload').addEventListener('change', AppController.handleFileUpload);
+            document.getElementById('paste-area').addEventListener('paste', AppController.handlePaste);
+            document.getElementById('download-phase3-btn').addEventListener('click', () => AppController.handleDownload('phase3'));
+            document.getElementById('download-phase4-btn').addEventListener('click', () => AppController.handleDownload('phase4'));
+            document.getElementById('download-phase5-btn').addEventListener('click', () => AppController.handleDownload('phase5'));
+        },
+        render() {
+            this.renderSourceList();
+            this.renderWizard();
+            this.renderDownloadSection();
+            this.attachTopLevelEventListeners();
+        },
+        renderSourceList() {
+            const { sources } = AppState.getState();
+            if (sources.length === 0) {
+                this.sourceListEl.innerHTML = `<p class="text-slate-500 text-center py-4">파일을 추가하거나 데이터를 붙여넣으세요.</p>`;
+                return;
+            }
+            this.sourceListEl.innerHTML = sources.map(source => {
+                let statusBadge = '';
+                if (source.status === 'completed') {
+                    statusBadge = `<span class="text-xs font-bold text-green-600">✔ 완료</span>`;
+                } else if (source.status === 'active') {
+                    statusBadge = `<span class="text-xs font-bold text-indigo-600">작업중...</span>`;
+                }
+                return `
+                    <li data-source-id="${source.id}" class="task-item flex items-center justify-between p-2 rounded-md border-l-4 ${source.status === 'active' ? 'active' : 'border-transparent'} hover:bg-slate-100 cursor-pointer">
+                        <div class="flex-1 min-w-0">
+                             <p class="truncate text-sm font-medium text-slate-800">${source.name}</p>
+                             ${statusBadge}
+                        </div>
+                        <button data-delete-id="${source.id}" class="delete-source-btn ml-2 text-slate-400 hover:text-red-600 text-lg">&times;</button>
+                    </li>
+                `;
+            }).join('');
+        },
+        renderWizard() {
+            const activeSource = AppState.getActiveSource();
+            if (!activeSource) {
+                this.wizardContainerEl.classList.add('hidden');
+                return;
+            }
+            this.wizardContainerEl.classList.remove('hidden');
+            this.activeTaskNameInputEl.value = activeSource.name;
+            
+            this.sidebarEl.innerHTML = this.renderSidebar(activeSource);
+            this.mainContentEl.innerHTML = this.renderPhaseView(activeSource);
+            this.attachWizardEventListeners();
+        },
+        renderDownloadSection() {
+            const { sources } = AppState.getState();
+            const completedSources = sources.filter(s => s.status === 'completed');
+
+            if (completedSources.length > 0) {
+                this.downloadSectionEl.classList.remove('hidden');
+            } else {
+                this.downloadSectionEl.classList.add('hidden');
+            }
+
+            document.getElementById('download-phase3-btn').disabled = completedSources.length === 0;
+            document.getElementById('download-phase4-btn').disabled = completedSources.length === 0;
+            document.getElementById('download-phase5-btn').disabled = completedSources.length === 0;
+        },
+        renderSidebar(source) {
+            const phases = [
+                { id: 'phase1', name: '1. 행 병합' }, { id: 'phase2', name: '2. 통화별 분리' }, 
+                { id: 'phase3', name: '3. 적요 생성' }, { id: 'phase4', name: '4. 항목 제거' }, 
+                { id: 'phase5', name: '5. 최종 변환' }, { id: 'download', name: '작업 완료' }
+            ];
+            let buttonsHTML = phases.map(phase => {
+                const phaseState = source.phases[phase.id];
+                const isEnabled = phase.id === 'phase1' || source.phases[this.getPrevPhase(phase.id)]?.isComplete;
+                return `<button data-phase="${phase.id}" class="sidebar-btn w-full flex items-center text-left px-3 py-2 rounded-md text-slate-700 hover:bg-slate-100 ${source.currentPhase === phase.id ? 'active' : ''} ${phaseState?.isComplete ? 'completed' : ''}" ${!isEnabled ? 'disabled' : ''}>${phase.name}</button>`;
+            }).join('');
+            return `<div class="flex-1"><h2 class="text-lg font-bold text-slate-800 px-2 mb-4">변환 단계</h2><div class="space-y-1">${buttonsHTML}</div></div><div class="pt-4 border-t"><button id="complete-task-btn" class="w-full text-sm px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200">현재 작업 완료</button><button id="reset-btn" class="w-full text-sm px-3 py-2 mt-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200">현재 작업 초기화</button></div>`;
+        },
+        renderPhaseView(source) {
+            switch(source.currentPhase) {
+                case 'phase1': return this.renderPhase1View(source);
+                case 'phase2': return this.renderPhase2View(source);
+                case 'phase3': return this.renderPhase3View(source);
+                case 'phase4': return this.renderPhase4View(source);
+                case 'phase5': return this.renderPhase5View(source);
+                case 'download': return this.renderDownloadView();
+                default: return `<div class="text-center py-10"><h1 class="text-2xl font-bold">오류</h1><p class="text-slate-600 mt-2">알 수 없는 단계입니다.</p></div>`;
+            }
+        },
+        renderPhase1View(source) { const { rawData } = source; const { headerRows } = source.phases.phase1.config; let tableHTML = this.generateTableHTML(rawData.slice(0, 20), { selectable: 'row', selectedRows: headerRows }); return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">1단계: 행 병합</h1><p class="text-slate-600 mt-2">반복되는 제목 행을 모두 클릭하세요.</p></header><div class="flex items-center space-x-3"><button id="process-phase1-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" ${headerRows.length === 0 ? 'disabled' : ''}>실행 & 다음 단계로</button><button id="reset-phase1-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">선택 초기화</button></div><div class="overflow-x-auto border rounded-lg bg-white shadow-sm">${tableHTML}</div></div>`; },
+        renderPhase2View(source) {
+            const data = source.phases.phase1.output; if (!data) return `<p>1단계 작업을 먼저 완료해주세요.</p>`;
+            const { splitCol, groups } = source.phases.phase2.config;
+            let tableHTML = this.generateTableHTML(data.slice(0, 10), { selectable: 'col', selectedCols: splitCol !== null ? [splitCol] : [] });
+            let contentHTML = `<p class="text-slate-600 mt-2">데이터를 통화(KRW, USD 등)에 따라 분리할 기준 열을 선택하세요.<br>모든 거래가 단일 통화인 경우, 아무것도 선택하지 않고 다음 단계로 진행하세요.</p><div class="overflow-x-auto border rounded-lg bg-white shadow-sm my-4">${tableHTML}</div>`;
+            if (splitCol !== null) {
+                const uniqueValues = [...new Set(data.slice(1).map(row => row[splitCol]).filter(Boolean))];
+                const groupedValues = groups.flatMap(g => g.values);
+                const sourceItems = uniqueValues.filter(v => !groupedValues.includes(v));
+                const groupsHTML = groups.map((group, index) => `<div class="p-4 rounded-lg bg-white border"><input type="text" value="${group.name}" data-group-index="${index}" class="group-name-input font-semibold mb-2 border-b-2 w-full p-1" placeholder="그룹 이름 입력"><div id="drop-zone-${index}" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-id="${index}">${group.values.map(val => `<div class="draggable-item bg-blue-100 px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div>`).join('');
+                contentHTML += `<p class="text-slate-600 mt-4 font-semibold">선택한 열의 고유값을 그룹으로 묶어주세요.</p><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2"><div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">고유값 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2">${sourceItems.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="space-y-4">${groupsHTML}<button id="add-group-btn" class="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300">+ 그룹 추가</button></div></div>`;
+            }
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">2단계: 통화별 분리</h1></header>${contentHTML}<div class="flex items-center space-x-3 mt-4"><button id="process-phase2-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">실행 & 다음 단계로</button></div></div>`;
+        },
+        renderPhase3View(source) {
+            const dataSets = source.phases.phase2.output; if (!dataSets || dataSets.length === 0) return `<p>2단계 작업을 먼저 완료해주세요.</p>`;
+            const { activePath, selectingKey } = source.phases.phase3;
+            const currentData = dataSets[activePath]?.data; if (!currentData) return `<p>데이터를 불러오는 중 오류가 발생했습니다. 2단계로 돌아가 다시 시도해주세요.</p>`;
+            const config = source.phases.phase3.config[activePath] || {};
+            const pathNav = dataSets.length > 1 ? dataSets.map((set, index) => `<button data-path-index="${index}" class="path-nav-btn px-4 py-2 text-sm ${index === activePath ? 'active' : ''} ${source.phases.phase3.config[index]?.isComplete ? 'completed' : ''}">${set.name}</button>`).join('') : '';
+            const prompts = [ { key: 'tradeTypeCol', text: '거래종류' }, { key: 'stockNameCol', text: '종목' }, { key: 'stockQtyCol', text: '거래주식수' }, { key: 'unitPriceCol', text: '단가' }, { key: 'stockBalanceCol', text: '주식잔고' }, { key: 'additionalCol1', text: '추가적요 1' }, { key: 'additionalCol2', text: '추가적요 2' } ];
+            let selectionUI = prompts.map(p => { const isSelecting = selectingKey === p.key; const valueText = config[p.key] !== undefined && currentData[0][config[p.key]] ? `[${config[p.key] + 1}열] ${currentData[0][config[p.key]]}` : '미선택'; return `<div data-key="${p.key}" class="selection-box p-2 border rounded-md ${isSelecting ? 'selecting' : ''}"><label class="font-medium text-sm pointer-events-none">${p.text}: </label><span class="font-bold text-indigo-600 pointer-events-none">${valueText}</span></div>`; }).join('');
+            let tableHTML = this.generateTableHTML(currentData.slice(0, 10), { selectable: 'col', highlightMapping: { 'highlight-p3-tradeTypeCol': config.tradeTypeCol, 'highlight-p3-stockNameCol': config.stockNameCol, 'highlight-p3-stockQtyCol': config.stockQtyCol, 'highlight-p3-unitPriceCol': config.unitPriceCol, 'highlight-p3-stockBalanceCol': config.stockBalanceCol, 'highlight-p3-additionalCol1': config.additionalCol1, 'highlight-p3-additionalCol2': config.additionalCol2, } });
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">3단계: 주식 적요 생성</h1></header><div class="flex border-b">${pathNav}</div><p class="text-slate-600 mt-2">아래 항목을 클릭한 뒤, 해당하는 열을 테이블에서 선택해주세요.</p><div class="grid grid-cols-2 md:grid-cols-4 gap-2">${selectionUI}</div><div class="flex items-center space-x-3 mt-4"><button id="process-phase3-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">현재 통화 적용 & 다음으로</button><button id="reset-phase3-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">선택 초기화</button></div><div class="overflow-x-auto border rounded-lg bg-white shadow-sm">${tableHTML}</div></div>`;
+        },
+        renderPhase4View(source) {
+            const dataSets = source.phases.phase3.output; if (!dataSets || dataSets.length === 0) return `<p>3단계 작업을 먼저 완료해주세요.</p>`;
+            const { activePath } = source.phases.phase4;
+            const currentData = dataSets[activePath]?.data; if (!currentData) return `<p>데이터를 불러오는 중 오류가 발생했습니다. 3단계로 돌아가 다시 시도해주세요.</p>`;
+            const config = source.phases.phase4.config[activePath] || {};
+            const pathNav = dataSets.length > 1 ? dataSets.map((set, index) => `<button data-path-index="${index}" class="path-nav-btn px-4 py-2 text-sm ${index === activePath ? 'active' : ''} ${source.phases.phase4.config[index]?.isComplete ? 'completed' : ''}">${set.name}</button>`).join('') : '';
+            let contentHTML;
+            if (config.tradeTypeCol === undefined) {
+                let tableHTML = this.generateTableHTML(currentData.slice(0, 10), { selectable: 'col' });
+                contentHTML = `<p class="text-slate-600 mt-2">제거할 항목의 기준이 될 '거래종류' 열을 선택해주세요.</p><div class="overflow-x-auto border rounded-lg bg-white shadow-sm my-4">${tableHTML}</div>`;
+            } else {
+                const uniqueValues = [...new Set(currentData.slice(1).map(row => row[config.tradeTypeCol]).filter(Boolean))];
+                const itemsInZone = config.valuesToRemove || [];
+                const sourceItems = uniqueValues.filter(v => !itemsInZone.includes(v));
+                contentHTML = `<p class="text-slate-600 mt-2">입출금과 관련 없는 거래 종류를 아래 '제거할 항목' 영역으로 드래그 앤 드롭하세요.</p>
+                <div class="text-sm text-red-500 mt-2 p-3 bg-slate-100 rounded-md">
+                <p class="font-semibold">설명:</p>
+                <p>*미래에셋의 경우 '주식매수(매도) 입/출금'은 제거할 항목으로 분류해야 합니다.</p>
+                <p>*미래에셋의 경우 '해외주식매수(매도) 입/출금'은 제거할 항목으로 분류해야 합니다.</p>
+                <p>*미래에셋의 경우 '주식매수(매도) 입/출고'는 제거할 항목으로 분류하지 말아주세요.</p>
+                <p>*미래에셋의 경우 '해외주식매수(매도) 입/출고'는 제거할 항목으로 분류하지 말아주세요.</p>
+                </div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"><div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">전체 거래 종류 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2">${sourceItems.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2 text-red-600">제거할 항목 (드롭)</h3><div id="drop-zone-0" class="drop-zone p-2 rounded flex flex-wrap gap-2">${itemsInZone.map(val => `<div class="draggable-item bg-red-100 px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div></div>`;
+            }
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">4단계: 불필요 항목 제거</h1></header><div class="flex border-b">${pathNav}</div>${contentHTML}<div class="flex items-center space-x-3 mt-4"><button id="process-phase4-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">현재 통화 적용 & 다음으로</button><button id="reset-phase4-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">선택 초기화</button></div></div>`;
+        },
+        renderPhase5View(source) {
+            const dataSets = source.phases.phase4.output; if (!dataSets || dataSets.length === 0) return `<p>4단계 작업을 먼저 완료해주세요.</p>`;
+            const { activePath, selectingKey } = source.phases.phase5;
+            const currentData = dataSets[activePath]?.data; if (!currentData) return `<p>데이터를 불러오는 중 오류가 발생했습니다. 4단계로 돌아가 다시 시도해주세요.</p>`;
+            const config = source.phases.phase5.config[activePath] || {};
+            const pathNav = dataSets.length > 1 ? dataSets.map((set, index) => `<button data-path-index="${index}" class="path-nav-btn px-4 py-2 text-sm ${index === activePath ? 'active' : ''} ${source.phases.phase5.config[index]?.isComplete ? 'completed' : ''}">${set.name}</button>`).join('') : '';
+            const prompts = [ { key: 'dateCol', text: '일자' }, { key: 'amountCol', text: '거래금액' }, { key: 'balanceCol', text: '예수금잔액' }, { key: 'tradeTypeCol', text: '거래종류' }, { key: 'jukyoCol', text: '적요(3단계 결과)' }, { key: 'feeCol', text: '수수료' }, { key: 'taxCol', text: '제세금' } ];
+            let selectionUI = prompts.map(p => { const isSelecting = selectingKey === p.key; const valueText = config[p.key] !== undefined && currentData.length > 0 && currentData[0][config[p.key]] ? `[${config[p.key] + 1}열] ${currentData[0][config[p.key]]}` : '미선택'; return `<div data-key="${p.key}" class="selection-box p-2 border rounded-md ${isSelecting ? 'selecting' : ''}"><label class="font-medium text-sm pointer-events-none">${p.text}: </label><span class="font-bold text-indigo-600 pointer-events-none">${valueText}</span></div>`; }).join('');
+            let tableHTML = this.generateTableHTML(currentData.slice(0, 10), { selectable: 'col' });
+            let dragDropUI = '';
+            if (config.tradeTypeCol !== undefined) {
+                const uniqueValues = [...new Set(currentData.slice(1).map(row => row[config.tradeTypeCol]).filter(Boolean))];
+                const deposits = config.depositTypes || [];
+                const withdrawals = config.withdrawalTypes || [];
+                const sourceItems = uniqueValues.filter(v => !deposits.includes(v) && !withdrawals.includes(v));
+                dragDropUI = `<div class="flex items-center space-x-4"><p class="text-slate-600 font-semibold">거래 종류를 '입금'과 '출금'으로 분류해주세요.</p><button id="auto-classify-btn" class="px-3 py-1 bg-yellow-400 text-yellow-900 rounded-md hover:bg-yellow-500 text-sm font-bold">✨ 잔액 기준으로 자동 분류</button></div><div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2"><div class="p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">거래 종류 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2">${sourceItems.map(val => `<div class="draggable-item bg-white px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2 text-blue-600">입금 항목</h3><div id="drop-zone-deposit" class="drop-zone p-2 rounded flex flex-wrap gap-2">${deposits.map(val => `<div class="draggable-item bg-blue-100 px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="p-4 rounded-lg bg-white border"><h3 class="font-semibold mb-2 text-red-600">출금 항목</h3><div id="drop-zone-withdrawal" class="drop-zone p-2 rounded flex flex-wrap gap-2">${withdrawals.map(val => `<div class="draggable-item bg-red-100 px-3 py-1 rounded shadow-sm border" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div></div>`;
+            }
+            return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">5단계: 최종 변환</h1></header><div class="flex border-b">${pathNav}</div><p class="text-slate-600 mt-2">최종 변환에 필요한 열들을 클릭하여 선택해주세요.</p><div class="overflow-x-auto border rounded-lg bg-white shadow-sm my-4">${tableHTML}</div><div class="grid grid-cols-2 md:grid-cols-4 gap-2">${selectionUI}</div><div><label class="font-medium text-sm">기초가액: </label><input id="base-amount-input" type="number" value="${config.baseAmount || 0}" class="p-2 border rounded-md"></div><div class="mt-4 space-y-4">${dragDropUI}</div><div class="flex items-center space-x-3 mt-4"><button id="process-phase5-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">현재 통화 최종 변환 & 다음으로</button><button id="reset-phase5-btn" class="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600">선택 초기화</button></div></div>`;
+        },
+        renderDownloadView() {
+             return `<div class="text-center py-10"><h1 class="text-4xl font-bold text-green-600">🎉 이 작업 변환 완료!</h1><p class="text-slate-600 mt-4">모든 단계가 완료되었습니다. 사이드바의 '현재 작업 완료' 버튼을 눌러 목록으로 돌아가거나, 다른 단계를 클릭하여 수정할 수 있습니다.</p></div>`;
+        },
+        generateTableHTML(data, options = {}) {
+            let html = '<table class="preview-table">';
+            data.forEach((row, rowIndex) => {
+                const rowClass = options.selectable === 'row' ? `selectable ${options.selectedRows?.includes(rowIndex) ? 'highlighted' : ''}` : '';
+                html += `<tr data-row-index="${rowIndex}" class="${rowClass}">`;
+                (row || []).forEach((cell, colIndex) => {
+                    let colClass = options.selectable === 'col' ? 'selectable' : '';
+                    if (options.selectedCols?.includes(colIndex)) colClass += ' highlighted';
+                    if (options.highlightMapping) {
+                        for (const [className, col] of Object.entries(options.highlightMapping)) {
+                            if (col === colIndex) colClass += ` ${className}`;
+                        }
+                    }
+                    html += `<td data-col-index="${colIndex}" class="${colClass}">${cell ?? ''}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</table>';
+            return html;
+        },
+        getPrevPhase(phaseId) {
+            const order = ['upload', 'phase1', 'phase2', 'phase3', 'phase4', 'phase5', 'download'];
+            const index = order.indexOf(phaseId);
+            return index > 0 ? order[index - 1] : 'upload';
+        },
+        showModal(title, message, buttons) {
+            this.modalTitleEl.textContent = title;
+            this.modalMessageEl.innerHTML = message;
+            this.modalButtonsEl.innerHTML = '';
+            buttons.forEach(btnInfo => {
+                const button = document.createElement('button');
+                button.textContent = btnInfo.text;
+                button.className = `px-4 py-2 rounded-md font-semibold ${btnInfo.className}`;
+                button.onclick = btnInfo.onClick;
+                this.modalButtonsEl.appendChild(button);
+            });
+            this.modalEl.classList.remove('hidden');
+        },
+        hideModal() {
+            this.modalEl.classList.add('hidden');
+        },
+        attachTopLevelEventListeners() {
+            // Listeners for DYNAMICALLY created elements that need to be re-attached after every render
+            this.sourceListEl.querySelectorAll('.task-item').forEach(item => {
+                 item.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('delete-source-btn')) {
+                        AppController.setActiveSource(e.currentTarget.dataset.sourceId);
+                    }
+                });
+            });
+
+             this.sourceListEl.querySelectorAll('.delete-source-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    AppController.deleteSource(e.currentTarget.dataset.deleteId);
+                });
+            });
+        },
+        attachWizardEventListeners() {
+            const activeSource = AppState.getActiveSource();
+            if (!activeSource) return;
+
+            const activeTaskNameInput = document.getElementById('active-task-name-input');
+            if (activeTaskNameInput) {
+                activeTaskNameInput.addEventListener('change', (e) => AppController.updateActiveSourceName(e.target.value));
+            }
+
+            document.querySelectorAll('.sidebar-btn').forEach(btn => btn.addEventListener('click', (e) => AppController.navigate(e.currentTarget.dataset.phase)));
+            
+            const resetBtn = document.getElementById('reset-btn');
+            if(resetBtn) {
+                resetBtn.addEventListener('click', () => {
+                    this.showModal(
+                        '작업 초기화', '정말로 현재 작업의 모든 진행 상황을 초기화하시겠습니까?',
+                        [
+                            { text: '아니오', className: 'bg-slate-200 hover:bg-slate-300 text-slate-800', onClick: () => this.hideModal() },
+                            { text: '예 (초기화)', className: 'bg-red-600 hover:bg-red-700 text-white', onClick: () => { AppController.resetActiveSource(); this.hideModal(); } }
+                        ]
+                    );
+                });
+            }
+
+            const completeTaskBtn = document.getElementById('complete-task-btn');
+            if (completeTaskBtn) completeTaskBtn.addEventListener('click', AppController.completeActiveTask);
+
+            switch(activeSource.currentPhase) {
+                case 'phase1':
+                    document.querySelectorAll('#main-content .selectable').forEach(row => row.addEventListener('click', e => AppController.handlePhase1RowSelect(parseInt(e.currentTarget.dataset.rowIndex, 10))));
+                    document.getElementById('process-phase1-btn').addEventListener('click', AppController.processPhase1);
+                    document.getElementById('reset-phase1-btn').addEventListener('click', AppController.resetPhase1);
+                    break;
+                case 'phase2':
+                    document.querySelectorAll('#main-content .selectable').forEach(col => col.addEventListener('click', e => AppController.handlePhase2ColSelect(parseInt(e.currentTarget.dataset.colIndex, 10))));
+                    document.getElementById('add-group-btn')?.addEventListener('click', AppController.handlePhase2AddGroup);
+                    document.querySelectorAll('.group-name-input').forEach(input => input.addEventListener('change', e => AppController.handlePhase2GroupNameChange(parseInt(e.currentTarget.dataset.groupIndex, 10), e.currentTarget.value)));
+                    document.getElementById('process-phase2-btn').addEventListener('click', AppController.processPhase2);
+                    this.attachDragAndDropListeners('phase2');
+                    break;
+                case 'phase3':
+                    document.querySelectorAll('#main-content .selection-box').forEach(box => box.addEventListener('click', e => AppController.handlePhase3KeySelect(e.currentTarget.dataset.key)));
+                    document.querySelectorAll('#main-content .selectable').forEach(col => col.addEventListener('click', e => AppController.handlePhase3ColSelect(parseInt(e.currentTarget.dataset.colIndex, 10))));
+                    document.querySelectorAll('.path-nav-btn').forEach(btn => btn.addEventListener('click', e => AppController.handlePhase3PathChange(parseInt(e.currentTarget.dataset.pathIndex, 10))));
+                    document.getElementById('process-phase3-btn').addEventListener('click', AppController.processPhase3);
+                    document.getElementById('reset-phase3-btn').addEventListener('click', AppController.resetPhase3);
+                    break;
+                case 'phase4':
+                    document.querySelectorAll('#main-content .selectable').forEach(col => col.addEventListener('click', e => AppController.handlePhase4ColSelect(parseInt(e.currentTarget.dataset.colIndex, 10))));
+                    document.querySelectorAll('.path-nav-btn').forEach(btn => btn.addEventListener('click', e => AppController.handlePhase4PathChange(parseInt(e.currentTarget.dataset.pathIndex, 10))));
+                    document.getElementById('process-phase4-btn').addEventListener('click', AppController.processPhase4);
+                    document.getElementById('reset-phase4-btn').addEventListener('click', AppController.resetPhase4);
+                    this.attachDragAndDropListeners('phase4');
+                    break;
+                case 'phase5':
+                    document.querySelectorAll('#main-content .selection-box').forEach(box => box.addEventListener('click', e => AppController.handlePhase5KeySelect(e.currentTarget.dataset.key)));
+                    document.querySelectorAll('#main-content .selectable').forEach(col => col.addEventListener('click', e => AppController.handlePhase5ColSelect(parseInt(e.currentTarget.dataset.colIndex, 10))));
+                    document.querySelectorAll('.path-nav-btn').forEach(btn => btn.addEventListener('click', e => AppController.handlePhase5PathChange(parseInt(e.currentTarget.dataset.pathIndex, 10))));
+                    document.getElementById('base-amount-input').addEventListener('change', e => AppController.handlePhase5BaseAmountChange(e.target.value));
+                    document.getElementById('auto-classify-btn')?.addEventListener('click', AppController.handlePhase5AutoClassify);
+                    document.getElementById('process-phase5-btn').addEventListener('click', () => AppController.processPhase5(false));
+                    document.getElementById('reset-phase5-btn').addEventListener('click', AppController.resetPhase5);
+                    this.attachDragAndDropListeners('phase5');
+                    break;
+            }
+        },
+        attachDragAndDropListeners(phase) {
+            document.querySelectorAll('.draggable-item').forEach(item => {
+                item.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', e.target.dataset.value));
+            });
+            document.querySelectorAll('.drop-zone').forEach(zone => {
+                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+                zone.addEventListener('dragleave', e => zone.classList.remove('drag-over'));
+                zone.addEventListener('drop', e => {
+                    e.preventDefault(); zone.classList.remove('drag-over');
+                    const value = e.dataTransfer.getData('text/plain');
+                    const toZoneId = zone.id;
+                    if (phase === 'phase2') AppController.handlePhase2Drop(value, toZoneId);
+                    if (phase === 'phase4') AppController.handlePhase4Drop(value, toZoneId);
+                    if (phase === 'phase5') AppController.handlePhase5Drop(value, toZoneId);
+                });
+            });
+        }
+    };
+
+    // --- 3. 컨트롤러 (Controller / Actions) ---
+    const AppController = {
+        // --- Source Management ---
+        handleFileUpload(event) {
+            const files = Array.from(event.target.files);
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        if (workbook.SheetNames.length > 1) {
+                            workbook.SheetNames.forEach(sheetName => {
+                                const worksheet = workbook.Sheets[sheetName];
+                                const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+                                AppController.addSource(`${file.name} / ${sheetName}`, rawData);
+                            });
+                        } else {
+                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+                            AppController.addSource(file.name, rawData);
+                        }
+                    } catch (err) {
+                        UIRenderer.showModal('파일 오류', `파일 '${file.name}'을(를) 읽는 중 오류가 발생했습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+            event.target.value = ''; // Reset file input
+        },
+        handlePaste(event) {
+            event.preventDefault();
+            const text = (event.clipboardData || window.clipboardData).getData('text');
+            const rawData = text.trim().split('\n').map(row => row.split('\t'));
+            const sourceCount = AppState.getState().sources.filter(s => s.name.startsWith('증권계좌')).length;
+            AppController.addSource(`증권계좌${sourceCount + 1}`, rawData);
+            event.target.textContent = '';
+        },
+        addSource(name, rawData) {
+            if (!rawData || rawData.length === 0 || rawData.flat().every(cell => cell === null)) {
+                UIRenderer.showModal('알림', `'${name}'에 데이터가 없어 추가하지 않았습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+                return;
+            }
+            const newSource = {
+                id: `source_${Date.now()}_${Math.random()}`,
+                name, rawData,
+                status: 'pending',
+                currentPhase: 'phase1',
+                phases: {
+                    phase1: { isComplete: false, config: { headerRows: [] }, output: null },
+                    phase2: { isComplete: false, config: { splitCol: null, groups: [{name: '그룹 1', values: []}] }, output: [] },
+                    phase3: { isComplete: false, config: {}, output: [], activePath: 0, selectingKey: null },
+                    phase4: { isComplete: false, config: {}, output: [], removed: [], activePath: 0 },
+                    phase5: { isComplete: false, config: {}, output: [], activePath: 0, selectingKey: null },
+                    download: { isComplete: false }
+                }
+            };
+            AppState.setState(state => ({ ...state, sources: [...state.sources, newSource] }));
+        },
+        setActiveSource(sourceId) {
+            AppState.setState(state => {
+                const newSources = state.sources.map(s => ({
+                    ...s,
+                    status: s.id === sourceId ? 'active' : (s.status === 'active' ? 'pending' : s.status)
+                }));
+                return { ...state, activeSourceId: sourceId, sources: newSources };
+            });
+        },
+        deleteSource(sourceId) {
+             UIRenderer.showModal('작업 삭제', `이 작업을 목록에서 삭제하시겠습니까?`,
+                [
+                    { text: '아니오', className: 'bg-slate-200 hover:bg-slate-300 text-slate-800', onClick: () => UIRenderer.hideModal() },
+                    { text: '예 (삭제)', className: 'bg-red-600 hover:bg-red-700 text-white', onClick: () => {
+                        AppState.setState(state => {
+                            const newSources = state.sources.filter(s => s.id !== sourceId);
+                            const newActiveSourceId = state.activeSourceId === sourceId ? null : state.activeSourceId;
+                            return { ...state, sources: newSources, activeSourceId: newActiveSourceId };
+                        });
+                        UIRenderer.hideModal();
+                    }}
+                ]
+            );
+        },
+        updateActiveSourceName(newName) {
+            AppController._updateActiveSource(s => {
+                s.name = newName;
+                return s;
+            });
+        },
+        completeActiveTask() {
+            const activeSource = AppState.getActiveSource();
+            if (!activeSource.phases.phase5.isComplete) {
+                UIRenderer.showModal('알림', `모든 변환 단계를 완료해야 작업을 마칠 수 있습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+                return;
+            }
+            AppState.setState(state => {
+                const newSources = state.sources.map(s => {
+                    if (s.id === state.activeSourceId) {
+                        return { ...s, status: 'completed' };
+                    }
+                    return s;
+                });
+                return { ...state, activeSourceId: null, sources: newSources };
+            });
+        },
+        resetActiveSource() {
+             AppState.setState(state => {
+                const newSources = state.sources.map(s => {
+                    if (s.id === state.activeSourceId) {
+                        // Return a new object with reset phase data
+                        return {
+                            ...s,
+                            currentPhase: 'phase1',
+                            phases: {
+                                phase1: { isComplete: false, config: { headerRows: [] }, output: null },
+                                phase2: { isComplete: false, config: { splitCol: null, groups: [{name: '그룹 1', values: []}] }, output: [] },
+                                phase3: { isComplete: false, config: {}, output: [], activePath: 0, selectingKey: null },
+                                phase4: { isComplete: false, config: {}, output: [], removed: [], activePath: 0 },
+                                phase5: { isComplete: false, config: {}, output: [], activePath: 0, selectingKey: null },
+                                download: { isComplete: false }
+                            }
+                        };
+                    }
+                    return s;
+                });
+                return { ...state, sources: newSources };
+            });
+        },
+        
+        // --- Phase Logic (Delegates to source-specific state) ---
+        _updateActiveSource(updater) {
+            AppState.setState(state => {
+                const newSources = state.sources.map(s => {
+                    if (s.id === state.activeSourceId) {
+                        return updater(s);
+                    }
+                    return s;
+                });
+                return { ...state, sources: newSources };
+            });
+        },
+        
+        navigate(phase) { AppController._updateActiveSource(s => ({...s, currentPhase: phase})); },
+        handlePhase1RowSelect(rowIndex) { AppController._updateActiveSource(s => { const currentSelection = s.phases.phase1.config.headerRows; const newSelection = currentSelection.includes(rowIndex) ? currentSelection.filter(r => r !== rowIndex) : [...currentSelection, rowIndex].sort((a, b) => a - b); s.phases.phase1.config.headerRows = newSelection; return s; }); },
+        resetPhase1() { AppController._updateActiveSource(s => { s.phases.phase1.config.headerRows = []; return s; }); },
+        processPhase1() {
+            const source = AppState.getActiveSource();
+            const { rawData } = source;
+            const { headerRows } = source.phases.phase1.config;
+            if (headerRows.length === 0) return UIRenderer.showModal('알림', '최소 1개 이상의 행을 선택해야 합니다.', [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+            
+            let result = DataTransformer.transformPhase1(rawData, headerRows);
+            result = DataTransformer.autoSortByDate(result);
+            
+            AppController._updateActiveSource(s => {
+                s.currentPhase = 'phase2';
+                s.phases.phase1.isComplete = true;
+                s.phases.phase1.output = result;
+                s.phases.phase2.isComplete = false;
+                s.phases.phase2.config = { splitCol: null, groups: [{name: '그룹 1', values: []}] };
+                return s;
+            });
+        },
+        handlePhase2ColSelect(colIndex) { AppController._updateActiveSource(s => { s.phases.phase2.config.splitCol = colIndex; return s; }); },
+        handlePhase2AddGroup() { AppController._updateActiveSource(s => { s.phases.phase2.config.groups.push({name: `그룹 ${s.phases.phase2.config.groups.length + 1}`, values: []}); return s; }); },
+        handlePhase2GroupNameChange(index, newName) { AppController._updateActiveSource(s => { s.phases.phase2.config.groups[index].name = newName; return s; }); },
+        handlePhase2Drop(value, toZoneId) { AppController._updateActiveSource(s => { s.phases.phase2.config.groups.forEach(g => g.values = g.values.filter(v => v !== value)); const zoneIndex = parseInt(toZoneId.replace('drop-zone-', ''), 10); if (!isNaN(zoneIndex) && !s.phases.phase2.config.groups[zoneIndex].values.includes(value)) { s.phases.phase2.config.groups[zoneIndex].values.push(value); } return s; }); },
+        processPhase2() {
+            const source = AppState.getActiveSource();
+            const data = source.phases.phase1.output;
+            const { splitCol, groups } = source.phases.phase2.config;
+            const result = DataTransformer.transformPhase2(data, splitCol, groups);
+            if (splitCol !== null && result.length === 0) {
+                return UIRenderer.showModal('알림', '선택된 기준으로 데이터를 분리할 수 없습니다. 그룹에 포함된 값이 실제 데이터와 일치하는지 확인해주세요.', [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+            }
+            AppController._updateActiveSource(s => {
+                s.currentPhase = 'phase3';
+                s.phases.phase2.isComplete = true;
+                s.phases.phase2.output = result;
+                s.phases.phase3.isComplete = false;
+                s.phases.phase3.config = {};
+                s.phases.phase3.activePath = 0;
+                return s;
+            });
+        },
+        handlePhase3PathChange(pathIndex) { AppController._updateActiveSource(s => { s.phases.phase3.activePath = pathIndex; s.phases.phase3.selectingKey = null; return s; }); },
+        handlePhase3KeySelect(key) { AppController._updateActiveSource(s => { s.phases.phase3.selectingKey = key; return s; }); },
+        handlePhase3ColSelect(colIndex) { AppController._updateActiveSource(s => { const { activePath, selectingKey } = s.phases.phase3; if (!selectingKey) return s; s.phases.phase3.config[activePath] = s.phases.phase3.config[activePath] || {}; s.phases.phase3.config[activePath][selectingKey] = colIndex; s.phases.phase3.selectingKey = null; return s; }); },
+        resetPhase3() { AppController._updateActiveSource(s => { delete s.phases.phase3.config[s.phases.phase3.activePath]; return s; }); },
+        processPhase3() {
+            AppController._updateActiveSource(s => {
+                const { activePath } = s.phases.phase3;
+                const dataSets = s.phases.phase2.output;
+                const currentConfig = s.phases.phase3.config[activePath];
+                if (!currentConfig) {
+                    UIRenderer.showModal('알림', '현재 통화의 열을 먼저 선택해주세요.', [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+                    return s;
+                }
+                currentConfig.isComplete = true;
+                const allPathsCompleted = dataSets.every((_, index) => s.phases.phase3.config[index]?.isComplete);
+                if (allPathsCompleted) {
+                    s.phases.phase3.output = dataSets.map((dataSet, index) => ({ ...dataSet, data: DataTransformer.transformPhase3(dataSet.data, s.phases.phase3.config[index]) }));
+                    s.phases.phase3.isComplete = true;
+                    s.currentPhase = 'phase4';
+                    s.phases.phase4.isComplete = false;
+                    s.phases.phase4.config = {};
+                    s.phases.phase4.activePath = 0;
+                } else {
+                    s.phases.phase3.activePath = dataSets.findIndex((_, index) => !s.phases.phase3.config[index]?.isComplete);
+                }
+                return s;
+            });
+        },
+        handlePhase4PathChange(pathIndex) { AppController._updateActiveSource(s => { s.phases.phase4.activePath = pathIndex; return s; }); },
+        handlePhase4ColSelect(colIndex) { AppController._updateActiveSource(s => { s.phases.phase4.config[s.phases.phase4.activePath] = s.phases.phase4.config[s.phases.phase4.activePath] || {}; s.phases.phase4.config[s.phases.phase4.activePath].tradeTypeCol = colIndex; return s; }); },
+        resetPhase4() { AppController._updateActiveSource(s => { delete s.phases.phase4.config[s.phases.phase4.activePath]; return s; }); },
+        handlePhase4Drop(value, toZoneId) { AppController._updateActiveSource(s => { const config = s.phases.phase4.config[s.phases.phase4.activePath] || {}; config.valuesToRemove = config.valuesToRemove || []; if (toZoneId === 'drop-zone-0' && !config.valuesToRemove.includes(value)) { config.valuesToRemove.push(value); } else if (toZoneId === 'source-items') { config.valuesToRemove = config.valuesToRemove.filter(v => v !== value); } s.phases.phase4.config[s.phases.phase4.activePath] = config; return s; }); },
+        processPhase4() {
+            AppController._updateActiveSource(s => {
+                const { activePath } = s.phases.phase4;
+                const dataSets = s.phases.phase3.output;
+                const currentConfig = s.phases.phase4.config[activePath];
+                if (!currentConfig?.tradeTypeCol) {
+                    UIRenderer.showModal('알림', '기준열을 먼저 선택해주세요.', [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+                    return s;
+                }
+                currentConfig.isComplete = true;
+                const allPathsCompleted = dataSets.every((_, index) => s.phases.phase4.config[index]?.isComplete);
+                if (allPathsCompleted) {
+                    const outputs = [], removeds = [];
+                    dataSets.forEach((dataSet, index) => {
+                        const { kept, removed } = DataTransformer.transformPhase4(dataSet.data, s.phases.phase4.config[index]);
+                        outputs.push({ ...dataSet, data: kept });
+                        removeds.push({ ...dataSet, data: removed });
+                    });
+                    s.phases.phase4.output = outputs;
+                    s.phases.phase4.removed = removeds;
+                    s.phases.phase4.isComplete = true;
+                    s.currentPhase = 'phase5';
+                    s.phases.phase5.isComplete = false;
+                    s.phases.phase5.activePath = 0;
+                } else {
+                    s.phases.phase4.activePath = dataSets.findIndex((_, index) => !s.phases.phase4.config[index]?.isComplete);
+                }
+                return s;
+            });
+        },
+        handlePhase5PathChange(pathIndex) { AppController._updateActiveSource(s => { s.phases.phase5.activePath = pathIndex; s.phases.phase5.selectingKey = null; return s; }); },
+        handlePhase5KeySelect(key) { AppController._updateActiveSource(s => { s.phases.phase5.selectingKey = key; return s; }); },
+        handlePhase5ColSelect(colIndex) { AppController._updateActiveSource(s => { const { activePath, selectingKey } = s.phases.phase5; if (!selectingKey) return s; s.phases.phase5.config[activePath] = s.phases.phase5.config[activePath] || {}; s.phases.phase5.config[activePath][selectingKey] = colIndex; s.phases.phase5.selectingKey = null; return s; }); },
+        handlePhase5BaseAmountChange(value) { AppController._updateActiveSource(s => { s.phases.phase5.config[s.phases.phase5.activePath] = s.phases.phase5.config[s.phases.phase5.activePath] || {}; s.phases.phase5.config[s.phases.phase5.activePath].baseAmount = parseFloat(value) || 0; return s; }); },
+        handlePhase5Drop(value, toZoneId) { AppController._updateActiveSource(s => { const config = s.phases.phase5.config[s.phases.phase5.activePath] || {}; config.depositTypes = (config.depositTypes || []).filter(v => v !== value); config.withdrawalTypes = (config.withdrawalTypes || []).filter(v => v !== value); if (toZoneId === 'drop-zone-deposit') config.depositTypes.push(value); if (toZoneId === 'drop-zone-withdrawal') config.withdrawalTypes.push(value); s.phases.phase5.config[s.phases.phase5.activePath] = config; return s; }); },
+        resetPhase5() { AppController._updateActiveSource(s => { delete s.phases.phase5.config[s.phases.phase5.activePath]; return s; }); },
+        handlePhase5AutoClassify() {
+            const source = AppState.getActiveSource();
+            const { activePath } = source.phases.phase5;
+            const data = source.phases.phase4.output[activePath].data;
+            const config = source.phases.phase5.config[activePath] || {};
+            const { result, error } = DataTransformer.classifyByBalance(data, config);
+            if (error) { return UIRenderer.showModal('오류: 필수 열 미선택', error, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]); }
+            AppController._updateActiveSource(s => { s.phases.phase5.config[activePath] = { ...config, depositTypes: result.depositTypes, withdrawalTypes: result.withdrawalTypes }; return s; });
+        },
+        processPhase5(ignoreWarning = false) {
+            const source = AppState.getActiveSource();
+            const { activePath } = source.phases.phase5;
+            const dataSet = source.phases.phase4.output[activePath];
+            const currentConfig = source.phases.phase5.config[activePath];
+            if (!currentConfig) { return UIRenderer.showModal('알림', '현재 통화의 설정을 완료해주세요.', [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]); }
+            if (!ignoreWarning) {
+                const verification = DataTransformer.verifyPhase5(dataSet.data, currentConfig);
+                if (!verification.isCorrect) {
+                    return UIRenderer.showModal('잔액 흐름 불일치', `계산된 최종 잔액(<b class='text-blue-600'>${verification.calculated.toLocaleString()}</b>)이 원본의 최종 잔액(<b class='text-red-600'>${verification.original.toLocaleString()}</b>)과 일치하지 않습니다.<br>거래 종류를 재분류하시겠습니까?`,
+                        [{ text: '예 (4단계로 이동)', className: 'bg-red-600 hover:bg-red-700 text-white', onClick: () => AppController.handleBalanceMismatchRestart() }, { text: '아니오 (무시하고 변환)', className: 'bg-slate-200 hover:bg-slate-300 text-slate-800', onClick: () => { UIRenderer.hideModal(); AppController.processPhase5(true); } }]);
+                }
+            }
+            AppController._updateActiveSource(s => {
+                const config = s.phases.phase5.config[s.phases.phase5.activePath];
+                config.isComplete = true;
+                config.status = ignoreWarning ? 'WARNING' : 'VALIDATED';
+                const dataSets = s.phases.phase4.output;
+                const allPathsCompleted = dataSets.every((_, index) => s.phases.phase5.config[index]?.isComplete);
+                if (allPathsCompleted) {
+                    s.phases.phase5.output = dataSets.map((ds, index) => ({...ds, data: DataTransformer.transformPhase5(ds.data, s.phases.phase5.config[index])}));
+                    s.phases.phase5.isComplete = true;
+                    s.currentPhase = 'download';
+                } else {
+                    s.phases.phase5.activePath = dataSets.findIndex((_, index) => !s.phases.phase5.config[index]?.isComplete);
+                }
+                return s;
+            });
+        },
+        handleBalanceMismatchRestart() {
+            UIRenderer.hideModal();
+            AppController._updateActiveSource(s => {
+                const { activePath } = s.phases.phase5;
+                const oldPhase5Config = s.phases.phase5.config[activePath] || {};
+                const newPhase5Config = { dateCol: oldPhase5Config.dateCol, amountCol: oldPhase5Config.amountCol, balanceCol: oldPhase5Config.balanceCol, tradeTypeCol: oldPhase5Config.tradeTypeCol, jukyoCol: oldPhase5Config.jukyoCol, feeCol: oldPhase5Config.feeCol, taxCol: oldPhase5Config.taxCol, baseAmount: oldPhase5Config.baseAmount, depositTypes: [], withdrawalTypes: [], isComplete: false, status: 'NEEDS_REVIEW' };
+                s.phases.phase5.config[activePath] = newPhase5Config;
+                const phase4Config = s.phases.phase4.config[activePath] || {};
+                phase4Config.isComplete = false;
+                s.phases.phase4.config[activePath] = phase4Config;
+                s.currentPhase = 'phase4';
+                s.phases.phase4.activePath = activePath;
+                s.phases.phase4.isComplete = false;
+                s.phases.phase5.isComplete = false;
+                s.phases.download.isComplete = false;
+                return s;
+            });
+        },
+        handleDownload(phase) {
+            const { sources } = AppState.getState();
+            const completedSources = sources.filter(s => s.status === 'completed');
+            if (completedSources.length === 0) {
+                 return UIRenderer.showModal('알림', `다운로드할 완료된 작업이 없습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+            }
+
+            const sheets = [];
+            let filename = "결과.xlsx";
+
+            completedSources.forEach(source => {
+                if (phase === 'phase3' && source.phases.phase3.output) {
+                    source.phases.phase3.output.forEach(dataSet => {
+                        sheets.push({ name: `${source.name.substring(0, 15)}_${dataSet.name}`, data: dataSet.data });
+                    });
+                    filename = "3단계_적요생성_결과.xlsx";
+                } else if (phase === 'phase4' && source.phases.phase4.removed) {
+                    source.phases.phase4.removed.forEach(dataSet => {
+                        if (dataSet.data.length > 1) { // 헤더만 있는 시트는 제외
+                           sheets.push({ name: `${source.name.substring(0, 15)}_${dataSet.name}`, data: dataSet.data });
+                        }
+                    });
+                    filename = "4단계_제거항목_결과.xlsx";
+                } else if (phase === 'phase5' && source.phases.phase5.output) {
+                     source.phases.phase5.output.forEach(dataSet => {
+                        sheets.push({ name: `${source.name.substring(0, 15)}_${dataSet.name}`, data: dataSet.data });
+                    });
+                    filename = "5단계_최종변환_결과.xlsx";
+                }
+            });
+            
+            if (sheets.length > 0) {
+                 DataTransformer.generateMultiSheetDownloadLink(sheets, filename);
+            } else {
+                 UIRenderer.showModal('알림', `선택한 단계에서 다운로드할 데이터가 없습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+            }
+        },
+    };
+
+    // --- 4. 데이터 변환 로직 (Data Transformer) ---
+    const DataTransformer = {
+        _parseDate(value) {
+            if (value === null || value === undefined || String(value).trim() === '') return null;
+            
+            // Handle Excel's numeric date format
+            if (typeof value === 'number' && value > 10000) {
+                // Adjust for timezone offset by creating date in UTC
+                const utc_days  = Math.floor(value - 25569);
+                const utc_value = utc_days * 86400;                                        
+                const date_info = new Date(utc_value * 1000);
+                return new Date(date_info.getUTCFullYear(), date_info.getUTCMonth(), date_info.getUTCDate());
+            }
+            
+            // Convert to string and take only the date part (before any space)
+            const dateStr = String(value).trim().split(' ')[0];
+            
+            // Try parsing YYYYMMDD
+            if (/^\d{8}$/.test(dateStr)) {
+                const year = dateStr.substring(0, 4);
+                const month = dateStr.substring(4, 6);
+                const day = dateStr.substring(6, 8);
+                const d2 = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                if (!isNaN(d2.getTime())) return d2;
+            }
+
+            // Try parsing various other formats (e.g., YYYY-MM-DD, YYYY.MM.DD)
+            const d = new Date(dateStr.replace(/\./g, '-').replace(/\//g, '-'));
+            if (!isNaN(d.getTime())) return d;
+            
+            return null;
+        },
+
+        _formatDate(dateObj) {
+            if (!dateObj || isNaN(dateObj.getTime())) return "";
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        },
+
+        autoSortByDate(data) { 
+            if (data.length < 2) return data; 
+            const header = data[0]; 
+            const body = data.slice(1); 
+            const dateKeywords = ['일자', '거래일', 'date']; 
+            let dateColIndex = header.findIndex(h => dateKeywords.some(k => String(h).toLowerCase().includes(k))); 
+            if (dateColIndex === -1) { 
+                console.log("날짜 열을 찾을 수 없어 정렬을 건너뜁니다."); 
+                return data; 
+            } 
+            
+            const parseDate = (value) => this._parseDate(value); 
+
+            let firstDate, lastDate; 
+            for(let i=0; i<body.length; i++) { if(body[i][dateColIndex]) { firstDate = parseDate(body[i][dateColIndex]); break; } } 
+            for(let i=body.length-1; i>=0; i--) { if(body[i][dateColIndex]) { lastDate = parseDate(body[i][dateColIndex]); break; } } 
+            
+            let sortedBody = body; 
+            if (firstDate && lastDate && firstDate > lastDate) { 
+                console.log("날짜가 역순으로 확인되어 전체 데이터를 뒤집습니다."); 
+                sortedBody = [...body].reverse(); 
+            } 
+            
+            console.log("날짜 자동 정렬이 완료되었습니다."); 
+            return [header, ...sortedBody]; 
+        },
+        transformPhase1(data, headerRows) { const numRowsPerGroup = headerRows.length; const repeatingHeadersData = headerRows.map(rowIndex => data[rowIndex] || []); const newHeaders = repeatingHeadersData.flat().map(cell => cell || ''); const outputData = [newHeaders]; const dataStartIndex = Math.max(...headerRows) + 1; for (let i = dataStartIndex; i < data.length; i += numRowsPerGroup) { const group = data.slice(i, i + numRowsPerGroup); if (group.every(row => !row || row.every(cell => cell === null || String(cell).trim() === ''))) continue; const newRow = group.flat(); const finalRow = newHeaders.map((_, j) => newRow[j] ?? null); outputData.push(finalRow); } return outputData; },
+        transformPhase2(data, splitCol, groups) { if (splitCol === null) return [{ name: '단일계좌', data: data }]; const header = data[0]; const body = data.slice(1); const groupedData = groups.map(group => ({ name: group.name, data: [header, ...body.filter(row => group.values.includes(String(row[splitCol])))] })); const allGroupedValues = groups.flatMap(g => g.values); const ungroupedRows = body.filter(row => !allGroupedValues.includes(String(row[splitCol]))); if(ungroupedRows.length > 0) { groupedData.push({ name: '기타', data: [header, ...ungroupedRows] }); } return groupedData.filter(g => g.data.length > 1); },
+        transformPhase3(data, config) { const header = data[0]; const body = data.slice(1); const newHeader = [...header, "결과 생성"]; const newBody = body.map(row => { const getValue = (key, isNumeric = false) => { const colIndex = config[key]; if (colIndex === undefined || row[colIndex] === null || row[colIndex] === undefined) return ""; const value = String(row[colIndex]).trim().replace(/\u00A0/g, ""); if (isNumeric && (value === "" || parseFloat(value.replace(/,/g, '')) === 0)) return ""; return value; }; const jukyoParts = [ getValue('tradeTypeCol'), getValue('stockNameCol'), getValue('stockQtyCol', true) ? `${getValue('stockQtyCol', true)}주` : '', getValue('unitPriceCol', true) ? `@${getValue('unitPriceCol', true)}` : '', getValue('stockBalanceCol', true) ? `잔고${getValue('stockBalanceCol', true)}주` : '', getValue('additionalCol1'), getValue('additionalCol2') ]; return [...row, jukyoParts.filter(Boolean).join(' / ')]; }); return [newHeader, ...newBody]; },
+        transformPhase4(data, config) { const header = data[0]; const body = data.slice(1); if (!config || config.tradeTypeCol === undefined) return { kept: data, removed: [header] }; const valuesToRemove = config.valuesToRemove || []; const keptRows = body.filter(row => !valuesToRemove.includes(String(row[config.tradeTypeCol]))); const removedRows = body.filter(row => valuesToRemove.includes(String(row[config.tradeTypeCol]))); return { kept: [header, ...keptRows], removed: [header, ...removedRows] }; },
+        classifyByBalance(data, config) { const { amountCol, balanceCol, tradeTypeCol } = config; if (amountCol === undefined || balanceCol === undefined || tradeTypeCol === undefined) { return { result: null, error: '자동 분류를 실행하려면 <b>거래금액, 예수금잔액, 거래종류</b> 열을 모두 선택해야 합니다.' }; } const { feeCol, taxCol } = config; const body = data.slice(1); const classifications = {}; const getNumeric = (val) => { if(val === null || val === undefined || String(val).trim() === '') return null; const num = parseFloat(String(val).replace(/,/g, '')); return isNaN(num) ? null : num; }; const anchors = [{ index: -1, balance: config.baseAmount || 0 }]; body.forEach((row, index) => { const balance = getNumeric(row[balanceCol]); if (balance !== null && balance !== 0) { anchors.push({ index, balance }); } }); let newRuleLearned = true; while(newRuleLearned) { newRuleLearned = false; for (let i = 0; i < anchors.length - 1; i++) { const startAnchor = anchors[i]; const endAnchor = anchors[i + 1]; const segmentRows = body.slice(startAnchor.index + 1, endAnchor.index + 1); const totalBalanceChange = endAnchor.balance - startAnchor.balance; let knownCashFlow = 0; const unclassified = {}; segmentRows.forEach(row => { const tradeType = row[tradeTypeCol]; if (!tradeType) return; const amount = getNumeric(row[amountCol]) || 0; const fee = feeCol !== undefined ? getNumeric(row[feeCol]) : 0; const tax = taxCol !== undefined ? getNumeric(row[taxCol]) : 0; if (classifications[tradeType] === 'deposit') { knownCashFlow += amount - fee - tax; } else if (classifications[tradeType] === 'withdrawal') { knownCashFlow -= (amount + fee + tax); } else { if (!unclassified[tradeType]) unclassified[tradeType] = []; unclassified[tradeType].push({ amount, fee, tax }); } }); const unclassifiedTypes = Object.keys(unclassified); if (unclassifiedTypes.length === 1) { const theUnknownType = unclassifiedTypes[0]; const requiredNetEffect = totalBalanceChange - knownCashFlow; const depositHypothesis = unclassified[theUnknownType].reduce((sum, t) => sum + (t.amount - t.fee - t.tax), 0); const withdrawalHypothesis = -unclassified[theUnknownType].reduce((sum, t) => sum + (t.amount + t.fee + t.tax), 0); if (Math.abs(requiredNetEffect - depositHypothesis) < 1) { classifications[theUnknownType] = 'deposit'; newRuleLearned = true; } else if (Math.abs(requiredNetEffect - withdrawalHypothesis) < 1) { classifications[theUnknownType] = 'withdrawal'; newRuleLearned = true; } } } } const depositTypes = Object.keys(classifications).filter(k => classifications[k] === 'deposit'); const withdrawalTypes = Object.keys(classifications).filter(k => classifications[k] === 'withdrawal'); if(depositTypes.length === 0 && withdrawalTypes.length === 0) { UIRenderer.showModal('알림', '잔액 정보를 바탕으로 입출금을 자동으로 분류할 수 없었습니다. 데이터 확인 후 수동으로 분류해주세요.', [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]); } else { UIRenderer.showModal('알림', `${depositTypes.length}개의 입금 종류와 ${withdrawalTypes.length}개의 출금 종류가 자동으로 분류되었습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]); } return { result: { depositTypes, withdrawalTypes }, error: null }; },
+        verifyPhase5(data, config) { const body = data.slice(1); if (body.length === 0) return { isCorrect: true }; const finalTransformedData = this.transformPhase5(data, config); if (finalTransformedData.length <= 1) return { isCorrect: true }; const lastTransformedRow = finalTransformedData[finalTransformedData.length - 1]; const finalCalculatedBalance = lastTransformedRow[3]; const lastOriginalRow = body[body.length - 1]; const getOriginalValue = (key) => (config[key] === undefined || lastOriginalRow[config[key]] === null) ? "" : lastOriginalRow[config[key]]; const getOriginalNumeric = (key) => parseFloat(String(getOriginalValue(key)).replace(/,/g, '')) || 0; const finalOriginalBalance = getOriginalNumeric('balanceCol'); if (finalOriginalBalance !== 0 && Math.abs(finalCalculatedBalance - finalOriginalBalance) > 1) { return { isCorrect: false, calculated: finalCalculatedBalance, original: finalOriginalBalance }; } return { isCorrect: true }; },
+        transformPhase5(data, config) {
+            const body = data.slice(1); 
+            const newSheet = [['일자', '입금', '출금', '잔액', '(참고용)잔액', '적요']]; 
+            let runningBalance = config.baseAmount || 0; 
+            body.forEach(row => { 
+                const getValue = (key) => (config[key] === undefined || row[config[key]] === null) ? "" : row[config[key]]; 
+                const getNumeric = (key) => parseFloat(String(getValue(key)).replace(/,/g, '')) || 0; 
+                
+                const tradeType = getValue('tradeTypeCol'); 
+                const rawDate = getValue('dateCol');
+                const dateObj = this._parseDate(rawDate);
+                const date = this._formatDate(dateObj);
+                const jukyo = getValue('jukyoCol'); 
+                const originalBalance = getValue('balanceCol'); 
+                const amount = getNumeric('amountCol'); 
+                const fee = getNumeric('feeCol'); 
+                const tax = getNumeric('taxCol'); 
+                let deposit = 0, withdrawal = 0; 
+                if (config.depositTypes?.includes(tradeType)) { deposit = amount; } 
+                else if (config.withdrawalTypes?.includes(tradeType)) { withdrawal = amount; } 
+                
+                if (deposit > 0) { runningBalance += deposit; newSheet.push([date, deposit, 0, runningBalance, originalBalance, jukyo]); } 
+                else if (withdrawal > 0) { runningBalance -= withdrawal; newSheet.push([date, 0, withdrawal, runningBalance, originalBalance, jukyo]); } 
+                
+                if (fee > 0) { runningBalance -= fee; newSheet.push([date, 0, fee, runningBalance, originalBalance, `(수수료)${jukyo}`]); } 
+                if (tax > 0) { runningBalance -= tax; newSheet.push([date, 0, tax, runningBalance, originalBalance, `(제세금)${jukyo}`]); } 
+            }); 
+            return newSheet; 
+        },
+        generateMultiSheetDownloadLink(sheetDataArray, filename) {
+            const workbook = XLSX.utils.book_new();
+            sheetDataArray.forEach(sheetInfo => {
+                if(sheetInfo.data && sheetInfo.data.length > 0) {
+                    const worksheet = XLSX.utils.aoa_to_sheet(sheetInfo.data);
+                    const safeSheetName = sheetInfo.name.replace(/[/\\?*:[\]]/g, '').substring(0, 31);
+                    XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+                }
+            });
+            if (workbook.SheetNames.length > 0) {
+                XLSX.writeFile(workbook, filename);
+            } else {
+                 UIRenderer.showModal('알림', `엑셀 파일로 만들 데이터가 없습니다.`, [{ text: '확인', className: 'bg-indigo-600 text-white', onClick: () => UIRenderer.hideModal() }]);
+            }
+        }
+    };
+
+    // --- 앱 초기화 ---
+    document.addEventListener('DOMContentLoaded', () => {
+        AppState.init();
+        UIRenderer.init();
+        UIRenderer.render();
+    });
+    </script>
+</body>
+</html>
+
