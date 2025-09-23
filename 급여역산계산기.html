@@ -478,7 +478,7 @@ function getDeductions(grossPay, dependents) {
     const dependentIndex = Math.max(0, Math.min(dependents - 1, 10));
 
     if (taxablePayInWon >= 10000000) {
-        const taxAt10MData = SETTINGS.simplifiedTaxTable.find(r => r.max === 10000000);
+        const taxAt10MData = SETTINGS.simplifiedTaxTable.find(r => r.min === 10000000);
         const taxAt10M = taxAt10MData ? taxAt10MData.tax[dependentIndex] : 1516850;
 
         if (taxablePayInWon <= 14000000) {
@@ -696,6 +696,7 @@ async function generatePdfFromPreview() {
 </script>
 </body>
 </html>
+
 
 
 
