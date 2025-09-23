@@ -45,7 +45,7 @@
      <option value="" disabled selected>-- 유형을 선택하세요 --</option>
      <option value="매출처">매출처</option>
      <option value="매입처">매입처</option>
-     <option value="나중에정리">나중에 정리</option>
+     <option value="확인사항">확인사항</option>
     </select>
    </div>
 
@@ -53,30 +53,30 @@
     <div>
      <label class="block mb-1 font-medium">차변제목변경</label>
      <input id="debit-label" type="text"
-      placeholder="예: 매출처 - 세금계산서발행(또는 환불/출금)"
+      placeholder="예: 매출처 - 세금계산서발행(or 환불출금)"
       class="w-full p-2 border rounded"/>
     </div>
     <div class="space-y-1 text-sm text-slate-600">
      <p class="font-semibold">차변 설명 예시:</p>
      <ul class="list-disc list-inside">
-      <li>매출처 – 세금계산서발행(또는 환불/출금)</li>
-      <li>매입처 – 출금(또는 매출세금계산서 상계)</li>
-      <li>나중에정리 – 통장 출금내역</li>
+      <li>매출처 – 세금계산서발행(or 환불출금)</li>
+      <li>매입처 – 출금(or 매출상계)</li>
+      <li>확인사항 – 통장 출금내역</li>
      </ul>
     </div>
 
     <div>
      <label class="block mb-1 font-medium">대변제목변경</label>
      <input id="credit-label" type="text"
-      placeholder="예: 매출처 - 입금(또는 매입세금계산서 상계)"
+      placeholder="예: 매출처 - 입금(or 매입상계)"
       class="w-full p-2 border rounded"/>
     </div>
     <div class="space-y-1 text-sm text-slate-600">
      <p class="font-semibold">대변 설명 예시:</p>
      <ul class="list-disc list-inside">
-      <li>매출처 – 입금(또는 매입세금계산서 상계)</li>
-      <li>매입처 – 세금계산서수취(또는 환불/입금)</li>
-      <li>나중에정리 – 통장 입금내역</li>
+      <li>매출처 – 입금(or 매입상계)</li>
+      <li>매입처 – 세금계산서수취(or 환불입금)</li>
+      <li>확인사항 – 통장 입금내역</li>
      </ul>
     </div>
    </div>
@@ -88,7 +88,7 @@
      <option value="none">기재하지 않음</option>
      <option value="1">매출처</option>
      <option value="2">매입처</option>
-     <option value="3">나중에정리</option>
+     <option value="3">확인사항</option>
     </select>
    </div>
 
@@ -442,7 +442,7 @@
                     } else {
                         balanceCell.value = { formula: `D${rowNum - 1}+C${rowNum}-B${rowNum}` };
                     }
-                } else { // 매출처 또는 나중에 정리
+                } else { // 매출처 또는 확인사항
                     if (rowNum === firstDataRowNumber) {
                         balanceCell.value = { formula: `B${rowNum}-C${rowNum}` };
                     } else {
