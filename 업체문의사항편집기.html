@@ -119,270 +119,302 @@
     </a>
    </div>
   </div>
+  <script>
+   // --- 기존 라이브러리 체크 함수 ---
+   function checkXLSX() {
+    if (typeof XLSX === 'undefined') {
+     alert('XLSX 라이브러리 로드 실패');
+     return false;
+    }
+    return true;
+   }
+   // --- 신규 라이브러리 체크 함수 ---
+   function checkExcelJS() {
+       if (typeof ExcelJS === 'undefined') {
+           alert('ExcelJS 라이브러리 로드 실패');
+           return false;
+       }
+       return true;
+   }
 
-  <script>
-   // --- 기존 라이브러리 체크 함수 ---
-   function checkXLSX() {
-    if (typeof XLSX === 'undefined') {
-     alert('XLSX 라이브러리 로드 실패');
-     return false;
-    }
-    return true;
-   }
-   // --- 신규 라이브러리 체크 함수 ---
-   function checkExcelJS() {
-       if (typeof ExcelJS === 'undefined') {
-           alert('ExcelJS 라이브러리 로드 실패');
-           return false;
-       }
-       return true;
-   }
+
+   const fileInput  = document.getElementById('file-input');
+   const fileNameEl = document.getElementById('file-name');
+   const debitInput = document.getElementById('debit-label');
+   const creditInput = document.getElementById('credit-label');
+   const previewSec = document.getElementById('preview-section');
+   const previewCont = document.getElementById('preview-container');
+   const promptArea = document.getElementById('prompt-area');
+   const promptText = document.getElementById('prompt-text');
+   const editBtn    = document.getElementById('edit-btn');
+   const downloadSec = document.getElementById('download-section');
+   const downloadBtn = document.getElementById('download-btn');
+
+   let workbook, selections = {}, step = 0, wizardActive = false, debitLabel, creditLabel;
+
+   const prompts = [
+    { key:'clientName', text:'1/7: 거래처명이 있는 셀을 선택하세요.', type:'cell' },
+    { key:'headerRow',  text:'2/7: 제목 행을 선택하세요.',             type:'row'  },
+    { key:'dateCol',    text:'3/7: \'일자\'가 있는 열을 선택하세요.',  type:'col'  },
+    { key:'descCol',    text:'4/7: \'적요\'가 있는 열을 선택하세요.',  type:'col'  },
+    { key:'debitCol',   text:'5/7: \'차변\'이 있는 열을 선택하세요.',  type:'col'  },
+    { key:'creditCol',  text:'6/7: \'대변\'이 있는 열을 선택하세요.',  type:'col'  },
+    { key:'balanceCol', text:'7/7: \'잔액\'이 있는 열을 선택하세요.',  type:'col'  }
+   ];
+
+   // getSheetData는 xlsx-js-style 라이브러리를 사용해 데이터를 읽어오는 기존 방식을 유지합니다.
+   function getSheetData(ws, fillMerges = false) {
+    if (!ws['!ref']) return [];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const data = Array.from({ length: range.e.r + 1 }, () =>
+     Array(range.e.c + 1).fill(null)
+    );
+    for (let addr in ws) {
+     if (addr[0] === '!') continue;
+     const { r, c } = XLSX.utils.decode_cell(addr);
+     data[r][c] = ws[addr].w ?? ws[addr].v;
+    }
+    if (fillMerges && ws['!merges']) {
+     ws['!merges'].forEach(m => {
+      const v = data[m.s.r][m.s.c];
+      for (let R = m.s.r; R <= m.e.r; R++)
+       for (let C = m.s.c; C <= m.e.c; C++)
+        data[R][C] = v;
+     });
+    }
+    return data;
+   }
+
+   fileInput.addEventListener('change', e => {
+    if (!checkXLSX()) return; // 파일 읽기는 기존 라이브러리 사용
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+     workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+     renderPreview(workbook.Sheets[workbook.SheetNames[0]]);
+     fileNameEl.textContent = `선택됨: ${file.name}`;
+     previewSec.classList.remove('hidden');
+     editBtn.disabled = false;
+    };
+    reader.readAsArrayBuffer(file);
+   });
+
+   function renderPreview(ws) {
+    const data = getSheetData(ws);
+    let html = '<table class="preview-table">';
+    data.slice(0, 30).forEach(row => { // 30행까지만 렌더링
+     html += '<tr>';
+     row.forEach(c => html += `<td>${c ?? ''}</td>`);
+     html += '</tr>';
+    });
+    html += '</table>';
+    previewCont.innerHTML = html;
+    previewCont.querySelectorAll('td').forEach(td =>
+     td.addEventListener('click', handleCellClick)
+    );
+   }
+
+   editBtn.addEventListener('click', () => {
+    const inquiryType = document.getElementById('inquiry-type-select').value;
+    if (!inquiryType) {
+        alert('문의 유형을 먼저 선택해주세요.');
+        return;
+    }
+    debitLabel  = debitInput.value.trim()  || debitInput.placeholder;
+    creditLabel = creditInput.value.trim() || creditInput.placeholder;
+    wizardActive = true;
+    step         = 0;
+    selections   = {};
+    editBtn.disabled  = true;
+    editBtn.textContent = '선택 중...';
+    promptArea.style.display = 'block';
+    promptText.textContent   = prompts[0].text;
+    previewCont.querySelectorAll('td').forEach(td =>
+     td.classList.add('selectable')
+    );
+   });
+
+   function handleCellClick(evt) {
+    if (!wizardActive) return;
+    const td = evt.currentTarget;
+    const r  = td.parentElement.rowIndex;
+    const c  = td.cellIndex;
+    const p  = prompts[step];
+    if (p.type === 'cell') {
+     selections[p.key] = { row: r, col: c };
+     td.classList.add('highlighted');
+    } else if (p.type === 'row') {
+     selections[p.key] = { row: r };
+     td.parentElement.querySelectorAll('td').forEach(x => x.classList.add('highlighted'));
+    } else {
+     selections[p.key] = { col: c };
+     previewCont.querySelectorAll('tr').forEach(tr => {
+      const cell = tr.children[c];
+      if (cell) cell.classList.add('highlighted');
+     });
+    }
+    step++;
+    if (step < prompts.length) {
+     promptText.textContent = prompts[step].text;
+    } else {
+     wizardActive = false;
+     promptArea.style.display = 'none';
+     processWorkbook(); // 비동기 함수 호출
+    }
+   }
+    
+   // --- 최종 수정된 parseDateString 함수 ---
+   // 타임존, 형식, 길이 등 모든 요청사항을 반영하여 날짜 파싱 로직을 수정했습니다.
+   function parseDateString(dateStr) {
+     if (!dateStr || typeof dateStr !== 'string') return null;
+
+     const trimmedDateStr = dateStr.trim();
+
+     // 요청사항 1: '~'가 포함된 날짜 범위이거나 길이가 10자를 초과하면 무시
+     if (trimmedDateStr.includes('~') || trimmedDateStr.length > 10) {
+       return null;
+     }
+
+     // 요청사항 2: 'YYYY-MM-DD' 또는 'YYYY.MM.DD' 형식 확인
+     let match = trimmedDateStr.match(/^(\d{4})[-.](\d{1,2})[-.](\d{1,2})$/);
+     if (match) {
+       const year = parseInt(match[1], 10);
+       const month = parseInt(match[2], 10);
+       const day = parseInt(match[3], 10);
+        // 날짜 유효성 검사
+        if (month > 12 || month < 1 || day > 31 || day < 1) return null;
+       // 타임존 문제를 방지하기 위해 UTC 기준으로 Date 객체 생성
+       return new Date(Date.UTC(year, month - 1, day));
+     }
+
+     // 요청사항 3: 'MM-DD' 또는 'MM.DD' 형식 확인
+     match = trimmedDateStr.match(/^(\d{1,2})[-.](\d{1,2})$/);
+     if (match) {
+       const currentYear = new Date().getFullYear();
+       const month = parseInt(match[1], 10);
+       const day = parseInt(match[2], 10);
+        // 날짜 유효성 검사
+        if (month > 12 || month < 1 || day > 31 || day < 1) return null;
+       // 타임존 문제를 방지하기 위해 UTC 기준으로 Date 객체 생성
+       return new Date(Date.UTC(currentYear, month - 1, day));
+     }
+
+     // 허용된 형식이 아니면 null 반환
+     return null;
+   }
 
 
-   const fileInput  = document.getElementById('file-input');
-   const fileNameEl = document.getElementById('file-name');
-   const debitInput = document.getElementById('debit-label');
-   const creditInput = document.getElementById('credit-label');
-   const previewSec = document.getElementById('preview-section');
-   const previewCont = document.getElementById('preview-container');
-   const promptArea = document.getElementById('prompt-area');
-   const promptText = document.getElementById('prompt-text');
-   const editBtn    = document.getElementById('edit-btn');
-   const downloadSec = document.getElementById('download-section');
-   const downloadBtn = document.getElementById('download-btn');
+    // --- processWorkbook 함수 ---
+    async function processWorkbook() {
+        if (!checkExcelJS()) return; // 새 라이브러리 체크
+        
+        const inquiryType = document.getElementById('inquiry-type-select').value;
+        if (!inquiryType) { // 이중 체크
+            alert('문의 유형이 선택되지 않았습니다.');
+            editBtn.disabled = false;
+            editBtn.textContent = '편집 시작';
+            return;
+        }
 
-   let workbook, selections = {}, step = 0, wizardActive = false, debitLabel, creditLabel;
+        const newWB = new ExcelJS.Workbook();
 
-   const prompts = [
-    { key:'clientName', text:'1/7: 거래처명이 있는 셀을 선택하세요.', type:'cell' },
-    { key:'headerRow',  text:'2/7: 제목 행을 선택하세요.',             type:'row'  },
-    { key:'dateCol',    text:'3/7: \'일자\'가 있는 열을 선택하세요.',  type:'col'  },
-    { key:'descCol',    text:'4/7: \'적요\'가 있는 열을 선택하세요.',  type:'col'  },
-    { key:'debitCol',   text:'5/7: \'차변\'이 있는 열을 선택하세요.',  type:'col'  },
-    { key:'creditCol',  text:'6/7: \'대변\'이 있는 열을 선택하세요.',  type:'col'  },
-    { key:'balanceCol', text:'7/7: \'잔액\'이 있는 열을 선택하세요.',  type:'col'  }
-   ];
+        workbook.SheetNames.forEach(sheetName => {
+            const worksheet = newWB.addWorksheet(sheetName);
+            const orig = workbook.Sheets[sheetName];
+            const data = getSheetData(orig, true);
+            const client = data[selections.clientName.row][selections.clientName.col];
+            const startR = selections.headerRow.row + 1;
 
-   // getSheetData는 xlsx-js-style 라이브러리를 사용해 데이터를 읽어오는 기존 방식을 유지합니다.
-   function getSheetData(ws, fillMerges = false) {
-    if (!ws['!ref']) return [];
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    const data = Array.from({ length: range.e.r + 1 }, () =>
-     Array(range.e.c + 1).fill(null)
-    );
-    for (let addr in ws) {
-     if (addr[0] === '!') continue;
-     const { r, c } = XLSX.utils.decode_cell(addr);
-     data[r][c] = ws[addr].w ?? ws[addr].v;
-    }
-    if (fillMerges && ws['!merges']) {
-     ws['!merges'].forEach(m => {
-      const v = data[m.s.r][m.s.c];
-      for (let R = m.s.r; R <= m.e.r; R++)
-       for (let C = m.s.c; C <= m.e.c; C++)
-        data[R][C] = v;
-     });
-    }
-    return data;
-   }
+            // Step 1: 도움말 텍스트 준비
+            const selVal = document.getElementById('option-select').value;
+            const helpTextMapFormatted = {
+                    "1": [
+                        { text: '* 아래의 사항을 참고하셔서 입력 부탁드립니다.', type: 'header' }, { text: '외상대 잔액설명', type: 'header' },
+                        { text: '- 잔액기준 플러스 금액: 세금계산서 발행보다 받은금액이 적은경우(은행 거래 내역 기준)', type: 'text' }, { text: '- 잔액기준 마이너스 금액: 세금계산서 발행보다 받은금액이 많은경우(세금계산서 미발행)', type: 'text' },
+                        { text: '', type: 'text' }, { text: '기재참고사항', type: 'header' }, { text: '- 외상대 기입금 : 예) 1.15일 신한 015통장 입금', type: 'text' },
+                        { text: '- 외상대와 상계 : 예) A거래처 외상매입금과 상계', type: 'text' }, { text: '- 월말잔액 : 예) 월말잔액 맞음', type: 'text' },
+                        { text: '- 세금계산서 추후발행(잔액 마이너스) : 예) 12월 이후 발급예정', type: 'text' }, { text: '- 잔액상계 : 예) 대표 가수금처리', type: 'text' },
+                        { text: '- 확인중: 확인 후 회신', type: 'text' }
+                    ],
+                    "2": [
+                        { text: '* 아래의 사항을 참고하셔서 입력 부탁드립니다.', type: 'header' }, { text: '외상대 잔액설명', type: 'header' },
+                        { text: '- 잔액 기준 플러스 금액: 통장에서 송금한 금액보다 세금계산서 수취가 많은 경우(외상대 미지급-통장기준)', type: 'text' }, { text: '- 잔액 기준 마이너스 금액: 통장에서 송금한 금액이 세금계산서 수취보다 많은 경우(증빙 미수취)', type: 'text' },
+                        { text: '', type: 'text' }, { text: '기재참고사항', type: 'header' }, { text: '- 외상대 기인출: 예) 1.15일 신한 015통장 인출, 현금지급', type: 'text' },
+                        { text: '- 외상대와 상계: 예) A거래처 외상매출금과 상계', type: 'text' }, { text: '- 월말잔액: 예) 월말잔액 맞음', type: 'text' },
+                        { text: '- 세금계산서 추후수취: 예) 12월 이후 수취예정, 증빙첨부', type: 'text' }, { text: '- 잔액상계: 예) 대표 가지급금처리, 무증빙비용(가산세)', type: 'text' },
+                        { text: '- 증빙첨부: 메일로 증빙을 첨부하여 회신', type: 'text' }, { text: '- 확인중: 확인 후 회신', type: 'text' }
+                    ],
+                    "3": [
+                        { text: '* 아래의 사항을 참고하셔서 입력 부탁드립니다.', type: 'header' }, { text: '기재참고사항', type: 'header' },
+                        { text: '- 세금계산서 기수취: 예) 1.15일 ABC상회 매입세금계산서 수취', type: 'text' }, { text: '- 세금계산서 기발행: 예) 1.15일 ABC상회 매출세금계산서 발급', type: 'text' },
+                        { text: '- 세금계산서 추후수취: 예) 7월에 ABC상회 수취예정', type: 'text' }, { text: '- 세금계산서 추후발행: 예) 7월에 ABC상회 발급예정', type: 'text' },
+                        { text: '- 증빙첨부: 증빙 첨부 회신', type: 'text' }, { text: '- 인건비: 예) 일용직/근로자/기타소득/신고예정', type: 'text' },
+                        { text: '- 잔액상계: 예) 대표 가지급금처리, 비용처리 요망', type: 'text' }, { text: '- 확인중: 확인 후 회신', type: 'text' }
+                    ]
+                };
+            const helpContent = helpTextMapFormatted[selVal] || [];
+            const helpRowCount = helpContent.length;
 
-   fileInput.addEventListener('change', e => {
-    if (!checkXLSX()) return; // 파일 읽기는 기존 라이브러리 사용
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = evt => {
-     workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-     renderPreview(workbook.Sheets[workbook.SheetNames[0]]);
-     fileNameEl.textContent = `선택됨: ${file.name}`;
-     previewSec.classList.remove('hidden');
-     editBtn.disabled = false;
-    };
-    reader.readAsArrayBuffer(file);
-   });
+            // Step 2: 스타일 정의 (ExcelJS 형식)
+            const clientNameStyle = { font: { name: 'Inter', bold: true, size: 14, color: { argb: "FFFFFFFF" } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5599' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+            const headerStyle = { font: { name: 'Inter', bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } }, alignment: { horizontal: 'center' } };
+            const inputAreaStyle = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } } };
+            const monthColors = [ null, { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } } ];
+            const helpHeaderStyle = { font: { name:'Inter', bold:true, size:11, color:{ argb:'FF1F4E79' } }, fill: { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDDEBF7' } }, alignment:{ wrapText:true, vertical:'top', horizontal:'left' } };
+            const helpTextStyle = { font: { name:'Inter', bold:false, size:10, color:{ argb:'FF333333' } }, fill: { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDDEBF7' } }, alignment:{ wrapText:true, vertical:'top', horizontal:'left' } };
 
-   function renderPreview(ws) {
-    const data = getSheetData(ws);
-    let html = '<table class="preview-table">';
-    data.slice(0, 30).forEach(row => { // 30행까지만 렌더링
-     html += '<tr>';
-     row.forEach(c => html += `<td>${c ?? ''}</td>`);
-     html += '</tr>';
-    });
-    html += '</table>';
-    previewCont.innerHTML = html;
-    previewCont.querySelectorAll('td').forEach(td =>
-     td.addEventListener('click', handleCellClick)
-    );
-   }
+            // Step 3: 데이터 행 추가 및 스타일링
+            helpContent.forEach(item => {
+                const row = worksheet.addRow([item.text]);
+                worksheet.mergeCells(row.number, 1, row.number, 7);
+                row.getCell(1).style = (item.type === 'header') ? helpHeaderStyle : helpTextStyle;
+            });
 
-   editBtn.addEventListener('click', () => {
-    const inquiryType = document.getElementById('inquiry-type-select').value;
-    if (!inquiryType) {
-        alert('문의 유형을 먼저 선택해주세요.');
-        return;
-    }
-    debitLabel  = debitInput.value.trim()  || debitInput.placeholder;
-    creditLabel = creditInput.value.trim() || creditInput.placeholder;
-    wizardActive = true;
-    step         = 0;
-    selections   = {};
-    editBtn.disabled  = true;
-    editBtn.textContent = '선택 중...';
-    promptArea.style.display = 'block';
-    promptText.textContent   = prompts[0].text;
-    previewCont.querySelectorAll('td').forEach(td =>
-     td.classList.add('selectable')
-    );
-   });
+            const clientRow = worksheet.addRow([client]);
+            worksheet.mergeCells(clientRow.number, 1, clientRow.number, 7);
+            clientRow.getCell(1).style = clientNameStyle;
 
-   function handleCellClick(evt) {
-    if (!wizardActive) return;
-    const td = evt.currentTarget;
-    const r  = td.parentElement.rowIndex;
-    const c  = td.cellIndex;
-    const p  = prompts[step];
-    if (p.type === 'cell') {
-     selections[p.key] = { row: r, col: c };
-     td.classList.add('highlighted');
-    } else if (p.type === 'row') {
-     selections[p.key] = { row: r };
-     td.parentElement.querySelectorAll('td').forEach(x => x.classList.add('highlighted'));
-    } else {
-     selections[p.key] = { col: c };
-     previewCont.querySelectorAll('tr').forEach(tr => {
-      const cell = tr.children[c];
-      if (cell) cell.classList.add('highlighted');
-     });
-    }
-    step++;
-    if (step < prompts.length) {
-     promptText.textContent = prompts[step].text;
-    } else {
-     wizardActive = false;
-     promptArea.style.display = 'none';
-     processWorkbook(); // 비동기 함수 호출
-    }
-   }
+            const headerRow = worksheet.addRow(['일자', debitLabel, creditLabel, '외상대 잔액', '세금계산서 및 통장 적요', '담당자 문의사항', '업체 답변기재']);
+            headerRow.eachCell(cell => cell.style = headerStyle);
+            const headerRowNumber = headerRow.number;
 
-   function parseDateString(dateStr) {
-     if (!dateStr || typeof dateStr !== 'string') return null;
-     let match = dateStr.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
-     if (match) {
-      return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
-     }
-     match = dateStr.match(/^(\d{1,2})[-/.](\d{1,2})$/);
-     if (match) {
-      const currentYear = new Date().getFullYear();
-      return new Date(currentYear, parseInt(match[1]) - 1, parseInt(match[2]));
-     }
-     const parsedDate = new Date(dateStr);
-     if (!isNaN(parsedDate.getTime())) {
-      return parsedDate;
-     }
-     return null;
-   }
+            let lastMonth = -1, colorIndex = 0;
+            const firstDataRowNumber = worksheet.rowCount + 1;
+            for (let i = startR; i < data.length; i++) {
+                const rowData = data[i];
+                if (!rowData) continue;
+                const dv = rowData[selections.dateCol.col], bv = rowData[selections.balanceCol.col];
+                if (!((dv || '').toString().trim() || (bv || '').toString().trim())) continue;
+                
+                // --- 수정된 부분 ---
+                // 1. 한글/영어가 포함된 행 무시
+                if (typeof dv === 'string' && /[가-힣A-Za-z]/.test(dv)) continue;
+                // 2. 10자가 넘는 문자열 행 무시 (예: '2025.01.01 ~ ...')
+                if (typeof dv === 'string' && dv.trim().length > 10) continue;
 
-    // --- processWorkbook 함수를 ExcelJS를 사용하도록 전면 수정 ---
-    async function processWorkbook() {
-        if (!checkExcelJS()) return; // 새 라이브러리 체크
-        
-        const inquiryType = document.getElementById('inquiry-type-select').value;
-        if (!inquiryType) { // 이중 체크
-            alert('문의 유형이 선택되지 않았습니다.');
-            editBtn.disabled = false;
-            editBtn.textContent = '편집 시작';
-            return;
-        }
-
-        const newWB = new ExcelJS.Workbook();
-
-        workbook.SheetNames.forEach(sheetName => {
-            const worksheet = newWB.addWorksheet(sheetName);
-            const orig = workbook.Sheets[sheetName];
-            const data = getSheetData(orig, true);
-            const client = data[selections.clientName.row][selections.clientName.col];
-            const startR = selections.headerRow.row + 1;
-
-            // Step 1: 도움말 텍스트 준비
-            const selVal = document.getElementById('option-select').value;
-            const helpTextMapFormatted = {
-                    "1": [
-                        { text: '* 아래의 사항을 참고하셔서 입력 부탁드립니다.', type: 'header' }, { text: '외상대 잔액설명', type: 'header' },
-                        { text: '- 잔액기준 플러스 금액: 세금계산서 발행보다 받은금액이 적은경우(은행 거래 내역 기준)', type: 'text' }, { text: '- 잔액기준 마이너스 금액: 세금계산서 발행보다 받은금액이 많은경우(세금계산서 미발행)', type: 'text' },
-                        { text: '', type: 'text' }, { text: '기재참고사항', type: 'header' }, { text: '- 외상대 기입금 : 예) 1.15일 신한 015통장 입금', type: 'text' },
-                        { text: '- 외상대와 상계 : 예) A거래처 외상매입금과 상계', type: 'text' }, { text: '- 월말잔액 : 예) 월말잔액 맞음', type: 'text' },
-                        { text: '- 세금계산서 추후발행(잔액 마이너스) : 예) 12월 이후 발급예정', type: 'text' }, { text: '- 잔액상계 : 예) 대표 가수금처리', type: 'text' },
-                        { text: '- 확인중: 확인 후 회신', type: 'text' }
-                    ],
-                    "2": [
-                        { text: '* 아래의 사항을 참고하셔서 입력 부탁드립니다.', type: 'header' }, { text: '외상대 잔액설명', type: 'header' },
-                        { text: '- 잔액 기준 플러스 금액: 통장에서 송금한 금액보다 세금계산서 수취가 많은 경우(외상대 미지급-통장기준)', type: 'text' }, { text: '- 잔액 기준 마이너스 금액: 통장에서 송금한 금액이 세금계산서 수취보다 많은 경우(증빙 미수취)', type: 'text' },
-                        { text: '', type: 'text' }, { text: '기재참고사항', type: 'header' }, { text: '- 외상대 기인출: 예) 1.15일 신한 015통장 인출, 현금지급', type: 'text' },
-                        { text: '- 외상대와 상계: 예) A거래처 외상매출금과 상계', type: 'text' }, { text: '- 월말잔액: 예) 월말잔액 맞음', type: 'text' },
-                        { text: '- 세금계산서 추후수취: 예) 12월 이후 수취예정, 증빙첨부', type: 'text' }, { text: '- 잔액상계: 예) 대표 가지급금처리, 무증빙비용(가산세)', type: 'text' },
-                        { text: '- 증빙첨부: 메일로 증빙을 첨부하여 회신', type: 'text' }, { text: '- 확인중: 확인 후 회신', type: 'text' }
-                    ],
-                    "3": [
-                        { text: '* 아래의 사항을 참고하셔서 입력 부탁드립니다.', type: 'header' }, { text: '기재참고사항', type: 'header' },
-                        { text: '- 세금계산서 기수취: 예) 1.15일 ABC상회 매입세금계산서 수취', type: 'text' }, { text: '- 세금계산서 기발행: 예) 1.15일 ABC상회 매출세금계산서 발급', type: 'text' },
-                        { text: '- 세금계산서 추후수취: 예) 7월에 ABC상회 수취예정', type: 'text' }, { text: '- 세금계산서 추후발행: 예) 7월에 ABC상회 발급예정', type: 'text' },
-                        { text: '- 증빙첨부: 증빙 첨부 회신', type: 'text' }, { text: '- 인건비: 예) 일용직/근로자/기타소득/신고예정', type: 'text' },
-                        { text: '- 잔액상계: 예) 대표 가지급금처리, 비용처리 요망', type: 'text' }, { text: '- 확인중: 확인 후 회신', type: 'text' }
-                    ]
-                };
-            const helpContent = helpTextMapFormatted[selVal] || [];
-            const helpRowCount = helpContent.length;
-
-            // Step 2: 스타일 정의 (ExcelJS 형식)
-            const clientNameStyle = { font: { name: 'Inter', bold: true, size: 14, color: { argb: "FFFFFFFF" } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C5599' } }, alignment: { horizontal: 'center', vertical: 'center' } };
-            const headerStyle = { font: { name: 'Inter', bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } }, alignment: { horizontal: 'center' } };
-            const inputAreaStyle = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } } };
-            const monthColors = [ null, { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } } ];
-            const helpHeaderStyle = { font: { name:'Inter', bold:true, size:11, color:{ argb:'FF1F4E79' } }, fill: { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDDEBF7' } }, alignment:{ wrapText:true, vertical:'top', horizontal:'left' } };
-            const helpTextStyle = { font: { name:'Inter', bold:false, size:10, color:{ argb:'FF333333' } }, fill: { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDDEBF7' } }, alignment:{ wrapText:true, vertical:'top', horizontal:'left' } };
-
-            // Step 3: 데이터 행 추가 및 스타일링
-            helpContent.forEach(item => {
-                const row = worksheet.addRow([item.text]);
-                worksheet.mergeCells(row.number, 1, row.number, 7);
-                row.getCell(1).style = (item.type === 'header') ? helpHeaderStyle : helpTextStyle;
-            });
-
-            const clientRow = worksheet.addRow([client]);
-            worksheet.mergeCells(clientRow.number, 1, clientRow.number, 7);
-            clientRow.getCell(1).style = clientNameStyle;
-
-            const headerRow = worksheet.addRow(['일자', debitLabel, creditLabel, '외상대 잔액', '세금계산서 및 통장 적요', '담당자 문의사항', '업체 답변기재']);
-            headerRow.eachCell(cell => cell.style = headerStyle);
-            const headerRowNumber = headerRow.number;
-
-            let lastMonth = -1, colorIndex = 0;
-            const firstDataRowNumber = worksheet.rowCount + 1;
-            for (let i = startR; i < data.length; i++) {
-                const rowData = data[i];
-                if (!rowData) continue;
-                const dv = rowData[selections.dateCol.col], bv = rowData[selections.balanceCol.col];
-                if (!((dv || '').toString().trim() || (bv || '').toString().trim())) continue;
-                if (typeof dv === 'string' && /[가-힣A-Za-z]/.test(dv)) break;
-
-                const desc = rowData[selections.descCol.col];
-                const dr = parseFloat((rowData[selections.debitCol.col] || '').toString().replace(/,/g, '')) || 0;
-                const cr = parseFloat((rowData[selections.creditCol.col] || '').toString().replace(/,/g, '')) || 0;
-                let fd = dv;
+                const desc = rowData[selections.descCol.col];
+                const dr = parseFloat((rowData[selections.debitCol.col] || '').toString().replace(/,/g, '')) || 0;
+                const cr = parseFloat((rowData[selections.creditCol.col] || '').toString().replace(/,/g, '')) || 0;
+                
+                // --- 수정된 부분 ---
+                // 원본 데이터 형식을 그대로 유지하기 위해 날짜 변환 로직을 제거하고, 원본 값을 그대로 사용합니다.
+                let fd = dv;
+                
+                // 월별 색상 구분을 위해 날짜를 파싱하되, 결과는 색상에만 사용합니다.
+                let parsedDate = null;
                 if (orig[XLSX.utils.encode_cell({ r: i, c: selections.dateCol.col })]?.t === 'n') {
                     const jd = XLSX.SSF.parse_date_code(orig[XLSX.utils.encode_cell({ r: i, c: selections.dateCol.col })].v);
-                    if (jd) fd = new Date(jd.y, jd.m - 1, jd.d);
+                    if (jd) parsedDate = new Date(Date.UTC(jd.y, jd.m - 1, jd.d));
                 } else if (typeof dv === 'string') {
-                    const parsed = parseDateString(dv);
-                    if (parsed) fd = parsed;
+                    parsedDate = parseDateString(dv);
                 }
-                
-                const dataRow = worksheet.addRow([fd, dr, cr, null, desc, '', '']);
+                
+                const dataRow = worksheet.addRow([fd, dr, cr, null, desc, '', '']);
 
-                let currentFill = null;
-                if (fd instanceof Date) {
-                    const month = fd.getMonth();
+                let currentFill = null;
+                if (parsedDate instanceof Date) {
+                    const month = parsedDate.getUTCMonth(); // UTC 기준으로 월을 가져옴
                     if (lastMonth !== -1 && month !== lastMonth) colorIndex = (colorIndex + 1) % monthColors.length;
                     lastMonth = month;
                     currentFill = monthColors[colorIndex];
@@ -390,61 +422,62 @@
                     currentFill = monthColors[colorIndex];
                 }
 
-                dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                    if (currentFill) cell.fill = currentFill;
-                    if (colNumber === 1) cell.numFmt = 'yyyy-mm-dd';
-                    if (colNumber >= 2 && colNumber <= 4) {
-                        cell.numFmt = '#,##0';
-                        cell.alignment = { horizontal: 'right' };
-                    }
-                    if (colNumber === 6 || colNumber === 7) cell.fill = inputAreaStyle.fill;
-                });
-                
-                // --- 잔액 공식 조건부 적용 ---
-                const balanceCell = dataRow.getCell(4);
-                const rowNum = dataRow.number;
-                if (inquiryType === '매입처') {
-                    if (rowNum === firstDataRowNumber) {
-                        balanceCell.value = { formula: `C${rowNum}-B${rowNum}` };
-                    } else {
-                        balanceCell.value = { formula: `D${rowNum - 1}+C${rowNum}-B${rowNum}` };
-                    }
-                } else { // 매출처 또는 나중에 정리
-                    if (rowNum === firstDataRowNumber) {
-                        balanceCell.value = { formula: `B${rowNum}-C${rowNum}` };
-                    } else {
-                        balanceCell.value = { formula: `D${rowNum - 1}+B${rowNum}-C${rowNum}` };
-                    }
-                }
-            }
-            
-            worksheet.columns = [
-                { width: 12 }, { width: 25 }, { width: 25 }, { width: 25 },
-                { width: 45 }, { width: 35 }, { width: 35 }
-            ];
+                dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    if (currentFill) cell.fill = currentFill;
+                    // --- 수정된 부분 ---
+                    // 날짜를 텍스트로 저장하므로, 특정 숫자 형식('mm-dd')을 적용하는 코드를 제거합니다.
+                    if (colNumber >= 2 && colNumber <= 4) {
+                        cell.numFmt = '#,##0';
+                        cell.alignment = { horizontal: 'right' };
+                    }
+                    if (colNumber === 6 || colNumber === 7) cell.fill = inputAreaStyle.fill;
+                });
+                
+                // --- 잔액 공식 조건부 적용 ---
+                const balanceCell = dataRow.getCell(4);
+                const rowNum = dataRow.number;
+                if (inquiryType === '매입처') {
+                    if (rowNum === firstDataRowNumber) {
+                        balanceCell.value = { formula: `C${rowNum}-B${rowNum}` };
+                    } else {
+                        balanceCell.value = { formula: `D${rowNum - 1}+C${rowNum}-B${rowNum}` };
+                    }
+                } else { // 매출처 또는 나중에 정리
+                    if (rowNum === firstDataRowNumber) {
+                        balanceCell.value = { formula: `B${rowNum}-C${rowNum}` };
+                    } else {
+                        balanceCell.value = { formula: `D${rowNum - 1}+B${rowNum}-C${rowNum}` };
+                    }
+                }
+            }
+            
+            worksheet.columns = [
+                { width: 12 }, { width: 25 }, { width: 25 }, { width: 25 },
+                { width: 45 }, { width: 35 }, { width: 35 }
+            ];
 
-            worksheet.views = [{
-                state: 'frozen',
-                ySplit: headerRowNumber,
-                topLeftCell: `A${headerRowNumber + 1}`
-            }];
-        });
+            worksheet.views = [{
+                state: 'frozen',
+                ySplit: headerRowNumber,
+                topLeftCell: `A${headerRowNumber + 1}`
+            }];
+        });
 
-        const buf = await newWB.xlsx.writeBuffer();
-        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        if (downloadBtn.href.startsWith('blob:')) URL.revokeObjectURL(downloadBtn.href);
-        downloadBtn.href = URL.createObjectURL(blob);
-        downloadBtn.download = 'ilsintax.xlsx';
-        downloadSec.classList.remove('hidden');
-        previewSec.classList.add('hidden');
-        editBtn.textContent = '편집 시작';
-        editBtn.disabled = false;
-    }
+        const buf = await newWB.xlsx.writeBuffer();
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        if (downloadBtn.href.startsWith('blob:')) URL.revokeObjectURL(downloadBtn.href);
+        downloadBtn.href = URL.createObjectURL(blob);
+        downloadBtn.download = 'ilsintax.xlsx';
+        downloadSec.classList.remove('hidden');
+        previewSec.classList.add('hidden');
+        editBtn.textContent = '편집 시작';
+        editBtn.disabled = false;
+    }
 
 
-   const optionDetails = {
-    none: '기재하지 않습니다.',
-    1: `
+   const optionDetails = {
+    none: '기재하지 않습니다.',
+    1: `
 외상대 잔액설명
 - 잔액기준 플러스 금액: 세금계산서 발행보다 받은금액이 적은경우(은행 거래 내역 기준)
 - 잔액기준 마이너스 금액: 세금계산서 발행보다 받은금액이 많은경우(세금계산서 미발행)
@@ -457,7 +490,7 @@
 - 잔액상계 : 예) 대표 가수금처리
 - 확인중: 확인 후 회신
 `.trim(),
-    2: `
+    2: `
 외상대 잔액설명
 - 잔액 기준 플러스 금액: 통장에서 송금한 금액보다 세금계산서 수취가 많은 경우(외상대 미지급-통장기준)
 - 잔액 기준 마이너스 금액: 통장에서 송금한 금액이 세금계산서 수취보다 많은 경우(증빙 미수취)
@@ -471,7 +504,7 @@
 - 증빙첨부: 메일로 증빙을 첨부하여 회신
 - 확인중: 확인 후 회신
 `.trim(),
-    3: `
+    3: `
 기재참고사항
 - 세금계산서 기수취: 예) 1.15일 ABC상회 매입세금계산서 수취
 - 세금계산서 기발행: 예) 1.15일 ABC상회 매출세금계산서 발급
@@ -482,22 +515,22 @@
 - 잔액상계: 예) 대표 가지급금처리, 비용처리 요망
 - 확인중: 확인 후 회신
 `.trim()
-   };
-   const selectEl = document.getElementById('option-select');
-   const detailEl = document.getElementById('option-detail');
-   selectEl.addEventListener('change', () => {
-    const text = optionDetails[selectEl.value] || '';
-    detailEl.innerHTML = text.replace(/\n/g, '<br>');
-    detailEl.classList.toggle('hidden', !text);
-   });
+   };
+   const selectEl = document.getElementById('option-select');
+   const detailEl = document.getElementById('option-detail');
+   selectEl.addEventListener('change', () => {
+    const text = optionDetails[selectEl.value] || '';
+    detailEl.innerHTML = text.replace(/\n/g, '<br>');
+    detailEl.classList.toggle('hidden', !text);
+   });
 
-   window.addEventListener('load', () => {
-       setTimeout(() => {
-           checkXLSX();
-           checkExcelJS();
-       }, 1000);
-   });
-  </script>
- </body>
- </html>
+   window.addEventListener('load', () => {
+       setTimeout(() => {
+           checkXLSX();
+           checkExcelJS();
+       }, 1000);
+   });
+  </script>
+ </body>
+ </html>
 
