@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>급여 일할계산기 (최종판)</title>
+    <title>급여 일할계산기 (원급여표시개선)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 라이브러리를 html2pdf.bundle.js 대신 개별로 로드합니다 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -73,6 +73,14 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
+        }
+        /* 테이블 셀 내의 작은 글씨 스타일 */
+        .sub-text {
+            display: block;
+            font-size: 0.7rem;
+            color: #6b7280;
+            margin-top: 2px;
+            font-weight: normal;
         }
     </style>
 </head>
@@ -189,11 +197,53 @@
         document.addEventListener('input', handleInput);
         
         function handleInput(e) {
+            // 입력 시 합계 업데이트 (employee card 내)
+            if (e.target.matches('.item-value') || e.target.closest('.employee-card')) {
+                const card = e.target.closest('.employee-card');
+                if (card) updateCardTotals(card);
+            }
+
             const tab = e.target.closest('.tab-content');
             if (!tab) return;
             const calculatorMap = {'newHire': calculateNewHire, 'terminator': calculateTerminator, 'salaryChange': calculateSalaryChange};
             const calculator = calculatorMap[tab.id];
             if (calculator) calculator();
+        }
+
+        // 직원 카드 내의 합계(원급여) 계산 및 표시
+        function updateCardTotals(card) {
+            // 일반 급여 항목 컨테이너 (중도입사/퇴사)
+            const salaryContainer = card.querySelector('.salary-items');
+            if (salaryContainer) {
+                let total = 0;
+                salaryContainer.querySelectorAll('.item-value').forEach(input => {
+                    total += parseFloat(input.value) || 0;
+                });
+                const totalDisplay = salaryContainer.parentElement.querySelector('.total-salary-display');
+                if (totalDisplay) totalDisplay.textContent = `합계: ${formatCurrency(total)}원`;
+            }
+
+            // 변경 전 급여 항목 (급여변경)
+            const oldSalaryContainer = card.querySelector('.old-salary-items');
+            if (oldSalaryContainer) {
+                let total = 0;
+                oldSalaryContainer.querySelectorAll('.item-value').forEach(input => {
+                    total += parseFloat(input.value) || 0;
+                });
+                const totalDisplay = oldSalaryContainer.parentElement.querySelector('.total-salary-display');
+                if (totalDisplay) totalDisplay.textContent = `합계: ${formatCurrency(total)}원`;
+            }
+
+            // 변경 후 급여 항목 (급여변경)
+            const newSalaryContainer = card.querySelector('.new-salary-items');
+            if (newSalaryContainer) {
+                let total = 0;
+                newSalaryContainer.querySelectorAll('.item-value').forEach(input => {
+                    total += parseFloat(input.value) || 0;
+                });
+                const totalDisplay = newSalaryContainer.parentElement.querySelector('.total-salary-display');
+                if (totalDisplay) totalDisplay.textContent = `합계: ${formatCurrency(total)}원`;
+            }
         }
 
         function changeTab(event, tabId) {
@@ -211,18 +261,50 @@
             card.dataset.id = `emp-${employeeIdCounter}`;
             const dateLabel = card.querySelector('.grid > div:nth-child(2) > label');
             const salaryContainer = card.querySelector('.salary-section-container');
+            
             if (prefix === 'nh') dateLabel.textContent = '입사일';
             else if (prefix === 't') dateLabel.textContent = '퇴사일';
             else if (prefix === 'sc') dateLabel.textContent = '급여 변경일';
+            
             if (prefix === 'sc') {
-                salaryContainer.innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div><h3 class="font-medium text-gray-800 mb-2">변경 전 월 지급액</h3><div class="old-salary-items space-y-3"></div><button onclick="addSalaryItem(this.previousElementSibling)" class="mt-3 px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-xs hover:bg-gray-300">+ 항목 추가</button></div><div><h3 class="font-medium text-gray-800 mb-2">변경 후 월 지급액</h3><div class="new-salary-items space-y-3"></div><button onclick="addSalaryItem(this.previousElementSibling)" class="mt-3 px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-xs hover:bg-gray-300">+ 항목 추가</button></div></div>`;
+                salaryContainer.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-medium text-gray-800 mb-2">변경 전 월 지급액</h3>
+                        <div class="old-salary-items space-y-3"></div>
+                        <div class="flex justify-between items-center mt-3">
+                            <button onclick="addSalaryItem(this.parentElement.previousElementSibling)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-xs hover:bg-gray-300">+ 항목 추가</button>
+                            <div class="text-sm font-bold text-indigo-600 total-salary-display">합계: 0원</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-medium text-gray-800 mb-2">변경 후 월 지급액</h3>
+                        <div class="new-salary-items space-y-3"></div>
+                        <div class="flex justify-between items-center mt-3">
+                            <button onclick="addSalaryItem(this.parentElement.previousElementSibling)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-xs hover:bg-gray-300">+ 항목 추가</button>
+                            <div class="text-sm font-bold text-indigo-600 total-salary-display">합계: 0원</div>
+                        </div>
+                    </div>
+                </div>`;
                 initializeDefaultItems(card.querySelector('.old-salary-items'));
                 initializeDefaultItems(card.querySelector('.new-salary-items'));
             } else {
-                 salaryContainer.innerHTML = `<div><h3 class="font-medium text-gray-800 mb-2">월 지급액 (세전)</h3><div class="salary-items space-y-3"></div><button onclick="addSalaryItem(this.previousElementSibling)" class="mt-3 px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-xs hover:bg-gray-300">+ 항목 추가</button></div>`;
+                 salaryContainer.innerHTML = `
+                 <div>
+                    <h3 class="font-medium text-gray-800 mb-2">월 지급액 (세전)</h3>
+                    <div class="salary-items space-y-3"></div>
+                    <div class="flex justify-between items-center mt-3">
+                        <button onclick="addSalaryItem(this.parentElement.previousElementSibling)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-xs hover:bg-gray-300">+ 항목 추가</button>
+                        <div class="text-sm font-bold text-indigo-600 total-salary-display">합계: 0원</div>
+                    </div>
+                </div>`;
                 initializeDefaultItems(card.querySelector('.salary-items'));
             }
             getEl(`${prefix}-employee-list`).appendChild(template);
+            
+            // 초기 합계 계산 (0원 표시를 위해)
+            updateCardTotals(card);
+            
             handleInput({ target: card });
         }
         
@@ -299,18 +381,23 @@
             const nextMonthTable = getEl(`${prefix}-next-month-table`);
             const employeeListSelector = `#${prefix}-employee-list`;
             const salaryItems = collectUniqueSalaryItems(employeeListSelector);
-            let currentMonthHeaderHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">산정기간</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">근무일수</th>`;
+            
+            // Header: '월 급여계(100%)' -> '정상월 지급액'
+            let currentMonthHeaderHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">산정기간</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">근무일수</th><th class="px-4 py-3 text-right text-xs font-medium text-indigo-600 uppercase tracking-wider">정상월 지급액</th>`;
             salaryItems.forEach(item => currentMonthHeaderHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">${item}</th>`);
             currentMonthHeaderHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">총 지급액</th></tr>`;
             currentMonthTable.querySelector('thead').innerHTML = currentMonthHeaderHTML;
+            
             let nextMonthHeaderHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>`;
             salaryItems.forEach(item => nextMonthHeaderHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">${item} (합산)</th>`);
             nextMonthHeaderHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">총 합산 지급액</th></tr>`;
             nextMonthTable.querySelector('thead').innerHTML = nextMonthHeaderHTML;
+            
             const currentMonthBody = currentMonthTable.querySelector('tbody');
             const nextMonthBody = nextMonthTable.querySelector('tbody');
             currentMonthBody.innerHTML = '';
             nextMonthBody.innerHTML = '';
+            
             document.querySelectorAll(`${employeeListSelector} .employee-card`).forEach(card => {
                 const startDay = parseInt(card.querySelector('.employee-start-day').value, 10);
                 const name = card.querySelector('.employee-name').value || '직원';
@@ -318,28 +405,43 @@
                 const periodInfo = getPayPeriodInfo(eventDateVal, startDay);
                 let currentMonthRow = currentMonthBody.insertRow();
                 let nextMonthRow = nextMonthBody.insertRow();
+                
                 if (!periodInfo || !eventDateVal) {
-                    const colspanCurrent = salaryItems.length + 4;
+                    const colspanCurrent = salaryItems.length + 5; // +5 for Name, Period, Days, Original Total, Total
                     const colspanNext = salaryItems.length + 2;
                     currentMonthRow.innerHTML = `<td colspan="${colspanCurrent}" class="px-4 py-4 text-center text-sm text-gray-500">날짜를 입력해주세요.</td>`;
                     nextMonthRow.innerHTML = `<td colspan="${colspanNext}" class="px-4 py-4 text-center text-sm text-gray-500">날짜를 입력해주세요.</td>`;
                     return;
                 }
+                
                 const { periodStartDate, periodEndDate, periodTotalDays } = periodInfo;
                 const eventDateParts = eventDateVal.split('-').map(Number);
                 const eventDate = new Date(Date.UTC(eventDateParts[0], eventDateParts[1] - 1, eventDateParts[2]));
                 const effectiveHireDate = eventDate < periodStartDate ? periodStartDate : eventDate;
                 const workDays = eventDate > periodEndDate ? 0 : Math.round((periodEndDate.getTime() - effectiveHireDate.getTime()) / DAY_IN_MS) + 1;
                 const salaryData = getSalaryData(card, '.salary-items');
-                let totalProratedSalary = 0;
-                let currentMonthRowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td><td class="px-4 py-4 text-sm text-gray-500">${formatDate(effectiveHireDate)} ~ ${formatDate(periodEndDate)}</td><td class="px-4 py-4 text-sm text-gray-500">${workDays} / ${periodTotalDays}일</td>`;
+                
+                // 원 급여 합계 계산
+                let fullMonthTotal = 0;
                 salaryItems.forEach(item => {
-                    const proratedItemValue = (salaryData.get(item) || 0) / periodTotalDays * workDays;
+                    fullMonthTotal += (salaryData.get(item) || 0);
+                });
+
+                let totalProratedSalary = 0;
+                let currentMonthRowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td><td class="px-4 py-4 text-sm text-gray-500">${formatDate(effectiveHireDate)} ~ ${formatDate(periodEndDate)}</td><td class="px-4 py-4 text-sm text-gray-500">${workDays} / ${periodTotalDays}일</td><td class="px-4 py-4 text-sm text-right font-medium text-indigo-600">${formatCurrency(fullMonthTotal)}</td>`;
+                
+                salaryItems.forEach(item => {
+                    const fullMonthValue = salaryData.get(item) || 0;
+                    const proratedItemValue = (fullMonthValue / periodTotalDays * workDays);
                     totalProratedSalary += Math.floor(proratedItemValue);
-                    currentMonthRowHTML += `<td class="px-4 py-4 text-sm text-right">${formatCurrency(proratedItemValue)}</td>`;
+                    currentMonthRowHTML += `<td class="px-4 py-4 text-sm text-right">
+                        <div>${formatCurrency(proratedItemValue)}</div>
+                        <div class="sub-text">(원: ${formatCurrency(fullMonthValue)})</div>
+                    </td>`;
                 });
                 currentMonthRowHTML += `<td class="px-4 py-4 text-sm text-gray-800 font-semibold text-right">${formatCurrency(totalProratedSalary)} 원</td>`;
                 currentMonthRow.innerHTML = currentMonthRowHTML;
+                
                 let totalCombinedSalary = 0;
                 let nextMonthRowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td>`;
                 salaryItems.forEach(item => {
@@ -358,10 +460,13 @@
             const table = getEl(`${prefix}-result-table`);
             const employeeListSelector = `#${prefix}-employee-list`;
             const salaryItems = collectUniqueSalaryItems(employeeListSelector);
-            let headerHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">산정기간</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">근무일수</th>`;
+            
+            // Header: '월 급여계(100%)' -> '정상월 지급액'
+            let headerHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">산정기간</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">근무일수</th><th class="px-4 py-3 text-right text-xs font-medium text-indigo-600 uppercase tracking-wider">정상월 지급액</th>`;
             salaryItems.forEach(item => headerHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">${item}</th>`);
             headerHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">총 지급액</th></tr>`;
             table.querySelector('thead').innerHTML = headerHTML;
+            
             const body = table.querySelector('tbody');
             body.innerHTML = '';
             document.querySelectorAll(`${employeeListSelector} .employee-card`).forEach(card => {
@@ -370,8 +475,9 @@
                 const eventDateVal = card.querySelector('.employee-event-date').value;
                 const periodInfo = getPayPeriodInfo(eventDateVal, startDay);
                 let row = body.insertRow();
+                
                 if (!periodInfo || !eventDateVal) {
-                    row.innerHTML = `<td colspan="${salaryItems.length + 4}" class="px-4 py-4 text-center text-sm text-gray-500">날짜를 입력해주세요.</td>`;
+                    row.innerHTML = `<td colspan="${salaryItems.length + 5}" class="px-4 py-4 text-center text-sm text-gray-500">날짜를 입력해주세요.</td>`;
                     return;
                 }
                 const { periodStartDate, periodEndDate, periodTotalDays } = periodInfo;
@@ -379,12 +485,23 @@
                 const effectiveTermDate = eventDate > periodEndDate ? periodEndDate : eventDate;
                 const workDays = eventDate < periodStartDate ? 0 : Math.round((effectiveTermDate.getTime() - periodStartDate.getTime()) / DAY_IN_MS) + 1;
                 const salaryData = getSalaryData(card, '.salary-items');
-                let totalProratedSalary = 0;
-                let rowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td><td class="px-4 py-4 text-sm text-gray-500">${formatDate(periodStartDate)} ~ ${formatDate(effectiveTermDate)}</td><td class="px-4 py-4 text-sm text-gray-500">${workDays} / ${periodTotalDays}일</td>`;
+
+                // 원 급여 합계 계산
+                let fullMonthTotal = 0;
                 salaryItems.forEach(item => {
-                    const proratedItemValue = (salaryData.get(item) || 0) / periodTotalDays * workDays;
+                    fullMonthTotal += (salaryData.get(item) || 0);
+                });
+
+                let totalProratedSalary = 0;
+                let rowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td><td class="px-4 py-4 text-sm text-gray-500">${formatDate(periodStartDate)} ~ ${formatDate(effectiveTermDate)}</td><td class="px-4 py-4 text-sm text-gray-500">${workDays} / ${periodTotalDays}일</td><td class="px-4 py-4 text-sm text-right font-medium text-indigo-600">${formatCurrency(fullMonthTotal)}</td>`;
+                salaryItems.forEach(item => {
+                    const fullMonthValue = salaryData.get(item) || 0;
+                    const proratedItemValue = (fullMonthValue / periodTotalDays * workDays);
                     totalProratedSalary += Math.floor(proratedItemValue);
-                    rowHTML += `<td class="px-4 py-4 text-sm text-right">${formatCurrency(proratedItemValue)}</td>`;
+                    rowHTML += `<td class="px-4 py-4 text-sm text-right">
+                        <div>${formatCurrency(proratedItemValue)}</div>
+                        <div class="sub-text">(원: ${formatCurrency(fullMonthValue)})</div>
+                    </td>`;
                 });
                 rowHTML += `<td class="px-4 py-4 text-sm text-gray-800 font-semibold text-right">${formatCurrency(totalProratedSalary)} 원</td>`;
                 row.innerHTML = rowHTML;
@@ -396,10 +513,16 @@
             const table = getEl(`${prefix}-result-table`);
             const employeeListSelector = `#${prefix}-employee-list`;
             const salaryItems = collectUniqueSalaryItems(employeeListSelector);
-            let headerHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">산정기간</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">변경 전/후 일수</th>`;
+            
+            // 헤더에 변경전/변경후 월계 명칭 변경
+            let headerHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">산정기간</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">변경 전/후 일수</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-indigo-600 uppercase tracking-wider">변경전 월 지급액</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-indigo-600 uppercase tracking-wider">변경 후 월 지급액</th>`;
+            
             salaryItems.forEach(item => headerHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">${item}</th>`);
             headerHTML += `<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">총 지급액</th></tr>`;
             table.querySelector('thead').innerHTML = headerHTML;
+            
             const body = table.querySelector('tbody');
             body.innerHTML = '';
             document.querySelectorAll(`${employeeListSelector} .employee-card`).forEach(card => {
@@ -408,24 +531,41 @@
                 const eventDateVal = card.querySelector('.employee-event-date').value;
                 const periodInfo = getPayPeriodInfo(eventDateVal, startDay);
                 let row = body.insertRow();
+                
                 if (!periodInfo || !eventDateVal) {
-                     row.innerHTML = `<td colspan="${salaryItems.length + 4}" class="px-4 py-4 text-center text-sm text-gray-500">날짜를 입력해주세요.</td>`;
+                      row.innerHTML = `<td colspan="${salaryItems.length + 6}" class="px-4 py-4 text-center text-sm text-gray-500">날짜를 입력해주세요.</td>`;
                     return;
                 }
                 const { periodStartDate, periodEndDate, periodTotalDays } = periodInfo;
                 const eventDate = new Date(Date.UTC(...eventDateVal.split('-').map((n, i) => i === 1 ? n - 1 : n)));
                 const oldDays = eventDate <= periodStartDate ? 0 : Math.round((eventDate.getTime() - periodStartDate.getTime()) / DAY_IN_MS);
                 const newDays = periodTotalDays - oldDays;
+                
                 const oldSalary = getSalaryData(card, '.old-salary-items');
                 const newSalary = getSalaryData(card, '.new-salary-items');
+
+                // 변경 전/후 월 급여 총액 계산
+                let oldTotal = 0;
+                let newTotal = 0;
+                salaryItems.forEach(item => {
+                    oldTotal += (oldSalary.get(item) || 0);
+                    newTotal += (newSalary.get(item) || 0);
+                });
+
                 let totalCombinedSalary = 0;
-                let rowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td><td class="px-4 py-4 text-sm text-gray-500">${formatDate(periodStartDate)} ~ ${formatDate(periodEndDate)}</td><td class="px-4 py-4 text-sm text-gray-500">${oldDays} / ${newDays}일</td>`;
+                let rowHTML = `<td class="px-4 py-4 text-sm font-medium text-gray-900">${name}</td><td class="px-4 py-4 text-sm text-gray-500">${formatDate(periodStartDate)} ~ ${formatDate(periodEndDate)}</td><td class="px-4 py-4 text-sm text-gray-500">${oldDays} / ${newDays}일</td>
+                <td class="px-4 py-4 text-sm text-right font-medium text-indigo-600">${formatCurrency(oldTotal)}</td>
+                <td class="px-4 py-4 text-sm text-right font-medium text-indigo-600">${formatCurrency(newTotal)}</td>`;
+                
                 salaryItems.forEach(item => {
                     const oldVal = oldSalary.get(item) || 0;
                     const newVal = newSalary.get(item) || 0;
                     const combinedItemValue = (oldVal / periodTotalDays * oldDays) + (newVal / periodTotalDays * newDays);
                     totalCombinedSalary += Math.floor(combinedItemValue);
-                    rowHTML += `<td class="px-4 py-4 text-sm text-right">${formatCurrency(combinedItemValue)}</td>`;
+                    rowHTML += `<td class="px-4 py-4 text-sm text-right">
+                        <div>${formatCurrency(combinedItemValue)}</div>
+                        <div class="sub-text">(${formatCurrency(oldVal)} → ${formatCurrency(newVal)})</div>
+                    </td>`;
                 });
                 rowHTML += `<td class="px-4 py-4 text-sm text-gray-800 font-semibold text-right">${formatCurrency(totalCombinedSalary)} 원</td>`;
                 row.innerHTML = rowHTML;
@@ -558,5 +698,3 @@
     </script>
 </body>
 </html>
-
-
