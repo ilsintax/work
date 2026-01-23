@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>세무법인 일신 - 2025 학원 수입신고</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f0f2f5; }
+        .card { background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); border: 1px solid #e5e7eb; }
+        .input-wrapper { position: relative; }
+        .input-unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #6b7280; font-size: 0.875rem; pointer-events: none; }
+        .input-base { width: 100%; padding: 12px 36px 12px 12px; border: 1px solid #d1d5db; border-radius: 0.5rem; text-align: right; transition: all 0.2s; font-size: 16px; } /* font-size 16px prevents zoom on iOS */
+        .input-base:focus { outline: none; border-color: #2563eb; ring: 2px; ring-color: #2563eb; }
+        
+        /* Branding Header Gradient */
+        .brand-header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+            color: white;
+        }
+
+        .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-40">
+
+    <!-- Brand Header -->
+    <header class="brand-header p-5 sticky top-0 z-50 shadow-lg">
+        <div class="max-w-md mx-auto flex flex-col items-center">
+            <div class="text-xs font-medium opacity-80 mb-1 tracking-widest">TRUSTED PARTNER</div>
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <i class="fas fa-balance-scale"></i> 세무법인 일신
+            </h1>
+            <div class="mt-2 text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm">
+                2025년 학원 면세사업장 수입금액 신고
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-md mx-auto p-4 space-y-6 mt-2">
+
+        <!-- 1. 기본 현황 (Basic Info) -->
+        <div class="card p-6">
+            <h2 class="text-gray-800 font-bold text-lg mb-5 border-b pb-3 flex items-center">
+                <span class="bg-blue-100 text-blue-700 rounded-lg w-7 h-7 flex items-center justify-center text-sm mr-3 font-extrabold">1</span>
+                기본 시설 및 운영 현황
+            </h2>
+            <div class="grid grid-cols-2 gap-5 mb-5">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">강의실 수</label>
+                    <div class="input-wrapper">
+                        <input type="tel" id="roomCount" class="input-base" placeholder="0">
+                        <span class="input-unit">개</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">책상 수</label>
+                    <div class="input-wrapper">
+                        <input type="tel" id="deskCount" class="input-base" placeholder="0">
+                        <span class="input-unit">개</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">통학버스</label>
+                    <div class="input-wrapper">
+                        <input type="tel" id="busCount" class="input-base" placeholder="0">
+                        <span class="input-unit">대</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-gray-50 p-4 rounded-xl border border-dashed border-gray-300">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">단과반</label>
+                        <div class="input-wrapper">
+                            <input type="tel" id="singleClass" class="input-base" placeholder="0">
+                            <span class="input-unit">개</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">종합반</label>
+                        <div class="input-wrapper">
+                            <input type="tel" id="compClass" class="input-base" placeholder="0">
+                            <span class="input-unit">개</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">주간반</label>
+                        <div class="input-wrapper">
+                            <input type="tel" id="dayClass" class="input-base" placeholder="0">
+                            <span class="input-unit">개</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">야간반</label>
+                        <div class="input-wrapper">
+                            <input type="tel" id="nightClass" class="input-base" placeholder="0">
+                            <span class="input-unit">개</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 시설 면적 (Areas) -->
+        <div class="card p-6">
+            <h2 class="text-gray-800 font-bold text-lg mb-5 border-b pb-3 flex items-center">
+                <span class="bg-blue-100 text-blue-700 rounded-lg w-7 h-7 flex items-center justify-center text-sm mr-3 font-extrabold">2</span>
+                사업장 시설 면적
+            </h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between gap-4">
+                    <label class="text-sm font-bold text-gray-600">강의실</label>
+                    <div class="input-wrapper w-32">
+                        <input type="tel" id="lectureArea" class="input-base" placeholder="0">
+                        <span class="input-unit">㎡</span>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <label class="text-sm font-bold text-gray-600">사무실</label>
+                    <div class="input-wrapper w-32">
+                        <input type="tel" id="officeArea" class="input-base" placeholder="0">
+                        <span class="input-unit">㎡</span>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <label class="text-sm font-bold text-gray-600">휴게실 외</label>
+                    <div class="input-wrapper w-32">
+                        <input type="tel" id="restArea" class="input-base" placeholder="0">
+                        <span class="input-unit">㎡</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 임대차 정보 (Deposit) -->
+        <div class="card p-6">
+            <h2 class="text-gray-800 font-bold text-lg mb-5 border-b pb-3 flex items-center">
+                <span class="bg-blue-100 text-blue-700 rounded-lg w-7 h-7 flex items-center justify-center text-sm mr-3 font-extrabold">3</span>
+                임대차 정보
+            </h2>
+            <div>
+                <label class="block text-sm font-bold text-gray-600 mb-2">사무실 임차 보증금</label>
+                <div class="input-wrapper">
+                    <input type="tel" id="deposit" class="input-base font-bold text-gray-800" placeholder="금액 입력" oninput="formatInput(this)">
+                    <span class="input-unit">원</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 총 수입금액 (Total Revenue) -->
+        <div class="card p-6 border-2 border-blue-500 ring-4 ring-blue-50">
+            <h2 class="text-blue-800 font-bold text-lg mb-4 flex items-center">
+                <span class="bg-blue-600 text-white rounded-lg w-7 h-7 flex items-center justify-center text-sm mr-3 font-extrabold">4</span>
+                2025년 총 수입금액 (중요)
+            </h2>
+            
+            <!-- 작성 안내 배치 (요청사항 반영) -->
+            <div class="bg-blue-50 rounded-lg p-3 mb-4 text-sm text-blue-800 leading-snug">
+                <p class="font-bold mb-1"><i class="fas fa-exclamation-circle"></i> 작성 가이드</p>
+                <p class="text-blue-700 text-xs">
+                    총 수입금액과 아래 5번 상세내역 합계가 <strong>비슷하게 맞도록</strong> 입력해주세요.
+                </p>
+            </div>
+
+            <div class="space-y-3">
+                <label class="block text-sm font-bold text-gray-700">
+                    확정된 총 매출액 (현금+카드)
+                </label>
+                <div class="input-wrapper">
+                    <input type="tel" id="totalRevenue" placeholder="금액 입력" 
+                        class="w-full p-4 pl-4 pr-12 border border-blue-300 rounded-xl text-xl font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-right shadow-inner"
+                        oninput="formatInput(this); calculate();">
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">원</span>
+                </div>
+                
+                <!-- 안심 문구 -->
+                <div class="flex items-start gap-2 mt-2 text-xs text-gray-500 break-keep bg-gray-50 p-2 rounded">
+                    <i class="fas fa-check-circle text-green-500 mt-0.5"></i>
+                    <span>차액이 발생해도 <strong>세무법인 일신</strong>에서 최종 검토 후 조정해 드리니 편하게 입력하세요.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. 교습 과정 상세 (Details) -->
+        <div class="card p-6">
+            <div class="flex flex-col gap-1 mb-5 border-b pb-3">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-gray-800 font-bold text-lg flex items-center">
+                        <span class="bg-blue-100 text-blue-700 rounded-lg w-7 h-7 flex items-center justify-center text-sm mr-3 font-extrabold">5</span>
+                        과정별 상세 내역
+                    </h2>
+                </div>
+                <p class="text-xs text-gray-500 pl-10">
+                    * 단가 × 연인원 = 총 수입금액과 맞추기
+                </p>
+            </div>
+            
+            <div id="classList" class="space-y-4">
+                <!-- Class Items go here -->
+            </div>
+
+            <button onclick="addClassItem()" class="mt-4 w-full py-4 bg-white hover:bg-gray-50 text-blue-600 font-bold rounded-xl border-2 border-dashed border-blue-200 transition-colors flex items-center justify-center gap-2 shadow-sm">
+                <i class="fas fa-plus-circle"></i> 과정 추가하기
+            </button>
+        </div>
+
+        <!-- Floating Action Footer -->
+        <div class="card p-5 bg-gray-900 text-white sticky bottom-4 shadow-2xl z-40 border-none mx-1">
+            <div class="flex justify-between text-sm text-gray-400 mb-1">
+                <span>입력한 총 수입</span>
+                <span id="displayTotalRevenue" class="font-mono">0원</span>
+            </div>
+            <div class="flex justify-between text-sm text-gray-400 mb-3 border-b border-gray-700 pb-2">
+                <span>상세 내역 합계</span>
+                <span id="displayCalculatedSum" class="font-mono">0원</span>
+            </div>
+            
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-lg font-bold text-gray-100">차액</span>
+                <div id="diffBadge" class="px-3 py-1.5 rounded-full bg-gray-700 text-gray-300 font-bold text-sm flex items-center gap-2 transition-all">
+                    <i class="fas fa-minus-circle"></i> 입력대기
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="copyToClipboard()" class="py-3.5 bg-[#FEE500] hover:bg-[#FDD835] text-[#3c1e1e] font-bold rounded-xl flex items-center justify-center gap-2 text-sm shadow-lg transition-transform active:scale-95">
+                    <i class="fas fa-comment text-lg"></i> 카톡용 복사
+                </button>
+                <button onclick="downloadCSV()" class="py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 text-sm shadow-lg transition-transform active:scale-95">
+                    <i class="fas fa-file-excel text-lg"></i> 엑셀 저장
+                </button>
+            </div>
+        </div>
+        
+        <div class="text-center pb-8 space-y-1">
+            <p class="text-sm font-bold text-gray-500">세무법인 일신</p>
+            <p class="text-xs text-gray-400">Tel. 02-000-0000 | 담당자: 이재형 차장</p>
+        </div>
+
+    </div>
+
+    <!-- Templates -->
+    <template id="classItemTemplate">
+        <div class="class-item bg-white p-5 rounded-xl border border-gray-200 relative group shadow-sm">
+            <div class="absolute -left-1 top-5 w-1 h-8 bg-blue-400 rounded-r"></div>
+            <button onclick="removeClass(this)" class="absolute top-3 right-3 text-gray-300 hover:text-red-500 p-2 transition-colors">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">과목명 (예: 피아노)</label>
+                    <input type="text" class="input-name w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="과목 입력">
+                </div>
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">월 수강료</label>
+                        <input type="tel" class="input-price w-full p-2.5 border border-gray-300 rounded-lg text-sm text-right font-medium" placeholder="0" oninput="formatInput(this); calculate();">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">연인원(누적)</label>
+                        <input type="tel" class="input-count w-full p-2.5 border border-gray-300 rounded-lg text-sm text-right font-medium" placeholder="0" oninput="formatInput(this); calculate();">
+                    </div>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-gray-100">
+                    <span class="text-xs text-gray-400">합계</span>
+                    <span class="text-sm font-bold text-blue-600"><span class="subtotal">0</span>원</span>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        function formatInput(input) {
+            let value = input.value.replace(/[^\d]/g, '');
+            if (value === '') {
+                input.value = '';
+                return;
+            }
+            input.value = formatNumber(parseInt(value));
+        }
+
+        function getNumber(input) {
+            if(!input) return 0;
+            return parseInt(input.value.replace(/,/g, '')) || 0;
+        }
+        
+        function getValue(id) {
+            return document.getElementById(id).value || '0';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            addClassItem();
+            calculate();
+        });
+
+        function addClassItem() {
+            const template = document.getElementById('classItemTemplate');
+            const clone = template.content.cloneNode(true);
+            document.getElementById('classList').appendChild(clone);
+        }
+
+        function removeClass(btn) {
+            const list = document.getElementById('classList');
+            if (list.children.length > 1) {
+                btn.closest('.class-item').remove();
+                calculate();
+            } else {
+                alert('최소 1개의 과정은 있어야 합니다.');
+            }
+        }
+
+        function calculate() {
+            const totalRevenueInput = document.getElementById('totalRevenue');
+            const targetTotal = getNumber(totalRevenueInput);
+            
+            let currentSum = 0;
+            const items = document.querySelectorAll('.class-item');
+            
+            items.forEach(item => {
+                const price = getNumber(item.querySelector('.input-price'));
+                const count = getNumber(item.querySelector('.input-count'));
+                const subtotal = price * count;
+                item.querySelector('.subtotal').textContent = formatNumber(subtotal);
+                currentSum += subtotal;
+            });
+
+            const diff = targetTotal - currentSum;
+            
+            document.getElementById('displayTotalRevenue').textContent = formatNumber(targetTotal) + '원';
+            document.getElementById('displayCalculatedSum').textContent = formatNumber(currentSum) + '원';
+            
+            const badge = document.getElementById('diffBadge');
+
+            if (targetTotal === 0 && currentSum === 0) {
+                 badge.className = `px-3 py-1.5 rounded-full bg-gray-700 text-gray-300 font-bold text-sm flex items-center gap-2`;
+                 badge.innerHTML = `<i class="fas fa-minus-circle"></i> 입력대기`;
+            } else if (diff === 0) {
+                badge.className = `px-3 py-1.5 rounded-full bg-emerald-500 text-white font-bold text-sm flex items-center gap-2`;
+                badge.innerHTML = `<i class="fas fa-check-circle"></i> 일치 (0원)`;
+            } else if (diff > 0) {
+                badge.className = `px-3 py-1.5 rounded-full bg-amber-500 text-white font-bold text-sm flex items-center gap-2 shake`;
+                badge.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${formatNumber(diff)}원 부족`;
+            } else {
+                badge.className = `px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold text-sm flex items-center gap-2 shake`;
+                badge.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${formatNumber(Math.abs(diff))}원 초과`;
+            }
+        }
+
+        function copyToClipboard() {
+            const total = document.getElementById('totalRevenue').value;
+            if(!total) { alert("총 수입금액을 입력해주세요."); document.getElementById('totalRevenue').focus(); return; }
+
+            let text = `[세무법인 일신 - 2025 수입신고 자료]\n\n`;
+            
+            text += `1. 기본 현황\n`;
+            text += `- 강의실: ${getValue('roomCount')}개 / 책상: ${getValue('deskCount')}개\n`;
+            text += `- 통학버스: ${getValue('busCount')}대\n`;
+            text += `- 단과반: ${getValue('singleClass')}개 / 종합반: ${getValue('compClass')}개\n`;
+            text += `- 주간반: ${getValue('dayClass')}개 / 야간반: ${getValue('nightClass')}개\n\n`;
+            
+            text += `2. 시설 면적\n`;
+            text += `- 강의실: ${getValue('lectureArea')}㎡\n`;
+            text += `- 사무실: ${getValue('officeArea')}㎡\n`;
+            text += `- 휴게실 외: ${getValue('restArea')}㎡\n\n`;
+            
+            text += `3. 임대차 정보\n`;
+            text += `- 보증금: ${getValue('deposit')}원\n\n`;
+
+            text += `4. 총 수입금액: ${total}원\n`;
+            text += `--------------------------------\n`;
+            text += `5. 과정별 상세 내역\n`;
+
+            const items = document.querySelectorAll('.class-item');
+            items.forEach((item, index) => {
+                const name = item.querySelector('.input-name').value;
+                const price = item.querySelector('.input-price').value;
+                const count = item.querySelector('.input-count').value;
+                const sub = item.querySelector('.subtotal').textContent;
+                
+                if (name || price) {
+                    text += `${index+1}) ${name || '미입력'}: ${price}원 × ${count}명 = ${sub}원\n`;
+                }
+            });
+            text += `--------------------------------\n`;
+            text += `작성 완료.`;
+
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textarea);
+
+            alert("카카오톡용 텍스트가 복사되었습니다.\n채팅방에 '붙여넣기' 해주세요.");
+        }
+
+        function downloadCSV() {
+            let csv = "\uFEFF"; 
+            
+            // Basic Info
+            csv += "구분,항목1,값1,항목2,값2\n";
+            csv += `1.기본현황,강의실수,${getValue('roomCount')},책상수,${getValue('deskCount')}\n`;
+            csv += `1.기본현황,통학버스,${getValue('busCount')},,\n`;
+            csv += `1.기본현황,단과반,${getValue('singleClass')},종합반,${getValue('compClass')}\n`;
+            csv += `1.기본현황,주간반,${getValue('dayClass')},야간반,${getValue('nightClass')}\n`;
+            
+            // Area
+            csv += `2.시설면적,강의실,${getValue('lectureArea')},사무실,${getValue('officeArea')}\n`;
+            csv += `2.시설면적,휴게실외,${getValue('restArea')},,\n`;
+            
+            // Deposit
+            csv += `3.임대차,보증금,${getValue('deposit').replace(/,/g,'')},,\n`;
+            
+            // Revenue
+            csv += `4.총수입,,${getNumber(document.getElementById('totalRevenue'))},,\n`;
+            
+            // Details
+            csv += "\n[5.상세내역]\n과목명,수강단가,연인원,합계\n";
+            const items = document.querySelectorAll('.class-item');
+            items.forEach(item => {
+                const name = item.querySelector('.input-name').value.replace(/,/g, ' ');
+                const price = getNumber(item.querySelector('.input-price'));
+                const count = getNumber(item.querySelector('.input-count'));
+                const sub = price * count;
+                csv += `${name},${price},${count},${sub}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "2025_학원면세신고_상세자료.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
