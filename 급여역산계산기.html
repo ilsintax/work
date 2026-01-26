@@ -99,7 +99,7 @@
     <div class="w-full max-w-4xl mx-auto p-4">
         <div class="bg-white rounded-2xl shadow-lg p-8">
             <header class="text-center mb-8">
-                <h1 class="text-3xl font-bold text-gray-800">급여 역산 계산기(25년9월 최종업데이트)</h1>
+                <h1 class="text-3xl font-bold text-gray-800">급여 역산 계산기(26년1월 최종업데이트)</h1>
                 <p class="text-gray-500 mt-2">목표 실수령액을 입력하시면, 세전 급여를 계산해 드립니다.</p>
             </header>
 
@@ -249,19 +249,19 @@ const SETTINGS = {
     insuranceRates: {
         nationalPension: { 
             name: '국민연금', 
-            rate: 0.045, 
-            displayRate: '4.5%',
+            rate: 0.0475, 
+            displayRate: '4.75%',
             minMonthlySalary: 400000, 
             maxMonthlySalary: 6370000 
         },
         healthInsurance: { 
             name: '건강보험', 
-            rate: 0.03545, 
-            displayRate: '3.545%',
-            longTermCareRate: 0.1295, 
-            longTermCareDisplayRate: '12.95%',
-            minMonthlySalary: 279266, 
-            maxMonthlySalary: 127056982 
+            rate: 0.0360, 
+            displayRate: '3.60%',
+            longTermCareRate: 0.1314, 
+            longTermCareDisplayRate: '13.14%',
+            minMonthlySalary: 280667, 
+            maxMonthlySalary: 127725731 
         },
         employmentInsurance: { 
             name: '고용보험', 
@@ -696,6 +696,7 @@ async function generatePdfFromPreview() {
 </script>
 </body>
 </html>
+
 
 
 
