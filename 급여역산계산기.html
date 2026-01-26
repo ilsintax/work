@@ -460,7 +460,7 @@ function getDeductions(grossPay, dependents) {
     }
 
     if (document.querySelector('input[name="careType"]:checked').value === 'rate') {
-        care = Math.round(health * healthInsurance.longTermCareRate / 10) * 10;
+        care = Math.floor(health * healthInsurance.longTermCareRate / 10) * 10;
     } else {
         care = parseNumber(document.getElementById('careFixedAmount').value);
     }
@@ -696,6 +696,7 @@ async function generatePdfFromPreview() {
 </script>
 </body>
 </html>
+
 
 
 
