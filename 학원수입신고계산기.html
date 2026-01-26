@@ -47,6 +47,16 @@
 
     <div class="max-w-md mx-auto p-4 space-y-6 mt-2">
 
+        <!-- 0. 학원명 (상호) - NEW -->
+        <div class="card p-6 border-l-4 border-blue-600">
+            <h2 class="text-gray-800 font-bold text-lg mb-3 flex items-center">
+                <i class="fas fa-school text-blue-600 mr-2"></i> 학원명 (상호)
+            </h2>
+            <div class="input-wrapper">
+                 <input type="text" id="academyName" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-bold text-center text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500 ring-2 ring-transparent focus:ring-blue-100 transition-all" placeholder="학원 이름을 입력해주세요">
+            </div>
+        </div>
+
         <!-- 1. 기본 현황 (Basic Info) -->
         <div class="card p-6">
             <h2 class="text-gray-800 font-bold text-lg mb-5 border-b pb-3 flex items-center">
@@ -164,7 +174,7 @@
                 2025년 총 수입금액 (중요)
             </h2>
             
-            <!-- 작성 안내 배치 (요청사항 반영) -->
+            <!-- 작성 안내 배치 -->
             <div class="bg-blue-50 rounded-lg p-3 mb-4 text-sm text-blue-800 leading-snug">
                 <p class="font-bold mb-1"><i class="fas fa-exclamation-circle"></i> 작성 가이드</p>
                 <p class="text-blue-700 text-xs">
@@ -244,7 +254,7 @@
         
         <div class="text-center pb-8 space-y-1">
             <p class="text-sm font-bold text-gray-500">세무법인 일신</p>
-            <p class="text-xs text-gray-400">Tel. 070-4617-6111 | 주소. 서울시 서초구 사임당로8길 12(에이블빌딩)</p>
+            <p class="text-xs text-gray-400">Tel. 02-3472-4013 | 주소. 서울시 서초구 사임당로8길 12(에이블빌딩)</p>
         </div>
 
     </div>
@@ -299,6 +309,10 @@
         }
         
         function getValue(id) {
+            return document.getElementById(id).value || '';
+        }
+
+        function getValueOrZero(id) {
             return document.getElementById(id).value || '0';
         }
 
@@ -362,23 +376,27 @@
 
         function copyToClipboard() {
             const total = document.getElementById('totalRevenue').value;
+            const academyName = getValue('academyName');
+            
+            if(!academyName) { alert("학원명(상호)를 입력해주세요."); document.getElementById('academyName').focus(); return; }
             if(!total) { alert("총 수입금액을 입력해주세요."); document.getElementById('totalRevenue').focus(); return; }
 
-            let text = `[세무법인 일신 - 2025 수입신고 자료]\n\n`;
+            let text = `[세무법인 일신 - 2025 수입신고 자료]\n`;
+            text += `■ 학원명: ${academyName}\n\n`;
             
             text += `1. 기본 현황\n`;
-            text += `- 강의실: ${getValue('roomCount')}개 / 책상: ${getValue('deskCount')}개\n`;
-            text += `- 통학버스: ${getValue('busCount')}대\n`;
-            text += `- 단과반: ${getValue('singleClass')}개 / 종합반: ${getValue('compClass')}개\n`;
-            text += `- 주간반: ${getValue('dayClass')}개 / 야간반: ${getValue('nightClass')}개\n\n`;
+            text += `- 강의실: ${getValueOrZero('roomCount')}개 / 책상: ${getValueOrZero('deskCount')}개\n`;
+            text += `- 통학버스: ${getValueOrZero('busCount')}대\n`;
+            text += `- 단과반: ${getValueOrZero('singleClass')}개 / 종합반: ${getValueOrZero('compClass')}개\n`;
+            text += `- 주간반: ${getValueOrZero('dayClass')}개 / 야간반: ${getValueOrZero('nightClass')}개\n\n`;
             
             text += `2. 시설 면적\n`;
-            text += `- 강의실: ${getValue('lectureArea')}㎡\n`;
-            text += `- 사무실: ${getValue('officeArea')}㎡\n`;
-            text += `- 휴게실 외: ${getValue('restArea')}㎡\n\n`;
+            text += `- 강의실: ${getValueOrZero('lectureArea')}㎡\n`;
+            text += `- 사무실: ${getValueOrZero('officeArea')}㎡\n`;
+            text += `- 휴게실 외: ${getValueOrZero('restArea')}㎡\n\n`;
             
             text += `3. 임대차 정보\n`;
-            text += `- 보증금: ${getValue('deposit')}원\n\n`;
+            text += `- 보증금: ${getValueOrZero('deposit')}원\n\n`;
 
             text += `4. 총 수입금액: ${total}원\n`;
             text += `--------------------------------\n`;
@@ -410,20 +428,21 @@
 
         function downloadCSV() {
             let csv = "\uFEFF"; 
+            csv += `학원명(상호),${getValue('academyName')},,,\n\n`;
             
             // Basic Info
             csv += "구분,항목1,값1,항목2,값2\n";
-            csv += `1.기본현황,강의실수,${getValue('roomCount')},책상수,${getValue('deskCount')}\n`;
-            csv += `1.기본현황,통학버스,${getValue('busCount')},,\n`;
-            csv += `1.기본현황,단과반,${getValue('singleClass')},종합반,${getValue('compClass')}\n`;
-            csv += `1.기본현황,주간반,${getValue('dayClass')},야간반,${getValue('nightClass')}\n`;
+            csv += `1.기본현황,강의실수,${getValueOrZero('roomCount')},책상수,${getValueOrZero('deskCount')}\n`;
+            csv += `1.기본현황,통학버스,${getValueOrZero('busCount')},,\n`;
+            csv += `1.기본현황,단과반,${getValueOrZero('singleClass')},종합반,${getValueOrZero('compClass')}\n`;
+            csv += `1.기본현황,주간반,${getValueOrZero('dayClass')},야간반,${getValueOrZero('nightClass')}\n`;
             
             // Area
-            csv += `2.시설면적,강의실,${getValue('lectureArea')},사무실,${getValue('officeArea')}\n`;
-            csv += `2.시설면적,휴게실외,${getValue('restArea')},,\n`;
+            csv += `2.시설면적,강의실,${getValueOrZero('lectureArea')},사무실,${getValueOrZero('officeArea')}\n`;
+            csv += `2.시설면적,휴게실외,${getValueOrZero('restArea')},,\n`;
             
             // Deposit
-            csv += `3.임대차,보증금,${getValue('deposit').replace(/,/g,'')},,\n`;
+            csv += `3.임대차,보증금,${getValueOrZero('deposit').replace(/,/g,'')},,\n`;
             
             // Revenue
             csv += `4.총수입,,${getNumber(document.getElementById('totalRevenue'))},,\n`;
@@ -443,7 +462,7 @@
             const link = document.createElement("a");
             const url = URL.createObjectURL(blob);
             link.setAttribute("href", url);
-            link.setAttribute("download", "2025_학원면세신고_상세자료.csv");
+            link.setAttribute("download", `2025_학원면세신고_${getValue('academyName') || '상세자료'}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -451,4 +470,3 @@
     </script>
 </body>
 </html>
-
