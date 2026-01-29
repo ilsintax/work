@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025년 주택임대사업자 수입금액 검토표 (오류 수정판)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f3f4f6; }
+        
+        .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            appearance: none;
+        }
+
+        .kakao-btn { background-color: #FEE500; color: #191919; }
+        
+        /* Tooltip Logic */
+        .tooltip-text {
+            visibility: hidden; opacity: 0; transition: opacity 0.3s;
+        }
+        .group:hover .tooltip-text, .group:active .tooltip-text {
+            visibility: visible; opacity: 1;
+        }
+
+        /* Animation for new cards */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .property-card { animation: slideIn 0.3s ease-out; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- Browser Guide -->
+    <div class="bg-gray-800 text-gray-200 text-xs p-3 text-center leading-relaxed">
+        <i class="fas fa-info-circle mr-1 text-yellow-400"></i>
+        화면이 정상적으로 나오지 않거나 파일저장이 안될경우<br>우측 하단 <strong>[⋮]</strong> → <strong>[다른 브라우저로 열기]</strong>를 해주세요.
+    </div>
+
+    <div class="max-w-3xl mx-auto bg-white min-h-screen shadow-lg pb-20 relative">
+        <!-- Header -->
+        <div class="bg-indigo-800 text-white p-6 rounded-b-xl shadow-md sticky top-0 z-20">
+            <div class="flex justify-between items-start">
+                <div>
+                    <span class="bg-indigo-900 text-indigo-100 text-xs px-2 py-1 rounded font-bold mb-2 inline-block">2026년 2월 신고용</span>
+                    <h1 class="text-xl font-bold leading-tight">주택임대사업자<br>수입금액 검토표</h1>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-indigo-200">총 임대물건</p>
+                    <p class="text-2xl font-bold" id="totalCountDisplay">0건</p>
+                </div>
+            </div>
+            <p class="text-indigo-200 text-xs mt-3 opacity-90">
+                <i class="fas fa-check-circle mr-1"></i>물건이 여러 개이거나 임차인이 바뀐 경우 추가/복사 버튼을 활용하세요.
+            </p>
+        </div>
+
+        <!-- Property List Container -->
+        <div id="propertyList" class="p-4 space-y-6">
+            <!-- Cards will be added here via JS -->
+        </div>
+
+        <!-- Add Button Area -->
+        <div class="p-4">
+            <button onclick="addProperty()" class="w-full border-2 border-dashed border-indigo-300 rounded-xl p-4 text-indigo-600 font-bold hover:bg-indigo-50 transition flex justify-center items-center">
+                <i class="fas fa-plus-circle mr-2 text-xl"></i> 임대 물건 추가하기
+            </button>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="p-4 pb-10 space-y-3 bg-gray-50 border-t">
+            <div class="flex justify-between items-center mb-2 px-1">
+                <span class="text-sm font-bold text-gray-600">총 수입금액 합계</span>
+                <span class="text-lg font-bold text-indigo-700" id="grandTotalDisplay">0원</span>
+            </div>
+            
+            <button onclick="copyToClipboard()" class="kakao-btn w-full py-4 rounded-xl font-bold text-lg shadow-md hover:brightness-95 transition flex justify-center items-center">
+                <i class="fas fa-comment mr-2"></i> 복사해서 카톡으로 보내기
+            </button>
+            
+            <button onclick="downloadTextFile()" class="bg-white border border-gray-300 text-gray-700 w-full py-3 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition flex justify-center items-center">
+                <i class="fas fa-file-download mr-2"></i> 파일로 저장하기 (.txt)
+            </button>
+        </div>
+    </div>
+
+    <!-- Template for Property Card -->
+    <template id="propertyTemplate">
+        <div class="property-card bg-white border-2 border-gray-200 rounded-xl shadow-sm overflow-hidden relative" data-id="">
+            <!-- Card Header -->
+            <div class="bg-gray-100 p-3 flex justify-between items-center border-b border-gray-200">
+                <span class="font-bold text-indigo-800 text-sm card-number">No. 1</span>
+                <!-- Delete Button -->
+                <button type="button" class="delete-btn text-gray-400 hover:text-red-500 text-sm px-2 cursor-pointer border border-gray-300 rounded bg-white shadow-sm flex items-center">
+                    <i class="fas fa-trash-alt mr-1"></i>삭제
+                </button>
+            </div>
+
+            <div class="p-5 space-y-5">
+                <!-- 1. Basic Info -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-800 mb-2 border-l-4 border-indigo-500 pl-2">물건지 정보</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <select class="inp-houseType form-select col-span-2 w-full p-2 border border-gray-300 rounded text-sm">
+                            <option value="" disabled selected>주택 종류 선택</option>
+                            <option value="아파트">아파트</option>
+                            <option value="다세대주택(빌라)">다세대주택(빌라)</option>
+                            <option value="다가구주택(원룸 등)">다가구주택(원룸)</option>
+                            <option value="오피스텔(주거용)">오피스텔(주거용)</option>
+                            <option value="단독주택">단독주택</option>
+                            <option value="기타">기타</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 mb-2">
+                        <input type="text" class="inp-address col-span-2 p-2 border border-gray-300 rounded text-sm bg-gray-50" placeholder="주소 (도로명)">
+                        <input type="text" class="inp-unit col-span-1 p-2 border border-gray-300 rounded text-sm bg-gray-50" placeholder="동/호수">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-1">취득일</label>
+                            <input type="date" class="inp-acqDate w-full p-2 border border-gray-300 rounded text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-1">전용면적 (㎡)</label>
+                            <input type="number" class="inp-area w-full p-2 border border-gray-300 rounded text-sm text-right" placeholder="84.9" step="0.01">
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="border-gray-100">
+
+                <!-- 2. Tenant Info -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-800 mb-2 border-l-4 border-green-500 pl-2">임차인 정보</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <input type="text" class="inp-tName p-2 border border-gray-300 rounded text-sm" placeholder="성명(상호)">
+                        <input type="text" class="inp-tId p-2 border border-gray-300 rounded text-sm" placeholder="주민(사업자)번호" maxlength="14">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 block mb-1">임대기간</label>
+                        <div class="flex items-center space-x-1">
+                            <input type="date" class="inp-rStart w-full p-2 border border-gray-300 rounded text-sm">
+                            <span class="text-gray-400">~</span>
+                            <input type="date" class="inp-rEnd w-full p-2 border border-gray-300 rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="border-gray-100">
+
+                <!-- 3. Rent Info -->
+                <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                    <h3 class="text-sm font-bold text-indigo-900 mb-2">임대 조건 (2025년 귀속)</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                            <label class="text-xs text-indigo-800 block">보증금</label>
+                            <input type="text" class="inp-deposit w-full p-2 border border-indigo-200 rounded text-sm text-right" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-xs text-indigo-800 block">월세(매월)</label>
+                            <input type="text" class="inp-monthly w-full p-2 border border-indigo-200 rounded text-sm text-right" placeholder="0">
+                        </div>
+                    </div>
+                    
+                    <!-- Radio Buttons Container -->
+                    <div class="pay-type-container flex space-x-2 mb-3">
+                        <!-- JS will inject radio buttons here to handle unique names -->
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-bold text-indigo-900 block mb-1">2025년 총 월세 수령액</label>
+                        <input type="text" class="inp-total w-full p-2 border-2 border-indigo-300 rounded text-sm text-right font-bold text-indigo-900 bg-white" placeholder="0">
+                    </div>
+                </div>
+
+                <!-- Clone Button -->
+                <button type="button" class="clone-btn w-full bg-gray-100 text-gray-600 text-xs py-2 rounded border border-gray-300 hover:bg-gray-200 transition">
+                    <i class="fas fa-copy mr-1"></i> 이 내용 복사해서 아래에 추가 (임차인 변경 시)
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <!-- Hidden TextArea for Copy -->
+    <textarea id="clipboardTarget" style="position: absolute; left: -9999px;"></textarea>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none z-50 text-center text-sm w-max">
+        ✅ 복사되었습니다.
+    </div>
+
+    <script>
+        // --- Utilities ---
+        const comma = (str) => String(str).replace(/(\d)(?=(?:\d{3})+(?!\d))/g, '$1,');
+        const uncomma = (str) => String(str).replace(/[^\d]+/g, '');
+        const formatInput = (e) => { e.target.value = comma(uncomma(e.target.value)); calculateGrandTotal(); };
+
+        // --- Core Functions ---
+
+        // 1. Add Property (New or Clone)
+        function addProperty(data = null) {
+            const template = document.getElementById('propertyTemplate');
+            const clone = template.content.cloneNode(true);
+            const card = clone.querySelector('.property-card');
+            const uniqueId = Date.now() + Math.random().toString(36).substr(2, 9);
+            
+            card.dataset.id = uniqueId;
+
+            // Handle Radio Buttons (Unique Name per Card)
+            const payTypeContainer = card.querySelector('.pay-type-container');
+            const payTypeName = `payType_${uniqueId}`;
+            payTypeContainer.innerHTML = `
+                <label class="flex-1 cursor-pointer">
+                    <input type="radio" name="${payTypeName}" value="선불" class="hidden peer inp-payType">
+                    <div class="py-1.5 text-center text-xs border rounded bg-white text-gray-500 peer-checked:bg-indigo-600 peer-checked:text-white transition">선불</div>
+                </label>
+                <label class="flex-1 cursor-pointer">
+                    <input type="radio" name="${payTypeName}" value="후불" class="hidden peer inp-payType" checked>
+                    <div class="py-1.5 text-center text-xs border rounded bg-white text-gray-500 peer-checked:bg-indigo-600 peer-checked:text-white transition">후불</div>
+                </label>
+            `;
+
+            // === [중요] 삭제 버튼 직접 이벤트 연결 (가장 확실한 방법) ===
+            const deleteBtn = card.querySelector('.delete-btn');
+            deleteBtn.onclick = function() {
+                // 현재 카드가 몇 번째인지 확인
+                const allCards = document.querySelectorAll('.property-card');
+                const myIndex = Array.from(allCards).indexOf(card);
+
+                // 1번(Index 0)이면 삭제 불가
+                if (myIndex === 0) {
+                    alert("첫 번째 임대 물건은 삭제할 수 없습니다.");
+                    return;
+                }
+
+                if (confirm('정말 삭제하시겠습니까? 해당 임대물건의 내용이 모두 지워집니다.')) {
+                    card.remove(); // DOM에서 즉시 제거
+                    renumberCards(); // 번호 재정렬
+                    updateSummary(); // 합계 갱신
+                }
+            };
+
+            // Clone Event
+            card.querySelector('.clone-btn').onclick = () => duplicateProperty(card);
+            
+            // Number Formatting
+            ['.inp-deposit', '.inp-monthly', '.inp-total'].forEach(cls => {
+                card.querySelector(cls).addEventListener('keyup', formatInput);
+            });
+
+            // Data Filling for Clone
+            if (data) {
+                card.querySelector('.inp-houseType').value = data.houseType;
+                card.querySelector('.inp-address').value = data.address;
+                card.querySelector('.inp-unit').value = data.unit;
+                card.querySelector('.inp-acqDate').value = data.acqDate;
+                card.querySelector('.inp-area').value = data.area;
+                
+                card.querySelector('.inp-deposit').value = data.deposit;
+                card.querySelector('.inp-monthly').value = data.monthly;
+                
+                const radios = card.querySelectorAll(`input[name="${payTypeName}"]`);
+                radios.forEach(r => {
+                    if(r.value === data.payType) r.checked = true;
+                });
+                
+                card.querySelector('.inp-tName').value = data.tName;
+                card.querySelector('.inp-tId').value = data.tId;
+                
+                // [수정] 임대기간 복사 추가
+                card.querySelector('.inp-rStart').value = data.rStart;
+                card.querySelector('.inp-rEnd').value = data.rEnd;
+
+                setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+            }
+
+            document.getElementById('propertyList').appendChild(card);
+            
+            // UI Update
+            renumberCards();
+            updateSummary();
+        }
+
+        // 2. Duplicate Property logic
+        function duplicateProperty(sourceCard) {
+            const data = {
+                houseType: sourceCard.querySelector('.inp-houseType').value,
+                address: sourceCard.querySelector('.inp-address').value,
+                unit: sourceCard.querySelector('.inp-unit').value,
+                acqDate: sourceCard.querySelector('.inp-acqDate').value,
+                area: sourceCard.querySelector('.inp-area').value,
+                tName: sourceCard.querySelector('.inp-tName').value,
+                tId: sourceCard.querySelector('.inp-tId').value,
+                
+                // [수정] 임대기간 복사 데이터 추가
+                rStart: sourceCard.querySelector('.inp-rStart').value,
+                rEnd: sourceCard.querySelector('.inp-rEnd').value,
+
+                deposit: sourceCard.querySelector('.inp-deposit').value,
+                monthly: sourceCard.querySelector('.inp-monthly').value,
+                payType: sourceCard.querySelector('.inp-payType:checked')?.value || '후불'
+            };
+            addProperty(data);
+            showToastMessage("👇 아래에 복사되었습니다.");
+        }
+
+        // 3. Update UI (Numbers & Delete Button Visibility)
+        function renumberCards() {
+            const cards = document.querySelectorAll('.property-card');
+            
+            cards.forEach((card, index) => {
+                // 번호 업데이트 (No. 1, No. 2...)
+                card.querySelector('.card-number').innerText = `No. ${index + 1}`;
+                
+                // 삭제 버튼 제어
+                const deleteBtn = card.querySelector('.delete-btn');
+                if (index === 0) {
+                    deleteBtn.style.display = 'none'; // No.1은 숨김
+                } else {
+                    deleteBtn.style.display = 'flex'; // 나머지는 표시
+                }
+            });
+        }
+
+        function updateSummary() {
+            const cards = document.querySelectorAll('.property-card');
+            document.getElementById('totalCountDisplay').innerText = `${cards.length}건`;
+            calculateGrandTotal();
+        }
+
+        function calculateGrandTotal() {
+            let total = 0;
+            document.querySelectorAll('.inp-total').forEach(input => {
+                total += parseInt(uncomma(input.value) || 0);
+            });
+            document.getElementById('grandTotalDisplay').innerText = comma(total) + "원";
+        }
+
+        function showToastMessage(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        }
+
+        // --- Data Gathering & Export ---
+
+        function getFullData() {
+            const cards = document.querySelectorAll('.property-card');
+            if (cards.length === 0) {
+                alert("임대 물건을 최소 1개 이상 추가해주세요.");
+                return null;
+            }
+
+            let text = `[2025 주택임대 수입금액 검토표]\n`;
+            text += `작성일: ${new Date().toLocaleDateString()}\n`;
+            text += `총 물건 수: ${cards.length}건\n`;
+            text += `================================\n\n`;
+
+            let grandTotal = 0;
+
+            cards.forEach((card, index) => {
+                const houseType = card.querySelector('.inp-houseType').value;
+                const address = card.querySelector('.inp-address').value;
+                const unit = card.querySelector('.inp-unit').value;
+                const area = card.querySelector('.inp-area').value;
+                const tName = card.querySelector('.inp-tName').value;
+                const rentTotal = card.querySelector('.inp-total').value;
+                
+                // Validation (Simple)
+                if(!address) {
+                    alert(`No.${index+1} 물건의 주소를 입력해주세요.`);
+                    card.scrollIntoView({behavior:'smooth'});
+                    return null;
+                }
+
+                grandTotal += parseInt(uncomma(rentTotal) || 0);
+
+                text += `[No. ${index + 1}] ${address} ${unit}\n`;
+                text += `- 종류: ${houseType}\n`;
+                text += `- 면적: ${area}㎡ (전용)\n`;
+                text += `- 취득: ${card.querySelector('.inp-acqDate').value}\n`;
+                text += `- 임차인: ${tName} (${card.querySelector('.inp-tId').value})\n`;
+                text += `- 기간: ${card.querySelector('.inp-rStart').value} ~ ${card.querySelector('.inp-rEnd').value}\n`;
+                text += `- 조건: 보증금 ${card.querySelector('.inp-deposit').value} / 월세 ${card.querySelector('.inp-monthly').value} (${card.querySelector('.inp-payType:checked').value})\n`;
+                text += `> 2025년 수입: ${rentTotal}원\n`;
+                text += `--------------------------------\n\n`;
+            });
+
+            text += `================================\n`;
+            text += `💰 총 수입금액 합계: ${comma(grandTotal)}원\n`;
+            text += `================================\n`;
+            
+            return text;
+        }
+
+        function copyToClipboard() {
+            const text = getFullData();
+            if (!text) return;
+
+            const target = document.getElementById('clipboardTarget');
+            target.value = text;
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => showToastMessage("✅ 전체 내용이 복사되었습니다.")).catch(() => fallbackCopy(target));
+            } else {
+                fallbackCopy(target);
+            }
+        }
+
+        function fallbackCopy(element) {
+            try {
+                element.select();
+                document.execCommand('copy');
+                showToastMessage("✅ 복사되었습니다.");
+                element.blur();
+            } catch (err) {
+                alert("복사 실패. 화면 캡쳐를 권장합니다.");
+            }
+        }
+
+        function downloadTextFile() {
+            const text = getFullData();
+            if (!text) return;
+
+            try {
+                const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+                const anchor = document.createElement("a");
+                anchor.href = window.URL.createObjectURL(blob);
+                anchor.download = `2025_임대현황신고서_총${document.querySelectorAll('.property-card').length}건.txt`;
+                document.body.appendChild(anchor);
+                anchor.click();
+                setTimeout(() => document.body.removeChild(anchor), 100);
+            } catch (e) {
+                alert("파일 저장 불가 브라우저입니다.");
+            }
+        }
+
+        // Initialize with one card
+        window.onload = () => addProperty();
+    </script>
+</body>
+</html>
