@@ -62,6 +62,23 @@
             </p>
         </div>
 
+        <!-- [추가됨] 0. 기본 정보 (주택 수) -->
+        <div class="p-4 pb-0">
+            <section class="bg-white border-2 border-indigo-100 rounded-xl p-5 shadow-sm">
+                <h2 class="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-home text-indigo-600 mr-2"></i>기본 정보
+                </h2>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">부부합산 총 주택수</label>
+                    <p class="text-xs text-gray-500 mb-2">본인과 배우자가 소유한 주택 수의 합계를 입력하세요.<br>(주거용 오피스텔 포함)</p>
+                    <div class="relative">
+                        <input type="number" id="totalHouseCount" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-right pr-10 font-bold text-lg" placeholder="0">
+                        <span class="absolute right-4 top-4 text-gray-500 font-bold">채</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+
         <!-- Property List Container -->
         <div id="propertyList" class="p-4 space-y-6">
             <!-- Cards will be added here via JS -->
@@ -353,7 +370,16 @@
         // --- Data Gathering & Export ---
 
         function getFullData() {
+            const totalHouseCount = document.getElementById('totalHouseCount').value; // [추가] 주택수 가져오기
             const cards = document.querySelectorAll('.property-card');
+            
+            // 유효성 검사
+            if (!totalHouseCount) {
+                alert("기본 정보의 '부부합산 총 주택수'를 입력해주세요.");
+                document.getElementById('totalHouseCount').focus();
+                return null;
+            }
+
             if (cards.length === 0) {
                 alert("임대 물건을 최소 1개 이상 추가해주세요.");
                 return null;
@@ -361,7 +387,10 @@
 
             let text = `[2025 주택임대 수입금액 검토표]\n`;
             text += `작성일: ${new Date().toLocaleDateString()}\n`;
-            text += `총 물건 수: ${cards.length}건\n`;
+            text += `--------------------------------\n`;
+            text += `[기본 정보]\n`;
+            text += `부부합산 총 주택수: ${totalHouseCount}채\n`;
+            text += `총 임대 물건 수: ${cards.length}건\n`;
             text += `================================\n\n`;
 
             let grandTotal = 0;
