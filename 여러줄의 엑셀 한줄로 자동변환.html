@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>엑셀 다중 데이터 행 병합기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
+        .step-card { background-color: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); padding: 2rem; margin-bottom: 2rem; border: 1px solid #e2e8f0; }
+        .step-title { font-size: 1.25rem; font-weight: 700; color: #1e293b; margin-bottom: 1.5rem; display: flex; align-items: center; }
+        .step-badge { background-color: #3b82f6; color: white; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.875rem; margin-right: 0.75rem; }
+        
+        /* 버튼 스타일 */
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.6rem 1.2rem; font-weight: 600; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; font-size: 0.9rem; }
+        .btn-primary { background-color: #2563eb; color: white; }
+        .btn-primary:hover:not(:disabled) { background-color: #1d4ed8; }
+        .btn-secondary { background-color: #f1f5f9; color: #475569; border-color: #cbd5e1;}
+        .btn-secondary:hover:not(:disabled) { background-color: #e2e8f0; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* 테이블 스타일 */
+        .table-container { max-height: 400px; overflow: auto; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.02); }
+        .preview-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.85rem; }
+        .preview-table th, .preview-table td { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; white-space: nowrap; }
+        .preview-table th { background-color: #f8fafc; font-weight: 600; color: #475569; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 #e2e8f0; }
+        .preview-table tr td:first-child { background-color: #f8fafc; font-weight: 600; text-align: center; width: 40px; position: sticky; left: 0; z-index: 5; box-shadow: 1px 0 0 #e2e8f0; }
+        .preview-table th:first-child { z-index: 15; position: sticky; left: 0; top: 0; }
+        
+        /* 선택 기능 스타일 */
+        .selectable-row:hover td:not(:first-child) { background-color: #f0f9ff; cursor: pointer; }
+        .selected-row td:not(:first-child) { background-color: #dbeafe !important; color: #1e40af; }
+        .selected-row td:first-child { background-color: #bfdbfe !important; color: #1e40af; }
+
+        /* 리스트 스타일 */
+        .list-container { max-height: 250px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 0.5rem; background-color: #f8fafc; padding: 0.5rem;}
+        .source-item { padding: 0.75rem 1rem; border-radius: 0.375rem; cursor: pointer; transition: all 0.2s; font-weight: 500; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+        .source-item:hover { background-color: #e2e8f0; }
+        .source-item.active { background-color: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+        .source-item.completed { background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+
+        .hidden { display: none !important; }
+        
+        /* 라디오 버튼 커스텀 */
+        .radio-card { display: flex; align-items: flex-start; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s; }
+        .radio-card:hover { border-color: #93c5fd; }
+        input[type="radio"]:checked + .radio-card { border-color: #2563eb; background-color: #eff6ff; }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-slate-800">
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-slate-900 tracking-tight">엑셀 데이터 행 병합기</h1>
+            <p class="text-slate-500 mt-2 font-medium">여러 줄로 나뉘어 반복되는 데이터를 한 줄로 스마트하게 합쳐줍니다.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 왼쪽: 데이터 소스 관리 (STEP 1) -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="step-card p-6 !mb-0">
+                    <h2 class="step-title"><span class="step-badge">1</span> 데이터 추가</h2>
+                    
+                    <div class="space-y-3">
+                        <!-- 단일 파일 -->
+                        <label for="single-file-upload" class="btn btn-secondary w-full justify-start text-left">
+                            <svg class="w-5 h-5 mr-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            단일 파일 선택 (다중 시트 지원)
+                        </label>
+                        <input id="single-file-upload" type="file" class="hidden" accept=".xlsx, .xls">
+
+                        <!-- 다중 파일 -->
+                        <label for="multi-file-upload" class="btn btn-secondary w-full justify-start text-left">
+                            <svg class="w-5 h-5 mr-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                            여러 파일 한 번에 선택
+                        </label>
+                        <input id="multi-file-upload" type="file" class="hidden" accept=".xlsx, .xls" multiple>
+
+                        <!-- 붙여넣기 영역 -->
+                        <div id="paste-area" class="mt-4 p-4 border-2 border-dashed border-slate-300 rounded-lg text-center text-slate-500 hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:bg-white transition bg-slate-50" contenteditable="true" aria-placeholder="여기를 클릭하고 엑셀 데이터를 붙여넣으세요 (Ctrl+V)">
+                            여기를 클릭하고 엑셀 데이터를 붙여넣으세요 (Ctrl+V)
+                        </div>
+                    </div>
+
+                    <!-- 작업 목록 -->
+                    <div id="task-list-container" class="mt-6 hidden">
+                        <h3 class="font-bold text-sm text-slate-700 mb-2 uppercase tracking-wide">작업 목록</h3>
+                        <ul id="task-list" class="list-container"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 오른쪽: 작업 공간 (STEP 2 & 3) -->
+            <div class="lg:col-span-2">
+                <!-- 안내 메시지 (데이터가 없을 때) -->
+                <div id="empty-state" class="step-card flex flex-col items-center justify-center h-full text-center py-20">
+                    <svg class="w-16 h-16 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <h3 class="text-xl font-bold text-slate-700">선택된 데이터가 없습니다</h3>
+                    <p class="text-slate-500 mt-2">왼쪽에서 파일을 업로드하거나 데이터를 붙여넣어 작업을 시작하세요.</p>
+                </div>
+
+                <!-- 작업 마법사 (STEP 2) -->
+                <div id="wizard-section" class="step-card hidden">
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
+                        <h2 class="text-xl font-bold text-slate-800 flex items-center mb-0">
+                            <span class="step-badge">2</span> 데이터 행 병합 설정
+                        </h2>
+                        <!-- 시트명 편집 영역 -->
+                        <div class="flex items-center space-x-2 bg-white border border-slate-300 rounded-lg px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 shadow-sm transition-all">
+                            <label for="current-task-name-input" class="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">시트명</label>
+                            <input type="text" id="current-task-name-input" class="bg-transparent text-sm font-semibold text-slate-800 outline-none w-full sm:w-48" placeholder="시트 이름 입력">
+                            <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6">
+                        <p class="text-blue-800 font-medium">💡 병합할 기준(헤더)이 되는 <b>반복 행들을 클릭하여 선택</b>하세요. (예: 2개 행을 선택하면, 데이터도 2줄씩 1줄로 합쳐집니다.)</p>
+                    </div>
+
+                    <!-- 방향 설정 -->
+                    <div class="mb-6">
+                        <h3 class="font-bold text-slate-700 mb-3 text-sm">병합 방향 우선순위 선택</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="merge-direction" value="horizontal" class="peer sr-only" checked>
+                                <div class="radio-card">
+                                    <div class="flex-1">
+                                        <div class="font-bold text-slate-800 mb-1">가로 우선 (기본)</div>
+                                        <div class="text-xs text-slate-500">첫 번째 행을 가로로 쭉 읽고, 그 다음 두 번째 행을 이어 붙입니다.<br>(예: A1, B1, C1, A2, B2, C2)</div>
+                                    </div>
+                                </div>
+                                <div class="absolute top-4 right-4 text-blue-600 opacity-0 peer-checked:opacity-100">
+                                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                </div>
+                            </label>
+                            
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="merge-direction" value="vertical" class="peer sr-only">
+                                <div class="radio-card">
+                                    <div class="flex-1">
+                                        <div class="font-bold text-slate-800 mb-1">세로 우선 (교차)</div>
+                                        <div class="text-xs text-slate-500">열을 기준으로 첫 번째 행과 두 번째 행의 데이터를 교차로 붙입니다.<br>(예: A1, A2, B1, B2, C1, C2)</div>
+                                    </div>
+                                </div>
+                                <div class="absolute top-4 right-4 text-blue-600 opacity-0 peer-checked:opacity-100">
+                                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 미리보기 테이블 -->
+                    <div id="wizard-table-container" class="mb-6"></div>
+
+                    <!-- 액션 버튼 -->
+                    <div class="flex justify-between items-center border-t pt-4">
+                        <button id="btn-reset-selection" class="btn btn-secondary text-sm">선택 초기화</button>
+                        <button id="btn-process-task" class="btn btn-primary px-8">이 데이터 변환 완료하기</button>
+                    </div>
+                </div>
+
+                <!-- 최종 결과 요약 (STEP 3) -->
+                <div id="result-section" class="step-card hidden">
+                    <h2 class="step-title mb-2"><span class="step-badge bg-green-500">3</span> 모든 작업 완료!</h2>
+                    <p class="text-slate-600 mb-6">선택하신 파일들의 행 병합 작업이 완료되었습니다.</p>
+
+                    <div id="result-summary-container" class="bg-slate-50 rounded-lg p-4 border border-slate-200 mb-6 max-h-60 overflow-y-auto space-y-2">
+                        <!-- 결과 목록이 여기에 들어갑니다 -->
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button id="btn-download-excel" class="btn bg-green-600 hover:bg-green-700 text-white shadow-lg text-lg px-6 py-3">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            통합 엑셀 파일 다운로드
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 상태 관리 (State) ---
+        const AppState = {
+            sources: [],       // 업로드된 원본 데이터 배열 { id, name, data, status: 'pending'|'completed' }
+            results: [],       // 변환 완료된 데이터 배열 { id, name, data }
+            currentTaskId: null, // 현재 작업 중인 소스 ID
+            selectedRows: []   // 현재 작업 중 선택된 행 인덱스 배열
+        };
+
+        // --- 2. DOM 요소 매핑 ---
+        const DOM = {
+            inputs: {
+                singleFile: document.getElementById('single-file-upload'),
+                multiFile: document.getElementById('multi-file-upload'),
+                pasteArea: document.getElementById('paste-area')
+            },
+            lists: {
+                container: document.getElementById('task-list-container'),
+                ul: document.getElementById('task-list')
+            },
+            sections: {
+                empty: document.getElementById('empty-state'),
+                wizard: document.getElementById('wizard-section'),
+                result: document.getElementById('result-section')
+            },
+            wizard: {
+                taskNameInput: document.getElementById('current-task-name-input'),
+                tableContainer: document.getElementById('wizard-table-container'),
+                btnReset: document.getElementById('btn-reset-selection'),
+                btnProcess: document.getElementById('btn-process-task'),
+                radios: document.getElementsByName('merge-direction')
+            },
+            result: {
+                summaryContainer: document.getElementById('result-summary-container'),
+                btnDownload: document.getElementById('btn-download-excel')
+            }
+        };
+
+        // --- 3. 이벤트 리스너 등록 ---
+        DOM.inputs.singleFile.addEventListener('change', handleFileUpload);
+        DOM.inputs.multiFile.addEventListener('change', handleFileUpload);
+        DOM.inputs.pasteArea.addEventListener('paste', handlePaste);
+        
+        DOM.inputs.pasteArea.addEventListener('focus', function() {
+            if(this.textContent.trim() === '여기를 클릭하고 엑셀 데이터를 붙여넣으세요 (Ctrl+V)') {
+                this.textContent = '';
+            }
+        });
+        DOM.inputs.pasteArea.addEventListener('blur', function() {
+            if(this.textContent.trim() === '') {
+                this.textContent = '여기를 클릭하고 엑셀 데이터를 붙여넣으세요 (Ctrl+V)';
+            }
+        });
+
+        // 시트명 변경 이벤트
+        DOM.wizard.taskNameInput.addEventListener('input', function(e) {
+            if (!AppState.currentTaskId) return;
+            const source = AppState.sources.find(s => s.id === AppState.currentTaskId);
+            if (source) {
+                source.name = e.target.value || '제목 없음';
+                renderTaskList(); // 좌측 목록 바로 업데이트
+            }
+        });
+
+        DOM.wizard.btnReset.addEventListener('click', resetSelection);
+        DOM.wizard.btnProcess.addEventListener('click', processCurrentTask);
+        DOM.result.btnDownload.addEventListener('click', downloadFinalExcel);
+
+        // --- 4. 데이터 입력 처리 로직 ---
+        function handleFileUpload(event) {
+            const files = Array.from(event.target.files);
+            if(files.length === 0) return;
+
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        
+                        // 시트가 여러 개일 경우 각각을 개별 작업으로 분리
+                        workbook.SheetNames.forEach(sheetName => {
+                            const worksheet = workbook.Sheets[sheetName];
+                            const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+                            if (rawData.length > 0) {
+                                let taskName = files.length > 1 ? `${file.name.replace(/\.[^/.]+$/, "")} - ${sheetName}` : sheetName;
+                                addSourceData(taskName, rawData);
+                            }
+                        });
+                    } catch(error) {
+                        alert(`${file.name} 처리 중 오류가 발생했습니다.`);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+            event.target.value = ''; // 입력 초기화
+        }
+
+        function handlePaste(event) {
+            event.preventDefault();
+            const text = (event.clipboardData || window.clipboardData).getData('text');
+            if(!text) return;
+
+            // 붙여넣은 텍스트를 탭(\t)과 줄바꿈(\n) 기준으로 2차원 배열화
+            const rawData = text.trim().split('\n').map(row => row.split('\t'));
+            
+            const pasteCount = AppState.sources.filter(s => s.name.startsWith('붙여넣은 데이터')).length + 1;
+            addSourceData(`붙여넣은 데이터 #${pasteCount}`, rawData);
+            
+            DOM.inputs.pasteArea.textContent = '여기를 클릭하고 엑셀 데이터를 붙여넣으세요 (Ctrl+V)';
+            DOM.inputs.pasteArea.blur();
+        }
+
+        function addSourceData(name, data) {
+            const newSource = {
+                id: Date.now() + Math.random().toString(36).substr(2, 9),
+                name: name,
+                data: data,
+                status: 'pending'
+            };
+            AppState.sources.push(newSource);
+            renderTaskList();
+            
+            // 첫 데이터 추가이거나, 현재 작업 중인 것이 없으면 방금 추가된 항목 시작
+            if (!AppState.currentTaskId) {
+                startTask(newSource.id);
+            }
+        }
+
+        // --- 5. UI 렌더링 및 작업 흐름 제어 ---
+        function renderTaskList() {
+            DOM.lists.container.classList.remove('hidden');
+            DOM.lists.ul.innerHTML = '';
+            
+            let allCompleted = AppState.sources.length > 0;
+
+            AppState.sources.forEach(source => {
+                const li = document.createElement('li');
+                
+                let statusIcon = '';
+                if (source.status === 'completed') {
+                    li.className = `source-item completed ${source.id === AppState.currentTaskId ? 'active' : ''}`;
+                    statusIcon = `<svg class="w-5 h-5 text-green-600 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+                } else {
+                    allCompleted = false;
+                    li.className = `source-item ${source.id === AppState.currentTaskId ? 'active' : ''}`;
+                    statusIcon = `<span class="text-xs font-semibold px-2 py-1 bg-slate-200 text-slate-600 rounded flex-shrink-0 ml-2">대기중</span>`;
+                }
+
+                li.innerHTML = `<span class="truncate block w-full">${source.name}</span> ${statusIcon}`;
+                li.onclick = () => startTask(source.id);
+                DOM.lists.ul.appendChild(li);
+            });
+
+            // 모든 작업이 완료되었으면 결과 섹션 표시
+            if(allCompleted && AppState.sources.length > 0) {
+                showResultSection();
+            }
+        }
+
+        function startTask(sourceId) {
+            const source = AppState.sources.find(s => s.id === sourceId);
+            if (!source) return;
+
+            AppState.currentTaskId = sourceId;
+            AppState.selectedRows = []; // 선택 초기화
+            
+            DOM.sections.empty.classList.add('hidden');
+            DOM.sections.result.classList.add('hidden');
+            DOM.sections.wizard.classList.remove('hidden');
+            
+            // 시트 이름 입력칸에 현재 이름 설정
+            DOM.wizard.taskNameInput.value = source.name;
+            
+            renderWizardTable(source.data);
+            renderTaskList(); // 활성 상태 표시 업데이트
+
+            // 버튼 상태 업데이트
+            updateProcessButton();
+        }
+
+        function renderWizardTable(data) {
+            // 성능을 위해 미리보기는 최대 100행까지만 렌더링
+            const previewData = data.slice(0, 100);
+            
+            let html = '<div class="table-container"><table class="preview-table"><tbody>';
+            previewData.forEach((row, rowIndex) => {
+                html += `<tr class="selectable-row" data-index="${rowIndex}" onclick="toggleRowSelection(${rowIndex})">`;
+                html += `<td>${rowIndex + 1}</td>`; // 행 번호
+                (row || []).forEach(cell => {
+                    html += `<td>${cell !== null ? cell : ''}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+            
+            if (data.length > 100) {
+                html += `<p class="text-xs text-slate-500 mt-2 text-right">* 미리보기는 처음 100행까지만 표시됩니다. (실제 데이터: ${data.length}행)</p>`;
+            }
+            
+            DOM.wizard.tableContainer.innerHTML = html;
+        }
+
+        function toggleRowSelection(rowIndex) {
+            const trs = DOM.wizard.tableContainer.querySelectorAll('tr[data-index]');
+            const tr = Array.from(trs).find(el => parseInt(el.dataset.index) === rowIndex);
+            if (!tr) return;
+
+            const selectionIndex = AppState.selectedRows.indexOf(rowIndex);
+            
+            if (selectionIndex > -1) {
+                // 이미 선택된 경우 제거
+                AppState.selectedRows.splice(selectionIndex, 1);
+                tr.classList.remove('selected-row');
+            } else {
+                // 새로 선택된 경우 추가
+                AppState.selectedRows.push(rowIndex);
+                tr.classList.add('selected-row');
+            }
+            
+            // 오름차순 정렬
+            AppState.selectedRows.sort((a, b) => a - b);
+            updateProcessButton();
+        }
+
+        function resetSelection() {
+            AppState.selectedRows = [];
+            const trs = DOM.wizard.tableContainer.querySelectorAll('.selected-row');
+            trs.forEach(tr => tr.classList.remove('selected-row'));
+            updateProcessButton();
+        }
+
+        function updateProcessButton() {
+            const btn = DOM.wizard.btnProcess;
+            if (AppState.selectedRows.length < 1) {
+                btn.disabled = true;
+                btn.textContent = "행을 선택해주세요";
+            } else if (AppState.selectedRows.length === 1) {
+                btn.disabled = true;
+                btn.textContent = "2개 이상 선택해주세요";
+            } else {
+                btn.disabled = false;
+                btn.textContent = `${AppState.selectedRows.length}개 단위로 병합하기`;
+            }
+        }
+
+        // --- 6. 핵심 데이터 변환 로직 (병합 처리) ---
+        function processCurrentTask() {
+            if (AppState.selectedRows.length < 2) return;
+
+            const source = AppState.sources.find(s => s.id === AppState.currentTaskId);
+            const rawData = source.data;
+            const numRowsPerGroup = AppState.selectedRows.length;
+            
+            // 라디오 버튼에서 선택된 방향 가져오기
+            let direction = 'horizontal';
+            for (const radio of DOM.wizard.radios) {
+                if (radio.checked) direction = radio.value;
+            }
+
+            // 1. 헤더 만들기
+            const repeatingHeadersData = AppState.selectedRows.map(rowIndex => rawData[rowIndex] || []);
+            let newHeaders = mergeRows(repeatingHeadersData, direction);
+
+            const outputData = [newHeaders];
+
+            // 2. 데이터 변환하기
+            // 데이터는 마지막으로 선택된 헤더 행 바로 다음 줄부터 시작한다고 가정
+            const dataStartIndex = Math.max(...AppState.selectedRows) + 1;
+            
+            for (let i = dataStartIndex; i < rawData.length; i += numRowsPerGroup) {
+                const group = rawData.slice(i, i + numRowsPerGroup);
+                
+                // 빈 그룹(데이터가 없는 경우) 패스
+                if (group.every(row => !row || row.every(cell => cell === null || String(cell).trim() === ''))) {
+                    continue;
+                }
+
+                // 부족한 행이 있으면 빈 배열로 채움
+                while(group.length < numRowsPerGroup) {
+                    group.push([]);
+                }
+
+                // 지정된 방향(가로/세로)으로 행 병합
+                const mergedRow = mergeRows(group, direction);
+
+                // 헤더 길이에 맞추기
+                const finalRow = [];
+                for (let j = 0; j < newHeaders.length; j++) {
+                    finalRow.push(mergedRow[j] !== undefined ? mergedRow[j] : null);
+                }
+                outputData.push(finalRow);
+            }
+
+            // 결과 저장 및 상태 업데이트
+            saveResult(source.id, source.name, outputData);
+        }
+
+        // 행(배열의 배열)을 지정된 방향으로 병합하는 헬퍼 함수
+        function mergeRows(rowsArray, direction) {
+            if (direction === 'horizontal') {
+                // 가로 우선: 1번행 쭉, 2번행 쭉 (기존의 flat() 방식)
+                return rowsArray.flat().map(cell => cell !== null && cell !== undefined ? cell : '');
+            } else {
+                // 세로 우선: 1번행 1열, 2번행 1열, 1번행 2열, 2번행 2열... 교차
+                const merged = [];
+                const maxCols = Math.max(...rowsArray.map(r => r.length));
+                for (let c = 0; c < maxCols; c++) {
+                    for (let r = 0; r < rowsArray.length; r++) {
+                        let cell = rowsArray[r][c];
+                        merged.push(cell !== null && cell !== undefined ? cell : '');
+                    }
+                }
+                return merged;
+            }
+        }
+
+        function saveResult(sourceId, name, transformedData) {
+            // 기존 결과가 있으면 업데이트, 없으면 추가
+            const existingIndex = AppState.results.findIndex(r => r.id === sourceId);
+            if (existingIndex > -1) {
+                AppState.results[existingIndex].data = transformedData;
+                AppState.results[existingIndex].name = name; // 이름 업데이트 반영
+            } else {
+                AppState.results.push({ id: sourceId, name: name, data: transformedData });
+            }
+
+            // 소스 상태 업데이트
+            const source = AppState.sources.find(s => s.id === sourceId);
+            source.status = 'completed';
+
+            // 다음 미완료 작업 찾기
+            const nextPending = AppState.sources.find(s => s.status === 'pending');
+            
+            if (nextPending) {
+                startTask(nextPending.id); // 다음 작업으로 자동 이동
+            } else {
+                // 모든 작업 완료
+                renderTaskList();
+                showResultSection();
+            }
+        }
+
+        // --- 7. 최종 결과 및 다운로드 ---
+        function showResultSection() {
+            DOM.sections.wizard.classList.add('hidden');
+            DOM.sections.result.classList.remove('hidden');
+
+            // 요약 리스트 생성
+            DOM.result.summaryContainer.innerHTML = '';
+            AppState.results.forEach((res, index) => {
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center bg-white p-3 rounded border border-slate-100 shadow-sm';
+                item.innerHTML = `
+                    <div class="font-medium text-slate-700 flex items-center truncate mr-2">
+                        <span class="text-slate-400 mr-2 flex-shrink-0">${index + 1}.</span> 
+                        <span class="truncate" title="${res.name}">${res.name}</span>
+                    </div>
+                    <div class="text-sm bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold flex-shrink-0">
+                        변환됨 (${res.data.length - 1}행)
+                    </div>
+                `;
+                DOM.result.summaryContainer.appendChild(item);
+            });
+        }
+
+        function downloadFinalExcel() {
+            if (AppState.results.length === 0) return alert('다운로드할 데이터가 없습니다.');
+            
+            const workbook = XLSX.utils.book_new();
+            
+            AppState.results.forEach(res => {
+                // 시트 이름 특수문자 제거 및 길이 제한 (엑셀 규칙)
+                const safeName = res.name.replace(/[/\\?*:[\]]/g, '').substring(0, 30);
+                const worksheet = XLSX.utils.aoa_to_sheet(res.data);
+                
+                // 열 너비 자동 조정 (간단한 버전)
+                const colWidths = res.data[0].map(() => ({ wch: 15 })); // 기본 너비 15
+                worksheet['!cols'] = colWidths;
+
+                XLSX.utils.book_append_sheet(workbook, worksheet, safeName || 'Sheet');
+            });
+
+            // 오늘 날짜로 파일명 생성
+            const today = new Date();
+            const dateString = `${today.getFullYear()}${(today.getMonth()+1).toString().padStart(2,'0')}${today.getDate().toString().padStart(2,'0')}`;
+            
+            XLSX.writeFile(workbook, `통합_행병합_결과_${dateString}.xlsx`);
+        }
+    </script>
+</body>
+</html>
