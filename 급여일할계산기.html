@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>급여 일할계산기 (UI 개선판)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        /* 숫자 입력 화살표 숨기기 */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        
+        .tab-content { display: none; animation: fadeIn 0.3s ease-in-out; }
+        .tab-content.active { display: block; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 테이블 숫자 정렬 (폭을 동일하게) */
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+
+        /* --- PDF 미리보기 및 로딩 모달 스타일 (기존 유지, 디자인 약간 수정) --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);
+            z-index: 10000; display: flex; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background-color: white; padding: 2rem; border-radius: 1rem;
+            max-width: 90vw; max-height: 90vh; overflow: auto; position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        #loading-spinner {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="text-slate-800" id="calculator-body">
+
+    <!-- PDF 미리보기 모달 -->
+    <div id="preview-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800">📄 PDF 미리보기</h2>
+                <div id="modal-actions" class="flex gap-2">
+                     <button onclick="closePreviewModal()" class="px-5 py-2.5 bg-slate-100 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-200 transition-colors">취소</button>
+                     <button onclick="generatePdfFromPreview()" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors">확인 및 저장</button>
+                </div>
+            </div>
+            <div id="preview-body" class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <!-- 미리보기 내용 -->
+            </div>
+            <div id="loading-spinner" style="display: none;">
+                <div class="text-center">
+                    <svg class="animate-spin h-10 w-10 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-slate-600 font-medium">PDF 파일 생성 중...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-7xl">
+        <header class="text-center mb-10 no-print mt-4">
+            <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">급여 일할계산기</h1>
+            <p class="text-slate-500 mt-3 text-lg">중도 입/퇴사 및 급여 변경 시 급여를 간편하게 계산하세요.</p>
+        </header>
+
+        <!-- Tab Navigation (Pill Style) -->
+        <div class="mb-8 no-print flex justify-center">
+            <nav class="flex p-1 space-x-1 bg-slate-200/60 rounded-xl" aria-label="Tabs">
+                <button onclick="changeTab(event, 'newHire')" class="tab-button active w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-bold transition-all duration-200 bg-white shadow-sm text-blue-600">
+                    🚀 중도입사자
+                </button>
+                <button onclick="changeTab(event, 'terminator')" class="tab-button w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-bold transition-all duration-200 text-slate-500 hover:text-slate-700 hover:bg-slate-200/50">
+                    👋 중도퇴사자
+                </button>
+                <button onclick="changeTab(event, 'salaryChange')" class="tab-button w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-bold transition-all duration-200 text-slate-500 hover:text-slate-700 hover:bg-slate-200/50">
+                    💰 중간급여변경자
+                </button>
+            </nav>
+        </div>
+
+        <!-- Tab Content -->
+        <div id="tab-contents">
+            <!-- 1. 중도입사자 -->
+            <div id="newHire" class="tab-content active space-y-6">
+                <div class="flex justify-between items-end mb-4 no-print">
+                    <h2 class="text-xl font-bold text-slate-800">직원 정보 입력</h2>
+                    <button onclick="addEmployee('nh')" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold shadow hover:bg-slate-700 transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 직원 추가
+                    </button>
+                </div>
+                <div id="nh-employee-list" class="space-y-6 no-print"></div>
+                
+                <div id="nh-print-area" class="mt-12 bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <span class="w-2 h-8 bg-blue-500 rounded-full inline-block"></span> 계산 결과 (중도입사자)
+                        </h2>
+                        <button onclick="showPreview('nh-print-area')" class="no-print px-5 py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> PDF 저장
+                        </button>
+                    </div>
+                    <div class="printable-section">
+                        <h3 class="text-lg font-bold mb-3 text-slate-700">당월 지급액</h3>
+                        <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                            <table id="nh-result-table" class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50"></thead>
+                                <tbody class="bg-white divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="printable-section mt-8">
+                        <h3 class="text-lg font-bold mb-3 text-slate-700">익월 합산 지급액 (상세)</h3>
+                        <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                            <table id="nh-next-month-table" class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50"></thead>
+                                <tbody class="bg-white divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 중도퇴사자 -->
+            <div id="terminator" class="tab-content space-y-6">
+                <div class="flex justify-between items-end mb-4 no-print">
+                    <h2 class="text-xl font-bold text-slate-800">직원 정보 입력</h2>
+                    <button onclick="addEmployee('t')" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold shadow hover:bg-slate-700 transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 직원 추가
+                    </button>
+                </div>
+                <div id="t-employee-list" class="space-y-6 no-print"></div>
+                
+                <div id="t-print-area" class="mt-12 bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <span class="w-2 h-8 bg-blue-500 rounded-full inline-block"></span> 계산 결과 (중도퇴사자)
+                        </h2>
+                        <button onclick="showPreview('t-print-area')" class="no-print px-5 py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> PDF 저장
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                        <table id="t-result-table" class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-50"></thead>
+                            <tbody class="bg-white divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 중간급여변경자 -->
+            <div id="salaryChange" class="tab-content space-y-6">
+                <div class="flex justify-between items-end mb-4 no-print">
+                    <h2 class="text-xl font-bold text-slate-800">직원 정보 입력</h2>
+                    <button onclick="addEmployee('sc')" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold shadow hover:bg-slate-700 transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 직원 추가
+                    </button>
+                </div>
+                <div id="sc-employee-list" class="space-y-6 no-print"></div>
+                
+                <div id="sc-print-area" class="mt-12 bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <span class="w-2 h-8 bg-blue-500 rounded-full inline-block"></span> 계산 결과 (중간급여변경자)
+                        </h2>
+                        <button onclick="showPreview('sc-print-area')" class="no-print px-5 py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> PDF 저장
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                        <table id="sc-result-table" class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-50"></thead>
+                            <tbody class="bg-white divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Employee Card Template -->
+    <template id="employee-card-template">
+        <div class="employee-card bg-white rounded-2xl shadow-sm border border-slate-200 p-6 relative transition-shadow hover:shadow-md">
+            <button onclick="deleteEmployee(this)" class="absolute top-4 right-4 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="직원 삭제">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 pb-6 border-b border-slate-100">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 mb-1.5">이름</label>
+                    <input type="text" placeholder="홍길동" class="employee-name bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 mb-1.5 employee-date-label">이벤트 날짜</label>
+                    <input type="date" class="employee-event-date bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 mb-1.5">급여 시작일자 (1~28)</label>
+                    <input type="number" value="1" min="1" max="28" class="employee-start-day bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 transition-colors">
+                </div>
+            </div>
+            
+            <div class="salary-section-container"></div>
+        </div>
+    </template>
+    
+    <script>
+        const getEl = (id) => document.getElementById(id);
+        const formatCurrency = (num) => `${Math.floor(num).toLocaleString('ko-KR')}`;
+        const formatDate = (date) => date.toLocaleDateString('ko-KR', { timeZone: 'UTC' });
+        const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+        let newItemCounter = 0;
+
+        document.addEventListener('DOMContentLoaded', initialize);
+        document.addEventListener('input', handleInput);
+        
+        function handleInput(e) {
+            if (e.target.matches('.item-value') || e.target.closest('.employee-card')) {
+                const card = e.target.closest('.employee-card');
+                if (card) updateCardTotals(card);
+            }
+
+            const tab = e.target.closest('.tab-content');
+            if (!tab) return;
+            const calculatorMap = {'newHire': calculateNewHire, 'terminator': calculateTerminator, 'salaryChange': calculateSalaryChange};
+            const calculator = calculatorMap[tab.id];
+            if (calculator) calculator();
+        }
+
+        function updateCardTotals(card) {
+            const updateSectionTotal = (selector) => {
+                const container = card.querySelector(selector);
+                if (container) {
+                    let total = 0;
+                    container.querySelectorAll('.item-value').forEach(input => {
+                        total += parseFloat(input.value) || 0;
+                    });
+                    const totalDisplay = container.parentElement.querySelector('.total-salary-display');
+                    if (totalDisplay) totalDisplay.textContent = `합계: ${formatCurrency(total)}원`;
+                }
+            };
+
+            updateSectionTotal('.salary-items');
+            updateSectionTotal('.old-salary-items');
+            updateSectionTotal('.new-salary-items');
+        }
+
+        function changeTab(event, tabId) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            // 탭 버튼 스타일 초기화
+            document.querySelectorAll('.tab-button').forEach(b => {
+                b.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                b.classList.add('text-slate-500', 'hover:text-slate-700', 'hover:bg-slate-200/50');
+            });
+            
+            getEl(tabId).classList.add('active');
+            
+            // 선택된 탭 스타일 적용
+            const target = event.currentTarget;
+            target.classList.remove('text-slate-500', 'hover:text-slate-700', 'hover:bg-slate-200/50');
+            target.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+        }
+
+        let employeeIdCounter = 0;
+        function addEmployee(prefix) {
+            const template = getEl('employee-card-template').content.cloneNode(true);
+            const card = template.querySelector('.employee-card');
+            employeeIdCounter++;
+            card.dataset.id = `emp-${employeeIdCounter}`;
+            
+            const dateLabel = card.querySelector('.employee-date-label');
+            const salaryContainer = card.querySelector('.salary-section-container');
+            
+            if (prefix === 'nh') dateLabel.textContent = '입사일';
+            else if (prefix === 't') dateLabel.textContent = '퇴사일';
+            else if (prefix === 'sc') dateLabel.textContent = '급여 변경일';
+            
+            if (prefix === 'sc') {
+                salaryContainer.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-slate-50/50 p-5 rounded-xl border border-slate-100">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                            <h3 class="font-bold text-slate-700 flex items-center"><span class="w-2 h-2 rounded-full bg-slate-400 mr-2"></span>변경 전 지급액</h3>
+                            <div class="text-sm font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-md total-salary-display">합계: 0원</div>
+                        </div>
+                        <div class="old-salary-items space-y-3 mb-4"></div>
+                        <button onclick="addSalaryItem(this.previousElementSibling)" class="w-full py-2.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-300 transition-colors flex justify-center items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 항목 추가
+                        </button>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                            <h3 class="font-bold text-blue-700 flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>변경 후 지급액</h3>
+                            <div class="text-sm font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-md total-salary-display">합계: 0원</div>
+                        </div>
+                        <div class="new-salary-items space-y-3 mb-4"></div>
+                        <button onclick="addSalaryItem(this.previousElementSibling)" class="w-full py-2.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-300 transition-colors flex justify-center items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 항목 추가
+                        </button>
+                    </div>
+                </div>`;
+                initializeDefaultItems(card.querySelector('.old-salary-items'));
+                initializeDefaultItems(card.querySelector('.new-salary-items'));
+            } else {
+                 salaryContainer.innerHTML = `
+                 <div class="max-w-2xl">
+                    <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                        <h3 class="font-bold text-slate-700 flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>월 지급액 (세전)</h3>
+                        <div class="text-sm font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-md total-salary-display">합계: 0원</div>
+                    </div>
+                    <div class="salary-items space-y-3 mb-4"></div>
+                    <button onclick="addSalaryItem(this.previousElementSibling)" class="w-full py-2.5 border border-dashed border-slate-300 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-300 transition-colors flex justify-center items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 급여 항목 추가
+                    </button>
+                </div>`;
+                initializeDefaultItems(card.querySelector('.salary-items'));
+            }
+            getEl(`${prefix}-employee-list`).appendChild(template);
+            
+            updateCardTotals(card);
+            handleInput({ target: card });
+        }
+        
+        function deleteEmployee(btn) {
+            const card = btn.closest('.employee-card');
+            const container = card.closest('.tab-content');
+            card.remove();
+            handleInput({ target: container });
+        }
+
+        function addSalaryItem(container, name = '', value = '') {
+            const isNewUserItem = (name === '' && value === '');
+            if (isNewUserItem) { newItemCounter++; name = `새 항목 ${newItemCounter}`; }
+            const div = document.createElement('div');
+            div.className = 'salary-item flex items-center gap-2 w-full';
+            div.innerHTML = `
+                <input type="text" value="${name}" placeholder="항목명" class="item-name flex-1 bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors" onfocus="this.select()">
+                <div class="relative flex-1">
+                    <input type="number" value="${value}" placeholder="금액" class="item-value w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 pr-8 tabular-nums transition-colors">
+                    <span class="absolute right-3 top-2.5 text-slate-400 text-sm pointer-events-none">원</span>
+                </div>
+                <button onclick="deleteSalaryItem(this)" class="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0" title="항목 삭제">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            `;
+            container.appendChild(div);
+            if (isNewUserItem) { container.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));}
+        }
+
+        function deleteSalaryItem(btn) {
+            const item = btn.closest('.salary-item');
+            const container = item.closest('.tab-content');
+            item.remove();
+            handleInput({ target: container });
+        }
+        
+        function initializeDefaultItems(container) {
+            ['기본급', '식대', '차량유지비', '기타수당'].forEach(name => addSalaryItem(container, name, ''));
+        }
+
+        function getPayPeriodInfo(eventDateStr, startDay) {
+            if (!eventDateStr || !startDay) return null;
+            const eventDateParts = eventDateStr.split('-').map(Number);
+            const eventDate = new Date(Date.UTC(eventDateParts[0], eventDateParts[1] - 1, eventDateParts[2]));
+            const year = eventDate.getUTCFullYear();
+            const month = eventDate.getUTCMonth();
+            const day = eventDate.getUTCDate();
+            let periodStartDate, periodEndDate;
+            if (day < startDay) {
+                periodEndDate = new Date(Date.UTC(year, month, startDay - 1));
+                periodStartDate = new Date(Date.UTC(year, month - 1, startDay));
+            } else {
+                periodStartDate = new Date(Date.UTC(year, month, startDay));
+                periodEndDate = new Date(Date.UTC(year, month + 1, startDay - 1));
+            }
+            const periodTotalDays = Math.round((periodEndDate.getTime() - periodStartDate.getTime()) / DAY_IN_MS) + 1;
+            return { periodStartDate, periodEndDate, periodTotalDays };
+        }
+        
+        function getSalaryData(card, selector) {
+            const salaryMap = new Map();
+            card.querySelectorAll(`${selector} .salary-item`).forEach(item => {
+                const name = item.querySelector('.item-name').value.trim() || '미지정';
+                const value = parseFloat(item.querySelector('.item-value').value) || 0;
+                if (name) salaryMap.set(name, (salaryMap.get(name) || 0) + value);
+            });
+            return salaryMap;
+        }
+
+        function collectUniqueSalaryItems(employeeListSelector) {
+            const orderedNames = [];
+            const itemNames = new Set();
+            document.querySelectorAll(`${employeeListSelector} .item-name`).forEach(input => {
+                const name = input.value.trim();
+                if (name && !itemNames.has(name)) { itemNames.add(name); orderedNames.push(name); }
+            });
+            return orderedNames;
+        }
+
+        function calculateNewHire() {
+            const prefix = 'nh';
+            const currentMonthTable = getEl(`${prefix}-result-table`);
+            const nextMonthTable = getEl(`${prefix}-next-month-table`);
+            const employeeListSelector = `#${prefix}-employee-list`;
+            const salaryItems = collectUniqueSalaryItems(employeeListSelector);
+            
+            const thClass = "px-4 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider";
+            const thRightClass = "px-4 py-3.5 text-right text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap";
+            
+            let currentMonthHeaderHTML = `<tr><th class="${thClass}">이름</th><th class="${thClass}">산정기간</th><th class="${thClass}">근무일수</th><th class="px-4 py-3.5 text-right text-xs font-bold text-blue-600 uppercase tracking-wider">정상월 지급액</th>`;
+            salaryItems.forEach(item => currentMonthHeaderHTML += `<th class="${thRightClass}">${item}</th>`);
+            currentMonthHeaderHTML += `<th class="px-4 py-3.5 text-right text-sm font-extrabold text-slate-800 bg-slate-100 uppercase tracking-wider">총 지급액</th></tr>`;
+            currentMonthTable.querySelector('thead').innerHTML = currentMonthHeaderHTML;
+            
+            let nextMonthHeaderHTML = `<tr><th class="${thClass}">이름</th>`;
+            salaryItems.forEach(item => nextMonthHeaderHTML += `<th class="${thRightClass}">${item} <span class="text-slate-400 font-normal">(합산)</span></th>`);
+            nextMonthHeaderHTML += `<th class="px-4 py-3.5 text-right text-sm font-extrabold text-slate-800 bg-slate-100 uppercase tracking-wider">총 합산액</th></tr>`;
+            nextMonthTable.querySelector('thead').innerHTML = nextMonthHeaderHTML;
+            
+            const currentMonthBody = currentMonthTable.querySelector('tbody');
+            const nextMonthBody = nextMonthTable.querySelector('tbody');
+            currentMonthBody.innerHTML = '';
+            nextMonthBody.innerHTML = '';
+            
+            const tdClass = "px-4 py-4 text-sm text-slate-600 border-b border-slate-100";
+            
+            document.querySelectorAll(`${employeeListSelector} .employee-card`).forEach(card => {
+                const startDay = parseInt(card.querySelector('.employee-start-day').value, 10);
+                const name = card.querySelector('.employee-name').value || '직원';
+                const eventDateVal = card.querySelector('.employee-event-date').value;
+                const periodInfo = getPayPeriodInfo(eventDateVal, startDay);
+                let currentMonthRow = currentMonthBody.insertRow();
+                let nextMonthRow = nextMonthBody.insertRow();
+                currentMonthRow.className = "hover:bg-slate-50/50 transition-colors";
+                nextMonthRow.className = "hover:bg-slate-50/50 transition-colors";
+                
+                if (!periodInfo || !eventDateVal) {
+                    currentMonthRow.innerHTML = `<td colspan="${salaryItems.length + 5}" class="px-4 py-8 text-center text-sm text-slate-400 bg-slate-50/30">날짜를 입력해주세요.</td>`;
+                    nextMonthRow.innerHTML = `<td colspan="${salaryItems.length + 2}" class="px-4 py-8 text-center text-sm text-slate-400 bg-slate-50/30">날짜를 입력해주세요.</td>`;
+                    return;
+                }
+                
+                const { periodStartDate, periodEndDate, periodTotalDays } = periodInfo;
+                const eventDateParts = eventDateVal.split('-').map(Number);
+                const eventDate = new Date(Date.UTC(eventDateParts[0], eventDateParts[1] - 1, eventDateParts[2]));
+                const effectiveHireDate = eventDate < periodStartDate ? periodStartDate : eventDate;
+                const workDays = eventDate > periodEndDate ? 0 : Math.round((periodEndDate.getTime() - effectiveHireDate.getTime()) / DAY_IN_MS) + 1;
+                const salaryData = getSalaryData(card, '.salary-items');
+                
+                let fullMonthTotal = 0;
+                salaryItems.forEach(item => { fullMonthTotal += (salaryData.get(item) || 0); });
+
+                let totalProratedSalary = 0;
+                let currentMonthRowHTML = `<td class="${tdClass} font-bold text-slate-800 whitespace-nowrap">${name}</td><td class="${tdClass} whitespace-nowrap">${formatDate(effectiveHireDate)} ~ ${formatDate(periodEndDate)}</td><td class="${tdClass} whitespace-nowrap"><span class="font-semibold text-slate-700">${workDays}</span> / ${periodTotalDays}일</td><td class="${tdClass} text-right font-semibold text-blue-600 tabular-nums">${formatCurrency(fullMonthTotal)}</td>`;
+                
+                salaryItems.forEach(item => {
+                    const fullMonthValue = salaryData.get(item) || 0;
+                    const proratedItemValue = (fullMonthValue / periodTotalDays * workDays);
+                    totalProratedSalary += Math.floor(proratedItemValue);
+                    currentMonthRowHTML += `<td class="${tdClass} text-right tabular-nums">
+                        <div class="font-medium text-slate-700">${formatCurrency(proratedItemValue)}</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5" title="원래 금액">(${formatCurrency(fullMonthValue)})</div>
+                    </td>`;
+                });
+                currentMonthRowHTML += `<td class="px-4 py-4 text-right font-extrabold text-blue-700 bg-slate-50/50 border-b border-slate-100 tabular-nums whitespace-nowrap text-base">${formatCurrency(totalProratedSalary)} <span class="text-sm font-normal text-slate-500">원</span></td>`;
+                currentMonthRow.innerHTML = currentMonthRowHTML;
+                
+                let totalCombinedSalary = 0;
+                let nextMonthRowHTML = `<td class="${tdClass} font-bold text-slate-800 whitespace-nowrap">${name}</td>`;
+                salaryItems.forEach(item => {
+                    const fullMonthValue = salaryData.get(item) || 0;
+                    const combinedItemValue = (fullMonthValue / periodTotalDays * workDays) + fullMonthValue;
+                    totalCombinedSalary += Math.floor(combinedItemValue);
+                    nextMonthRowHTML += `<td class="${tdClass} text-right font-medium text-slate-700 tabular-nums">${formatCurrency(combinedItemValue)}</td>`;
+                });
+                nextMonthRowHTML += `<td class="px-4 py-4 text-right font-extrabold text-blue-700 bg-slate-50/50 border-b border-slate-100 tabular-nums whitespace-nowrap text-base">${formatCurrency(totalCombinedSalary)} <span class="text-sm font-normal text-slate-500">원</span></td>`;
+                nextMonthRow.innerHTML = nextMonthRowHTML;
+            });
+        }
+        
+        function calculateTerminator() {
+            const prefix = 't';
+            const table = getEl(`${prefix}-result-table`);
+            const employeeListSelector = `#${prefix}-employee-list`;
+            const salaryItems = collectUniqueSalaryItems(employeeListSelector);
+            
+            const thClass = "px-4 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider";
+            const thRightClass = "px-4 py-3.5 text-right text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap";
+
+            let headerHTML = `<tr><th class="${thClass}">이름</th><th class="${thClass}">산정기간</th><th class="${thClass}">근무일수</th><th class="px-4 py-3.5 text-right text-xs font-bold text-blue-600 uppercase tracking-wider">정상월 지급액</th>`;
+            salaryItems.forEach(item => headerHTML += `<th class="${thRightClass}">${item}</th>`);
+            headerHTML += `<th class="px-4 py-3.5 text-right text-sm font-extrabold text-slate-800 bg-slate-100 uppercase tracking-wider">총 지급액</th></tr>`;
+            table.querySelector('thead').innerHTML = headerHTML;
+            
+            const body = table.querySelector('tbody');
+            body.innerHTML = '';
+            const tdClass = "px-4 py-4 text-sm text-slate-600 border-b border-slate-100";
+
+            document.querySelectorAll(`${employeeListSelector} .employee-card`).forEach(card => {
+                const startDay = parseInt(card.querySelector('.employee-start-day').value, 10);
+                const name = card.querySelector('.employee-name').value || '직원';
+                const eventDateVal = card.querySelector('.employee-event-date').value;
+                const periodInfo = getPayPeriodInfo(eventDateVal, startDay);
+                let row = body.insertRow();
+                row.className = "hover:bg-slate-50/50 transition-colors";
+                
+                if (!periodInfo || !eventDateVal) {
+                    row.innerHTML = `<td colspan="${salaryItems.length + 5}" class="px-4 py-8 text-center text-sm text-slate-400 bg-slate-50/30">날짜를 입력해주세요.</td>`;
+                    return;
+                }
+                const { periodStartDate, periodEndDate, periodTotalDays } = periodInfo;
+                const eventDate = new Date(Date.UTC(...eventDateVal.split('-').map((n, i) => i === 1 ? n - 1 : n)));
+                const effectiveTermDate = eventDate > periodEndDate ? periodEndDate : eventDate;
+                const workDays = eventDate < periodStartDate ? 0 : Math.round((effectiveTermDate.getTime() - periodStartDate.getTime()) / DAY_IN_MS) + 1;
+                const salaryData = getSalaryData(card, '.salary-items');
+
+                let fullMonthTotal = 0;
+                salaryItems.forEach(item => { fullMonthTotal += (salaryData.get(item) || 0); });
+
+                let totalProratedSalary = 0;
+                let rowHTML = `<td class="${tdClass} font-bold text-slate-800 whitespace-nowrap">${name}</td><td class="${tdClass} whitespace-nowrap">${formatDate(periodStartDate)} ~ ${formatDate(effectiveTermDate)}</td><td class="${tdClass} whitespace-nowrap"><span class="font-semibold text-slate-700">${workDays}</span> / ${periodTotalDays}일</td><td class="${tdClass} text-right font-semibold text-blue-600 tabular-nums">${formatCurrency(fullMonthTotal)}</td>`;
+                salaryItems.forEach(item => {
+                    const fullMonthValue = salaryData.get(item) || 0;
+                    const proratedItemValue = (fullMonthValue / periodTotalDays * workDays);
+                    totalProratedSalary += Math.floor(proratedItemValue);
+                    rowHTML += `<td class="${tdClass} text-right tabular-nums">
+                        <div class="font-medium text-slate-700">${formatCurrency(proratedItemValue)}</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5" title="원래 금액">(${formatCurrency(fullMonthValue)})</div>
+                    </td>`;
+                });
+                rowHTML += `<td class="px-4 py-4 text-right font-extrabold text-blue-700 bg-slate-50/50 border-b border-slate-100 tabular-nums whitespace-nowrap text-base">${formatCurrency(totalProratedSalary)} <span class="text-sm font-normal text-slate-500">원</span></td>`;
+                row.innerHTML = rowHTML;
+            });
+        }
+        
+        function calculateSalaryChange() {
+             const prefix = 'sc';
+            const table = getEl(`${prefix}-result-table`);
+            const employeeListSelector = `#${prefix}-employee-list`;
+            const salaryItems = collectUniqueSalaryItems(employeeListSelector);
+            
+            const thClass = "px-4 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider align-middle";
+            const thRightClass = "px-4 py-3.5 text-right text-xs font-bold text-slate-500 uppercase tracking-wider align-middle whitespace-nowrap";
+
+            let headerHTML = `<tr>
+                <th class="${thClass}">이름</th>
+                <th class="${thClass}">산정기간</th>
+                <th class="${thClass}">변경 전/후 일수</th>
+                <th class="px-4 py-3.5 text-right text-xs font-bold text-slate-400 uppercase tracking-wider align-middle">변경전 월액</th>
+                <th class="px-4 py-3.5 text-right text-xs font-bold text-blue-500 uppercase tracking-wider align-middle">변경후 월액</th>`;
+            
+            salaryItems.forEach(item => headerHTML += `<th class="${thRightClass}">${item}</th>`);
+            headerHTML += `<th class="px-4 py-3.5 text-right text-sm font-extrabold text-slate-800 bg-slate-100 uppercase tracking-wider align-middle">총 지급액</th></tr>`;
+            table.querySelector('thead').innerHTML = headerHTML;
+            
+            const body = table.querySelector('tbody');
+            body.innerHTML = '';
+            const tdClass = "px-4 py-4 text-sm text-slate-600 border-b border-slate-100";
+
+            document.querySelectorAll(`${employeeListSelector} .employee-card`).forEach(card => {
+                const startDay = parseInt(card.querySelector('.employee-start-day').value, 10);
+                const name = card.querySelector('.employee-name').value || '직원';
+                const eventDateVal = card.querySelector('.employee-event-date').value;
+                const periodInfo = getPayPeriodInfo(eventDateVal, startDay);
+                let row = body.insertRow();
+                row.className = "hover:bg-slate-50/50 transition-colors";
+                
+                if (!periodInfo || !eventDateVal) {
+                      row.innerHTML = `<td colspan="${salaryItems.length + 6}" class="px-4 py-8 text-center text-sm text-slate-400 bg-slate-50/30">날짜를 입력해주세요.</td>`;
+                    return;
+                }
+                const { periodStartDate, periodEndDate, periodTotalDays } = periodInfo;
+                const eventDate = new Date(Date.UTC(...eventDateVal.split('-').map((n, i) => i === 1 ? n - 1 : n)));
+                const oldDays = eventDate <= periodStartDate ? 0 : Math.round((eventDate.getTime() - periodStartDate.getTime()) / DAY_IN_MS);
+                const newDays = periodTotalDays - oldDays;
+                
+                const oldSalary = getSalaryData(card, '.old-salary-items');
+                const newSalary = getSalaryData(card, '.new-salary-items');
+
+                let oldTotal = 0;
+                let newTotal = 0;
+                salaryItems.forEach(item => {
+                    oldTotal += (oldSalary.get(item) || 0);
+                    newTotal += (newSalary.get(item) || 0);
+                });
+
+                let totalCombinedSalary = 0;
+                let rowHTML = `<td class="${tdClass} font-bold text-slate-800 whitespace-nowrap">${name}</td>
+                <td class="${tdClass} whitespace-nowrap">${formatDate(periodStartDate)} ~ ${formatDate(periodEndDate)}</td>
+                <td class="${tdClass} whitespace-nowrap"><span class="font-semibold text-slate-500">${oldDays}</span> / <span class="font-semibold text-blue-600">${newDays}</span>일</td>
+                <td class="${tdClass} text-right font-medium text-slate-400 tabular-nums">${formatCurrency(oldTotal)}</td>
+                <td class="${tdClass} text-right font-semibold text-blue-500 tabular-nums">${formatCurrency(newTotal)}</td>`;
+                
+                salaryItems.forEach(item => {
+                    const oldVal = oldSalary.get(item) || 0;
+                    const newVal = newSalary.get(item) || 0;
+                    const combinedItemValue = (oldVal / periodTotalDays * oldDays) + (newVal / periodTotalDays * newDays);
+                    totalCombinedSalary += Math.floor(combinedItemValue);
+                    rowHTML += `<td class="${tdClass} text-right tabular-nums">
+                        <div class="font-medium text-slate-700">${formatCurrency(combinedItemValue)}</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5 flex justify-end items-center gap-1" title="변경전 -> 변경후">
+                           <span>${formatCurrency(oldVal)}</span>
+                           <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                           <span class="text-blue-400">${formatCurrency(newVal)}</span>
+                        </div>
+                    </td>`;
+                });
+                rowHTML += `<td class="px-4 py-4 text-right font-extrabold text-blue-700 bg-slate-50/50 border-b border-slate-100 tabular-nums whitespace-nowrap text-base">${formatCurrency(totalCombinedSalary)} <span class="text-sm font-normal text-slate-500">원</span></td>`;
+                row.innerHTML = rowHTML;
+            });
+        }
+        
+        function initialize() {
+            ['nh', 't', 'sc'].forEach(prefix => {
+                getEl(`${prefix}-employee-list`).innerHTML = '';
+                addEmployee(prefix);
+            });
+        }
+
+        // --- PDF 생성 로직 (디자인 유지) ---
+        function showPreview(areaId) {
+            const originalElement = getEl(areaId);
+            if (!originalElement) return;
+            const contentToPreview = originalElement.cloneNode(true);
+            contentToPreview.style.backgroundColor = 'white';
+            
+            // PDF 모드 전용 스타일 조정
+            contentToPreview.querySelectorAll('.no-print').forEach(el => el.remove());
+            contentToPreview.classList.remove('shadow-sm', 'mt-12', 'rounded-2xl', 'border-slate-200');
+            contentToPreview.classList.add('border-none', 'shadow-none', 'p-0');
+            
+            contentToPreview.querySelectorAll('.overflow-x-auto').forEach(div => {
+                div.classList.remove('overflow-x-auto', 'rounded-xl', 'shadow-sm', 'border-slate-200');
+                div.classList.add('border-t', 'border-b', 'border-slate-300');
+                div.style.overflow = 'visible';
+            });
+
+            const A4_LANDSCAPE_CONTENT_WIDTH_PX = 1050; 
+            const contentWidth = contentToPreview.scrollWidth;
+            if (contentWidth > A4_LANDSCAPE_CONTENT_WIDTH_PX) {
+                const scale = A4_LANDSCAPE_CONTENT_WIDTH_PX / contentWidth;
+                contentToPreview.style.zoom = scale;
+            }
+
+            const previewBody = getEl('preview-body');
+            previewBody.innerHTML = '';
+            previewBody.appendChild(contentToPreview);
+            getEl('preview-modal').style.display = 'flex';
+        }
+
+        function closePreviewModal() {
+            getEl('preview-modal').style.display = 'none';
+            getEl('preview-body').innerHTML = '';
+        }
+
+        async function generatePdfFromPreview() {
+            const modalActions = getEl('modal-actions');
+            const loadingSpinner = getEl('loading-spinner');
+            const previewBody = getEl('preview-body');
+            
+            modalActions.style.display = 'none';
+            loadingSpinner.style.display = 'block';
+
+            const originalId = previewBody.querySelector(':first-child').id;
+            const originalElement = getEl(originalId);
+
+            const contentToPrint = originalElement.cloneNode(true);
+            contentToPrint.style.backgroundColor = 'white';
+            contentToPrint.style.padding = '2rem'; 
+            
+            contentToPrint.querySelectorAll('.no-print').forEach(el => el.remove());
+            contentToPrint.classList.remove('shadow-sm', 'mt-12', 'rounded-2xl', 'border');
+            
+            contentToPrint.querySelectorAll('.overflow-x-auto').forEach(div => {
+                div.classList.remove('overflow-x-auto', 'rounded-xl', 'shadow-sm', 'border-slate-200');
+                div.classList.add('border-t-2', 'border-b-2', 'border-slate-800');
+                div.style.overflow = 'visible';
+            });
+            
+            document.body.appendChild(contentToPrint);
+
+            const titleElement = contentToPrint.querySelector('h2');
+            const titleText = titleElement ? titleElement.textContent.trim().replace('계산 결과', '급여계산결과') : '급여계산결과';
+            const filename = `${titleText}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+            try {
+                const canvas = await html2canvas(contentToPrint, {
+                    scale: 2,
+                    useCORS: true,
+                    scrollX: 0,
+                    scrollY: -window.scrollY
+                });
+                
+                const imgData = canvas.toDataURL('image/jpeg', 0.98);
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+                
+                const pdfWidth = doc.internal.pageSize.getWidth();
+                const pdfHeight = doc.internal.pageSize.getHeight();
+                const imgProps= doc.getImageProperties(imgData);
+                const pdfImageRatio = pdfWidth / pdfHeight;
+                const imageRatio = imgProps.width / imgProps.height;
+
+                let finalImgWidth, finalImgHeight;
+                if (imageRatio > pdfImageRatio) {
+                    finalImgWidth = pdfWidth - 40; // 약간의 여백
+                    finalImgHeight = (pdfWidth - 40) / imageRatio;
+                } else {
+                    finalImgHeight = pdfHeight - 40;
+                    finalImgWidth = (pdfHeight - 40) * imageRatio;
+                }
+                
+                const xPos = (pdfWidth - finalImgWidth) / 2;
+                const yPos = (pdfHeight - finalImgHeight) / 2;
+
+                doc.addImage(imgData, 'JPEG', xPos, yPos, finalImgWidth, finalImgHeight);
+                doc.save(filename);
+
+            } catch (error) {
+                console.error("PDF 생성 중 오류 발생:", error);
+                alert("PDF를 생성하는 중에 오류가 발생했습니다.");
+            } finally {
+                document.body.removeChild(contentToPrint);
+                loadingSpinner.style.display = 'none';
+                modalActions.style.display = 'flex';
+                closePreviewModal();
+            }
+        }
+    </script>
+</body>
+</html>
