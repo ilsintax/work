@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>리스 계산기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" onerror="this.onerror=null; this.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #0f172a;
+            --paper: #f8fafc;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(15, 118, 110, 0.13), transparent 30%),
+                radial-gradient(circle at top right, rgba(14, 116, 144, 0.12), transparent 26%),
+                linear-gradient(180deg, #eff6ff 0%, #f8fafc 38%, #eef2ff 100%);
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(14px);
+        }
+
+        .section-title {
+            letter-spacing: -0.02em;
+        }
+
+        .table-wrap {
+            scrollbar-width: thin;
+            scrollbar-color: #94a3b8 #e2e8f0;
+        }
+
+        .sticky-head thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+    </style>
+</head>
+<body class="min-h-screen px-4 py-8 md:px-6 md:py-10">
+    <div class="mx-auto max-w-7xl space-y-6">
+        <header class="glass-card overflow-hidden rounded-[32px] border border-white/70 shadow-[0_25px_80px_rgba(15,23,42,0.12)]">
+            <div class="grid gap-6 px-6 py-7 md:grid-cols-[1.4fr_0.9fr] md:px-8 md:py-8">
+                <div>
+                    <p class="mb-3 inline-flex items-center rounded-full bg-teal-950 px-3 py-1 text-xs font-semibold tracking-[0.18em] text-white">
+                        LEASE IFRS 16 SCHEDULE
+                    </p>
+                    <h1 class="section-title text-3xl font-extrabold tracking-tight text-slate-900 md:text-4xl">
+                        리스 계산기
+                    </h1>
+                    <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
+                        리스료, 시작일, 종료일, 리스기간, 선급·후급, 이자율을 입력하면 사용권자산과 리스부채의 월별 상각표를 자동으로 만듭니다.
+                        선급 첫 리스료는 IFRS 16 원칙에 따라 리스부채가 아니라 사용권자산 원가에 포함되도록 처리했습니다.
+                    </p>
+                </div>
+                <div class="rounded-[28px] bg-slate-950 p-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    <p class="text-sm font-semibold text-teal-300">핵심 가정</p>
+                    <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-200">
+                        <li>월 리스료 기준입니다.</li>
+                        <li>연이자율은 월이자율(연이자율/12)로 환산해 Excel PV 방식으로 계산합니다.</li>
+                        <li>배부기준은 월할과 일할 중 선택할 수 있으며 기본값은 월할입니다.</li>
+                        <li>이자비용과 감가상각비는 원단위 반올림 후 잔액에 반영하고 마지막 회차에서 차액을 정리합니다.</li>
+                        <li>유동성리스부채는 각 기준일 이후 12개월 내 상환될 원금 부분입니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+
+        <main class="space-y-6">
+            <section class="glass-card rounded-[28px] border border-white/70 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] md:p-6">
+                <div class="mb-5">
+                    <h2 class="section-title text-xl font-bold text-slate-900">기본 입력</h2>
+                    <p class="mt-1 text-sm text-slate-500">필수값을 입력하면 아래 표가 바로 갱신됩니다.</p>
+                </div>
+
+                <form id="lease-form" class="space-y-4">
+                    <div>
+                        <label for="leasePayment" class="mb-1 block text-sm font-semibold text-slate-700">리스료</label>
+                        <input id="leasePayment" type="text" inputmode="numeric" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right text-base font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100" placeholder="예: 1,000,000">
+                    </div>
+
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                        <div>
+                            <label for="leaseStart" class="mb-1 block text-sm font-semibold text-slate-700">리스시작</label>
+                            <input id="leaseStart" type="date" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100">
+                        </div>
+                        <div>
+                            <label for="leaseEnd" class="mb-1 block text-sm font-semibold text-slate-700">리스종료</label>
+                            <input id="leaseEnd" type="date" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100">
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="mb-1 flex items-center justify-between">
+                            <label for="leaseTermMonths" class="block text-sm font-semibold text-slate-700">리스기간(개월)</label>
+                            <button id="syncTermBtn" type="button" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200">
+                                날짜 기준 자동 반영
+                            </button>
+                        </div>
+                        <input id="leaseTermMonths" type="number" min="1" step="1" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right text-base font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100" placeholder="예: 36">
+                        <p id="termHint" class="mt-2 text-xs leading-5 text-slate-500"></p>
+                    </div>
+
+                    <div class="grid gap-4 md:grid-cols-3 xl:grid-cols-3">
+                        <div>
+                            <label for="paymentType" class="mb-1 block text-sm font-semibold text-slate-700">선후불여부</label>
+                            <select id="paymentType" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100">
+                                <option value="arrears" selected>후급</option>
+                                <option value="advance">선급</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="annualRate" class="mb-1 block text-sm font-semibold text-slate-700">이자율(연)</label>
+                            <div class="relative">
+                                <input id="annualRate" type="number" min="0" step="0.0001" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-10 text-right text-base font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100" placeholder="예: 5">
+                                <span class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">%</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="allocationMode" class="mb-1 block text-sm font-semibold text-slate-700">배부기준</label>
+                            <select id="allocationMode" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100">
+                                <option value="monthly" selected>월할(실무형)</option>
+                                <option value="daily">일할(정밀형)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+                        시작일과 종료일이 계약상 월 리스회차와 다르면 리스기간(개월)을 계약서 기준으로 직접 수정해 주세요.
+                        계산은 리스기간을 기준으로 현가와 부채 상각을 만들고, 월별 표시는 입력한 시작일·종료일 기준으로 나눕니다.
+                    </div>
+
+                    <button id="calculateBtn" type="button" class="w-full rounded-2xl bg-slate-900 px-4 py-3 text-base font-bold text-white transition hover:bg-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-100">
+                        계산하기
+                    </button>
+                </form>
+            </section>
+
+            <section class="space-y-6">
+                <div class="glass-card rounded-[28px] border border-white/70 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                    <h2 class="section-title text-xl font-bold text-slate-900">계산 결과</h2>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        입력값을 기준으로 초기 리스부채, 사용권자산, 월별 상각표를 아래에 보여줍니다.
+                        월별 표에는 리스부채 차감금액, 유동성리스부채, 비유동성리스부채, 감가상각비누계액도 포함되어 있습니다.
+                    </p>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <article class="glass-card rounded-[24px] border border-white/70 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                        <p class="text-sm font-semibold text-slate-500">초기 리스부채</p>
+                        <p id="summaryLiability" class="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">0원</p>
+                    </article>
+                    <article class="glass-card rounded-[24px] border border-white/70 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                        <p class="text-sm font-semibold text-slate-500">초기 사용권자산</p>
+                        <p id="summaryAsset" class="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">0원</p>
+                    </article>
+                    <article class="glass-card rounded-[24px] border border-white/70 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                        <p class="text-sm font-semibold text-slate-500">총 리스료</p>
+                        <p id="summaryTotalCash" class="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">0원</p>
+                    </article>
+                    <article class="glass-card rounded-[24px] border border-white/70 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                        <p class="text-sm font-semibold text-slate-500">총 이자비용</p>
+                        <p id="summaryTotalInterest" class="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">0원</p>
+                    </article>
+                </div>
+
+                <div class="flex justify-end">
+                    <button id="exportExcelBtn" type="button" disabled class="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-[0_12px_30px_rgba(16,185,129,0.25)] transition enabled:hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none">
+                        엑셀 다운로드
+                    </button>
+                </div>
+
+                <div id="validationBox" class="hidden rounded-[24px] border px-5 py-4 text-sm leading-6"></div>
+
+                <section class="glass-card rounded-[28px] border border-white/70 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                    <div class="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <h2 class="section-title text-xl font-bold text-slate-900">월별 산출표</h2>
+                            <p class="mt-1 text-sm text-slate-500">연월별 사용권자산과 리스부채의 변동을 선택한 배부기준에 따라 보여줍니다.</p>
+                        </div>
+                        <div class="text-xs leading-5 text-slate-500">
+                            금액은 원 단위 표시, 비용과 잔액은 실무형 반올림 규칙을 반영합니다.
+                        </div>
+                    </div>
+
+                    <div class="table-wrap overflow-auto rounded-[24px] border border-slate-200 bg-white">
+                        <table class="sticky-head min-w-[1700px] border-collapse text-sm">
+                            <thead class="bg-slate-900 text-white">
+                                <tr>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">누적월수</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-left font-semibold">연월</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">사용월수</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">감가상각비</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">사용권자산잔액</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">이자비용</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">리스료</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">리스부채잔액</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">리스료현재가치</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">리스료누적금액</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">리스부채 차감금액</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">유동성리스부채</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">비유동성리스부채</th>
+                                    <th class="whitespace-nowrap px-4 py-3 text-right font-semibold">감가상각비누계액</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scheduleBody" class="divide-y divide-slate-100 text-slate-700"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="glass-card rounded-[28px] border border-white/70 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+                    <h2 class="section-title text-xl font-bold text-slate-900">계산 기준</h2>
+                    <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                        <div class="rounded-[22px] border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600">
+                            <p class="font-semibold text-slate-800">적용 방식</p>
+                            <p class="mt-2">
+                                후불은 Excel의 <code>PV(rate/12, n, -리스료)</code>와 같은 월 단위 현재가치 방식으로 계산합니다.
+                                선불은 개시일 선납분을 제외한 미지급 리스료만 부채에 포함하므로
+                                <code>PV(rate/12, n-1, -리스료)</code> 기준으로 리스부채를 잡고 첫 리스료는 사용권자산 원가에 가산합니다.
+                                이후 리스부채는 같은 월 유효이자율 기준으로 이자비용을 더하고 리스료 지급분을 차감합니다.
+                            </p>
+                        </div>
+                        <div class="rounded-[22px] border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600">
+                            <p class="font-semibold text-slate-800">표시 유의사항</p>
+                            <p class="mt-2">
+                                월할은 시작일이 1일이면 당월 1일, 2일 이후면 다음달 1일에 시작한 것으로 보고 종료월도 말일 만료처럼 단순화해 상각합니다.
+                                일할은 실제 사용일수를 기준으로 월별 안분합니다.
+                                유동성리스부채는 각 기준일 이후 12개월 내 상환될 원금 부분만 분리합니다.
+                                다만 리스부채 현재가치와 이자 배분은 엑셀 실무와 맞추기 위해 월 단위 PV 기준으로 계산하므로,
+                                계약서상 일할이자 기준을 엄격히 따라야 하는 계약은 별도 조정이 필요할 수 있습니다.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 rounded-[22px] border border-teal-200 bg-teal-50 p-4 text-sm leading-6 text-teal-950">
+                        <p class="font-semibold">참고 출처</p>
+                        <ul class="mt-2 space-y-1">
+                            <li><a class="font-medium underline decoration-teal-300 underline-offset-4" href="https://www.ifrs.org/content/dam/ifrs/publications/pdf-standards/english/2024/issued/part-a/ifrs-16-leases.pdf?bypass=on" target="_blank" rel="noopener noreferrer">IFRS 16 Leases</a>의 최초 측정, 사용권자산 원가, 후속 측정 문단을 기준으로 구현했습니다.</li>
+                            <li><a class="font-medium underline decoration-teal-300 underline-offset-4" href="https://www.ifrs.org/content/dam/ifrs/meetings/2019/november/iasb/ap12h-implementation-matters.pdf" target="_blank" rel="noopener noreferrer">IASB Agenda Paper 12H</a>의 IE13 설명을 참고해 선급 리스료의 처리 방향을 점검했습니다.</li>
+                            <li><a class="font-medium underline decoration-teal-300 underline-offset-4" href="https://www.ifrs.org/content/dam/ifrs/publications/pdf-standards/english/2024/issued/part-a/ias-1-presentation-of-financial-statements.pdf?bypass=on" target="_blank" rel="noopener noreferrer">IAS 1 Presentation of Financial Statements</a>의 유동·비유동 분류 원칙을 반영해 유동성리스부채와 비유동성리스부채를 구분했습니다.</li>
+                            <li><a class="font-medium underline decoration-teal-300 underline-offset-4" href="https://support.microsoft.com/en-gb/office/npv-function-8672cb67-2576-4d07-b67b-ac28acf2a568" target="_blank" rel="noopener noreferrer">Microsoft NPV Function</a>의 기간말 현금흐름과 기간초 현금흐름 분리 설명을 참고해 후불·선불 계산 방식을 정리했습니다.</li>
+                            <li><a class="font-medium underline decoration-teal-300 underline-offset-4" href="https://support.microsoft.com/en-us/office/pmt-function-0214da64-9a63-4996-bc20-214433fa6441" target="_blank" rel="noopener noreferrer">Microsoft PMT Function</a>의 <code>type=0/1</code> 설명을 참고해 후불과 선불의 지급시점을 반영했습니다.</li>
+                        </ul>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+        const elements = {
+            leaseForm: document.getElementById('lease-form'),
+            leasePayment: document.getElementById('leasePayment'),
+            leaseStart: document.getElementById('leaseStart'),
+            leaseEnd: document.getElementById('leaseEnd'),
+            leaseTermMonths: document.getElementById('leaseTermMonths'),
+            paymentType: document.getElementById('paymentType'),
+            annualRate: document.getElementById('annualRate'),
+            allocationMode: document.getElementById('allocationMode'),
+            syncTermBtn: document.getElementById('syncTermBtn'),
+            calculateBtn: document.getElementById('calculateBtn'),
+            exportExcelBtn: document.getElementById('exportExcelBtn'),
+            termHint: document.getElementById('termHint'),
+            validationBox: document.getElementById('validationBox'),
+            summaryLiability: document.getElementById('summaryLiability'),
+            summaryAsset: document.getElementById('summaryAsset'),
+            summaryTotalCash: document.getElementById('summaryTotalCash'),
+            summaryTotalInterest: document.getElementById('summaryTotalInterest'),
+            scheduleBody: document.getElementById('scheduleBody')
+        };
+
+        let termManuallyEdited = false;
+        let hasCalculated = false;
+        let latestResult = null;
+
+        function parseDate(value) {
+            if (!value) return null;
+            const [year, month, day] = value.split('-').map(Number);
+            return new Date(Date.UTC(year, month - 1, day));
+        }
+
+        function toDateInputValue(date) {
+            return [
+                date.getUTCFullYear(),
+                String(date.getUTCMonth() + 1).padStart(2, '0'),
+                String(date.getUTCDate()).padStart(2, '0')
+            ].join('-');
+        }
+
+        function addDays(date, days) {
+            return new Date(date.getTime() + days * MS_PER_DAY);
+        }
+
+        function addMonthsPreserveDay(date, months) {
+            const year = date.getUTCFullYear();
+            const month = date.getUTCMonth();
+            const day = date.getUTCDate();
+            const base = new Date(Date.UTC(year, month + months, 1));
+            const lastDay = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate();
+            return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), Math.min(day, lastDay)));
+        }
+
+        function startOfMonth(date) {
+            return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+        }
+
+        function startOfNextMonth(date) {
+            return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+        }
+
+        function daysBetween(start, endExclusive) {
+            return Math.round((endExclusive.getTime() - start.getTime()) / MS_PER_DAY);
+        }
+
+        function dateKey(date) {
+            return toDateInputValue(date);
+        }
+
+        function yearMonthKey(date) {
+            return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+        }
+
+        function formatCurrency(value) {
+            return `${Math.round(value).toLocaleString('ko-KR')}원`;
+        }
+
+        function formatUsage(value) {
+            return Number(value).toLocaleString('ko-KR', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 6
+            });
+        }
+
+        function cleanNumber(value) {
+            if (typeof value === 'number') return value;
+            return Number(String(value || '').replace(/,/g, '').trim()) || 0;
+        }
+
+        function roundWon(value) {
+            return Math.round(Number(value) || 0);
+        }
+
+        function getPeriodicRate(annualRate) {
+            return annualRate / 12;
+        }
+
+        function calculatePv(rate, nper, payment) {
+            if (nper <= 0) return 0;
+            if (rate === 0) return payment * nper;
+            return payment * (1 - Math.pow(1 + rate, -nper)) / rate;
+        }
+
+        function inferTermMonthsFromDates(startDate, endDate) {
+            const rawMonths = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12
+                + (endDate.getUTCMonth() - startDate.getUTCMonth());
+            return Math.max(1, rawMonths + (endDate.getUTCDate() >= startDate.getUTCDate() ? 1 : 0));
+        }
+
+        function expectedEndDateFromStartAndTerm(startDate, termMonths) {
+            return addDays(addMonthsPreserveDay(startDate, termMonths), -1);
+        }
+
+        function normalizeMonthlyStartDate(startDate) {
+            return startDate.getUTCDate() === 1 ? startDate : startOfNextMonth(startDate);
+        }
+
+        function createScheduleRow(label, periodStart, periodEndExclusive, usageMonths) {
+            return {
+                label,
+                monthStart: periodStart,
+                monthEnd: addDays(periodEndExclusive, -1),
+                boundaryEnd: periodEndExclusive,
+                usageMonths,
+                openingBalance: 0,
+                interestExpense: 0,
+                leasePayment: 0,
+                liabilityPayment: 0,
+                leasePaymentPresentValue: 0,
+                leasePaymentCumulative: 0,
+                liabilityReduction: 0,
+                closingBalance: 0,
+                currentLiability: 0,
+                nonCurrentLiability: 0,
+                depreciation: 0,
+                rightOfUseBalance: 0,
+                accumulatedDepreciation: 0
+            };
+        }
+
+        function buildScheduleRows(startDate, endDate, termMonths, allocationMode) {
+            if (allocationMode === 'monthly') {
+                const normalizedStart = normalizeMonthlyStartDate(startDate);
+                return Array.from({ length: termMonths }, (_, index) => {
+                    const periodStart = addMonthsPreserveDay(normalizedStart, index);
+                    const periodEndExclusive = startOfNextMonth(periodStart);
+                    return createScheduleRow(yearMonthKey(periodStart), periodStart, periodEndExclusive, 1);
+                });
+            }
+
+            const rows = [];
+            let cursor = startOfMonth(startDate);
+
+            while (cursor <= endDate) {
+                const monthStart = cursor;
+                const nextMonth = startOfNextMonth(cursor);
+                const monthEnd = addDays(nextMonth, -1);
+                const actualStart = startDate > monthStart ? startDate : monthStart;
+                const actualEnd = endDate < monthEnd ? endDate : monthEnd;
+                const usageDays = Math.max(0, daysBetween(actualStart, addDays(actualEnd, 1)));
+                const monthDays = daysBetween(monthStart, nextMonth);
+
+                rows.push(
+                    createScheduleRow(
+                        yearMonthKey(monthStart),
+                        monthStart,
+                        addDays(actualEnd, 1),
+                        usageDays / monthDays
+                    )
+                );
+
+                cursor = nextMonth;
+            }
+
+            return rows;
+        }
+
+        function buildPaymentEvents(startDate, termMonths, paymentAmount, annualRate, paymentType) {
+            const startEvents = new Map();
+            const endEvents = new Map();
+            const allEvents = [];
+            const periodicRate = getPeriodicRate(annualRate);
+
+            for (let index = 0; index < termMonths; index += 1) {
+                const isFirstAdvance = paymentType === 'advance' && index === 0;
+                const paymentDate = paymentType === 'advance'
+                    ? addMonthsPreserveDay(startDate, index)
+                    : addDays(addMonthsPreserveDay(startDate, index + 1), -1);
+                const boundaryDate = paymentType === 'advance'
+                    ? paymentDate
+                    : addDays(paymentDate, 1);
+                const discountPeriods = paymentType === 'advance' ? index : index + 1;
+                const presentValue = isFirstAdvance
+                    ? 0
+                    : paymentAmount / Math.pow(1 + periodicRate, discountPeriods);
+
+                const event = {
+                    index,
+                    paymentDate,
+                    boundaryDate,
+                    amount: paymentAmount,
+                    presentValue,
+                    discountPeriods,
+                    affectsLiability: !isFirstAdvance,
+                    paymentType
+                };
+
+                allEvents.push(event);
+
+                const targetMap = paymentType === 'advance' ? startEvents : endEvents;
+                const key = dateKey(boundaryDate);
+                const bucket = targetMap.get(key) || [];
+                bucket.push(event);
+                targetMap.set(key, bucket);
+            }
+
+            const liabilityBoundaries = [...new Set(
+                allEvents
+                    .filter((event) => event.affectsLiability)
+                    .map((event) => dateKey(event.boundaryDate))
+            )]
+                .map(parseDate)
+                .sort((a, b) => a - b);
+
+            return { startEvents, endEvents, allEvents, liabilityBoundaries, periodicRate };
+        }
+
+        function sumEventAmounts(events, field) {
+            return events.reduce((total, item) => total + item[field], 0);
+        }
+
+        function applyEventsToRow(events, row, balance, options = {}) {
+            const { applyToLiability = true } = options;
+            if (!events || events.length === 0) return balance;
+
+            row.leasePayment += sumEventAmounts(events, 'amount');
+            row.leasePaymentPresentValue += sumEventAmounts(events, 'presentValue');
+            const liabilityImpact = events
+                .filter((event) => event.affectsLiability)
+                .reduce((total, event) => total + event.amount, 0);
+            row.liabilityPayment += liabilityImpact;
+
+            if (applyToLiability) {
+                balance -= liabilityImpact;
+            }
+
+            return balance;
+        }
+
+        function buildBoundaryTimeline(rows, paymentEvents) {
+            const boundarySet = new Set();
+            const lastBoundary = rows[rows.length - 1].boundaryEnd;
+
+            rows.forEach((row) => boundarySet.add(dateKey(row.boundaryEnd)));
+
+            paymentEvents.allEvents.forEach((event) => {
+                if (event.boundaryDate > rows[0].monthStart && event.boundaryDate <= lastBoundary) {
+                    boundarySet.add(dateKey(event.boundaryDate));
+                }
+            });
+
+            return [...boundarySet]
+                .map(parseDate)
+                .sort((a, b) => a - b);
+        }
+
+        function closeTinyResidual(balance, remainingLiabilityEvents) {
+            if (remainingLiabilityEvents === 0 && Math.abs(balance) < 0.01) {
+                return 0;
+            }
+            return balance;
+        }
+
+        function getNextLiabilityBoundary(afterDate, paymentEvents) {
+            return paymentEvents.liabilityBoundaries.find((boundary) => boundary > afterDate) || null;
+        }
+
+        function accruePeriodicInterest(balance, segmentStart, segmentEnd, intervalStart, intervalEnd, periodicRate) {
+            if (!intervalEnd || balance === 0 || segmentEnd <= segmentStart) {
+                return 0;
+            }
+
+            const intervalDays = Math.max(1, daysBetween(intervalStart, intervalEnd));
+            const segmentDays = daysBetween(segmentStart, segmentEnd);
+
+            if (segmentDays <= 0) {
+                return 0;
+            }
+
+            return balance * (Math.pow(1 + periodicRate, segmentDays / intervalDays) - 1);
+        }
+
+        function countRemainingLiabilityEvents(events, fromBoundary) {
+            return events.filter((event) => event.affectsLiability && event.boundaryDate > fromBoundary).length;
+        }
+
+        function simulateBalanceAfterMonths(openingBoundary, openingBalance, monthsAhead, paymentEvents) {
+            const horizonBoundary = addMonthsPreserveDay(openingBoundary, monthsAhead);
+            let balance = openingBalance;
+            let cursor = openingBoundary;
+            let currentIntervalStart = openingBoundary;
+            let currentIntervalEnd = getNextLiabilityBoundary(openingBoundary, paymentEvents);
+
+            const boundarySet = new Set([dateKey(horizonBoundary)]);
+
+            paymentEvents.allEvents.forEach((event) => {
+                if (event.boundaryDate >= openingBoundary && event.boundaryDate <= horizonBoundary) {
+                    boundarySet.add(dateKey(event.boundaryDate));
+                }
+            });
+
+            const boundaries = [...boundarySet].map(parseDate).sort((a, b) => a - b);
+
+            const openingStartEvents = paymentEvents.startEvents.get(dateKey(openingBoundary)) || [];
+            balance -= openingStartEvents
+                .filter((event) => event.affectsLiability)
+                .reduce((total, event) => total + event.amount, 0);
+
+            if (openingStartEvents.some((event) => event.affectsLiability)) {
+                currentIntervalStart = openingBoundary;
+                currentIntervalEnd = getNextLiabilityBoundary(openingBoundary, paymentEvents);
+            }
+
+            for (const boundary of boundaries) {
+                if (boundary.getTime() === openingBoundary.getTime()) {
+                    continue;
+                }
+
+                balance += accruePeriodicInterest(
+                    balance,
+                    cursor,
+                    boundary,
+                    currentIntervalStart,
+                    currentIntervalEnd,
+                    paymentEvents.periodicRate
+                );
+
+                const endEvents = paymentEvents.endEvents.get(dateKey(boundary)) || [];
+                balance -= endEvents
+                    .filter((event) => event.affectsLiability)
+                    .reduce((total, event) => total + event.amount, 0);
+                const liabilityChangedAtEnd = endEvents.some((event) => event.affectsLiability);
+
+                if (boundary.getTime() === horizonBoundary.getTime()) {
+                    break;
+                }
+
+                const startEvents = paymentEvents.startEvents.get(dateKey(boundary)) || [];
+                balance -= startEvents
+                    .filter((event) => event.affectsLiability)
+                    .reduce((total, event) => total + event.amount, 0);
+                const liabilityChangedAtStart = startEvents.some((event) => event.affectsLiability);
+
+                if (liabilityChangedAtEnd || liabilityChangedAtStart) {
+                    currentIntervalStart = boundary;
+                    currentIntervalEnd = getNextLiabilityBoundary(boundary, paymentEvents);
+                }
+
+                cursor = boundary;
+            }
+
+            return Math.max(0, balance);
+        }
+
+        function updateTermHint(startDate, endDate, termMonths) {
+            if (!startDate || !endDate || !termMonths) {
+                elements.termHint.textContent = '';
+                return;
+            }
+
+            const autoMonths = inferTermMonthsFromDates(startDate, endDate);
+            const expectedEnd = expectedEndDateFromStartAndTerm(startDate, termMonths);
+            const expectedEndText = `${expectedEnd.getUTCFullYear()}-${String(expectedEnd.getUTCMonth() + 1).padStart(2, '0')}-${String(expectedEnd.getUTCDate()).padStart(2, '0')}`;
+
+            elements.termHint.textContent = `시작/종료일 기준 자동 추정 ${autoMonths}개월 | 현재 입력 개월수 기준 예상 종료일 ${expectedEndText}`;
+        }
+
+        function renderValidation(messages) {
+            if (!messages.length) {
+                elements.validationBox.className = 'hidden rounded-[24px] border px-5 py-4 text-sm leading-6';
+                elements.validationBox.innerHTML = '';
+                return;
+            }
+
+            const hasWarning = messages.some((item) => item.type === 'warning');
+            elements.validationBox.className = hasWarning
+                ? 'rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-950'
+                : 'rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm leading-6 text-rose-950';
+
+            elements.validationBox.innerHTML = messages
+                .map((item) => `<p>${item.message}</p>`)
+                .join('');
+        }
+
+        function renderInfo(message) {
+            if (!message) {
+                renderValidation([]);
+                return;
+            }
+
+            elements.validationBox.className = 'rounded-[24px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-950';
+            elements.validationBox.innerHTML = `<p>${message}</p>`;
+        }
+
+        function renderEmptyTable(message) {
+            elements.scheduleBody.innerHTML = `
+                <tr>
+                    <td colspan="14" class="px-4 py-8 text-center text-sm text-slate-500">${message}</td>
+                </tr>
+            `;
+        }
+
+        function formatUsageOrBlank(value) {
+            return value == null ? '' : formatUsage(value);
+        }
+
+        function formatCurrencyOrBlank(value) {
+            return value == null ? '' : formatCurrency(value);
+        }
+
+        function renderSchedule(rows) {
+            elements.scheduleBody.innerHTML = rows.map((row) => `
+                <tr class="${row.isOpeningRow ? 'bg-amber-50/70' : 'odd:bg-white even:bg-slate-50'}">
+                    <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-700">${formatUsageOrBlank(row.periodIndex)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-800">${row.label}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatUsageOrBlank(row.usageMonths)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.depreciation)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.rightOfUseBalance)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.interestExpense)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.leasePayment)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.closingBalance)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.leasePaymentPresentValue)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.leasePaymentCumulative)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.liabilityReduction)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.currentLiability)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.nonCurrentLiability)}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right">${formatCurrencyOrBlank(row.accumulatedDepreciation)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateSummary(initialLiability, initialAsset, totalCash, totalInterest) {
+            elements.summaryLiability.textContent = formatCurrency(initialLiability);
+            elements.summaryAsset.textContent = formatCurrency(initialAsset);
+            elements.summaryTotalCash.textContent = formatCurrency(totalCash);
+            elements.summaryTotalInterest.textContent = formatCurrency(totalInterest);
+        }
+
+        function getPaymentTypeLabel(paymentType) {
+            return paymentType === 'advance' ? '선급' : '후급';
+        }
+
+        function getAllocationModeLabel(allocationMode) {
+            return allocationMode === 'daily' ? '일할(정밀형)' : '월할(실무형)';
+        }
+
+        const CURRENT_LEASE_ACCOUNT = '유동성리스부채';
+        const NONCURRENT_LEASE_ACCOUNT = '비유동성리스부채';
+
+        function buildOpeningRecognitionLines(rows, summary, paymentType) {
+            const openingRow = rows[0];
+            const lines = [];
+            const totalLiability = (openingRow.currentLiability || 0) + (openingRow.nonCurrentLiability || 0);
+            const prepaidPortion = Math.max(0, (summary.initialAsset || 0) - totalLiability);
+
+            lines.push({
+                periodLabel: openingRow.label,
+                debitAccount: '사용권자산',
+                debitAmount: summary.initialAsset,
+                creditAccount: openingRow.currentLiability > 0 ? CURRENT_LEASE_ACCOUNT : (openingRow.nonCurrentLiability > 0 ? NONCURRENT_LEASE_ACCOUNT : ''),
+                creditAmount: openingRow.currentLiability > 0 ? openingRow.currentLiability : (openingRow.nonCurrentLiability > 0 ? openingRow.nonCurrentLiability : null),
+                note: '최초 인식'
+            });
+
+            if (openingRow.currentLiability > 0 && openingRow.nonCurrentLiability > 0) {
+                lines.push({
+                    periodLabel: '',
+                    debitAccount: '',
+                    debitAmount: null,
+                    creditAccount: NONCURRENT_LEASE_ACCOUNT,
+                    creditAmount: openingRow.nonCurrentLiability,
+                    note: ''
+                });
+            }
+
+            if (paymentType === 'advance' && prepaidPortion > 0) {
+                lines.push({
+                    periodLabel: '',
+                    debitAccount: '',
+                    debitAmount: null,
+                    creditAccount: '선급리스료',
+                    creditAmount: prepaidPortion,
+                    note: '선급분 반영'
+                });
+            }
+
+            return lines;
+        }
+
+        function buildJournalMatrixRows(rows) {
+            return rows
+                .filter((row) => !row.isOpeningRow)
+                .map((row, index, monthlyRows) => {
+                    const previousRow = index === 0 ? rows[0] : monthlyRows[index - 1];
+                    const remainingPriorCurrent = Math.max(0, (previousRow.currentLiability || 0) - (row.liabilityReduction || 0));
+                    const transferAmount = Math.max(0, (row.currentLiability || 0) - remainingPriorCurrent);
+
+                return {
+                    periodLabel: row.label,
+                    depreciationLines: [
+                        row.depreciation > 0
+                            ? {
+                                debitAccount: '감가상각비',
+                                debitAmount: row.depreciation,
+                                creditAccount: '감가상각비누계액',
+                                creditAmount: row.depreciation
+                            }
+                            : null,
+                        null
+                    ],
+                    paymentLines: [
+                        row.interestExpense > 0
+                            ? {
+                                debitAccount: '이자비용',
+                                debitAmount: row.interestExpense,
+                                creditAccount: '',
+                                creditAmount: null
+                            }
+                            : null,
+                        row.liabilityReduction > 0
+                            ? {
+                                debitAccount: CURRENT_LEASE_ACCOUNT,
+                                debitAmount: row.liabilityReduction,
+                                creditAccount: '',
+                                creditAmount: null
+                            }
+                            : null
+                    ],
+                    paymentCredit: row.leasePayment > 0
+                        ? {
+                            creditAccount: '리스료',
+                            creditAmount: row.leasePayment
+                        }
+                        : null,
+                    transferLines: [
+                        transferAmount > 0
+                            ? {
+                                debitAccount: CURRENT_LEASE_ACCOUNT,
+                                debitAmount: transferAmount,
+                                creditAccount: NONCURRENT_LEASE_ACCOUNT,
+                                creditAmount: transferAmount
+                            }
+                            : null,
+                        null
+                    ]
+                };
+            });
+        }
+
+        function buildExportFileName() {
+            const now = new Date();
+            const parts = [
+                now.getFullYear(),
+                String(now.getMonth() + 1).padStart(2, '0'),
+                String(now.getDate()).padStart(2, '0'),
+                '_',
+                String(now.getHours()).padStart(2, '0'),
+                String(now.getMinutes()).padStart(2, '0')
+            ];
+            return `리스상각표_${parts.join('')}.xlsx`;
+        }
+
+        async function exportToExcel() {
+            if (!latestResult) {
+                renderInfo('먼저 계산하기 버튼을 눌러 최신 결과를 만든 뒤 엑셀을 다운로드해 주세요.');
+                return;
+            }
+
+            if (typeof ExcelJS === 'undefined') {
+                renderInfo('엑셀 다운로드 라이브러리를 불러오지 못했습니다. 인터넷 연결 후 다시 시도해 주세요.');
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            workbook.creator = 'Codex';
+            workbook.created = new Date();
+
+            const worksheet = workbook.addWorksheet('리스상각표', {
+                views: [{ state: 'frozen', ySplit: 10 }]
+            });
+            worksheet.pageSetup = {
+                paperSize: 9,
+                orientation: 'landscape',
+                fitToPage: true,
+                fitToWidth: 1,
+                fitToHeight: 0,
+                margins: {
+                    left: 0.3,
+                    right: 0.3,
+                    top: 0.5,
+                    bottom: 0.5,
+                    header: 0.2,
+                    footer: 0.2
+                }
+            };
+
+            worksheet.columns = [
+                { header: '누적월수', key: 'periodIndex', width: 11 },
+                { header: '연월', key: 'label', width: 12 },
+                { header: '사용월수', key: 'usageMonths', width: 12 },
+                { header: '감가상각비', key: 'depreciation', width: 15 },
+                { header: '사용권자산잔액', key: 'rightOfUseBalance', width: 17 },
+                { header: '이자비용', key: 'interestExpense', width: 14 },
+                { header: '리스료', key: 'leasePayment', width: 14 },
+                { header: '리스부채잔액', key: 'closingBalance', width: 16 },
+                { header: '리스료현재가치', key: 'leasePaymentPresentValue', width: 16 },
+                { header: '리스료누적금액', key: 'leasePaymentCumulative', width: 16 },
+                { header: '리스부채 차감금액', key: 'liabilityReduction', width: 18 },
+                { header: '유동성리스부채', key: 'currentLiability', width: 16 },
+                { header: '비유동성리스부채', key: 'nonCurrentLiability', width: 16 },
+                { header: '감가상각비누계액', key: 'accumulatedDepreciation', width: 18 }
+            ];
+
+            worksheet.mergeCells('A1:N1');
+            worksheet.getCell('A1').value = '리스 상각표';
+            worksheet.getCell('A1').font = { name: 'Malgun Gothic', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+            worksheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getCell('A1').fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF0F766E' }
+            };
+            worksheet.getRow(1).height = 28;
+
+            worksheet.mergeCells('A2:N2');
+            worksheet.getCell('A2').value = `Excel PV 기준 리스부채 / 사용권자산 월별 상각표 (${getAllocationModeLabel(latestResult.inputs.allocationMode)})`;
+            worksheet.getCell('A2').font = { name: 'Malgun Gothic', size: 10, color: { argb: 'FF475569' } };
+            worksheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(2).height = 20;
+
+            const infoRows = [
+                ['리스료', latestResult.inputs.leasePayment],
+                ['리스시작', latestResult.inputs.leaseStart],
+                ['리스종료', latestResult.inputs.leaseEnd],
+                ['리스기간(개월)', latestResult.inputs.leaseTermMonths],
+                ['선후불', getPaymentTypeLabel(latestResult.inputs.paymentType)],
+                ['배부기준', getAllocationModeLabel(latestResult.inputs.allocationMode)],
+                ['이자율(연)', `${latestResult.inputs.annualRatePercent}%`]
+            ];
+
+            infoRows.forEach((item, index) => {
+                const rowNumber = 3 + index;
+                worksheet.getCell(`A${rowNumber}`).value = item[0];
+                worksheet.getCell(`A${rowNumber}`).font = { bold: true, color: { argb: 'FF0F172A' } };
+                worksheet.getCell(`B${rowNumber}`).value = item[1];
+                worksheet.getCell(`A${rowNumber}`).fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFE2E8F0' }
+                };
+                worksheet.getCell(`A${rowNumber}`).border = {
+                    top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+                };
+                worksheet.getCell(`B${rowNumber}`).border = worksheet.getCell(`A${rowNumber}`).border;
+            });
+
+            const summaryRow = 3;
+            const summaryMap = [
+                ['D3', '초기 리스부채', latestResult.summary.initialLiability],
+                ['F3', '초기 사용권자산', latestResult.summary.initialAsset],
+                ['H3', '총 리스료', latestResult.summary.totalCash],
+                ['J3', '총 이자비용', latestResult.summary.totalInterest]
+            ];
+
+            summaryMap.forEach(([labelCell, label, value]) => {
+                const valueCell = String.fromCharCode(labelCell.charCodeAt(0) + 1) + labelCell.slice(1);
+                worksheet.getCell(labelCell).value = label;
+                worksheet.getCell(labelCell).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                worksheet.getCell(labelCell).alignment = { horizontal: 'center' };
+                worksheet.getCell(labelCell).fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FF0F172A' }
+                };
+                worksheet.getCell(valueCell).value = value;
+                worksheet.getCell(valueCell).numFmt = '#,##0';
+                worksheet.getCell(valueCell).font = { bold: true, color: { argb: 'FF0F172A' } };
+                worksheet.getCell(valueCell).fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFF8FAFC' }
+                };
+            });
+
+            const headerRowNumber = 10;
+            const headerRow = worksheet.getRow(headerRowNumber);
+            headerRow.values = worksheet.columns.map((column) => column.header);
+            headerRow.eachCell((cell) => {
+                cell.font = { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FF111827' }
+                };
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FF1F2937' } },
+                    left: { style: 'thin', color: { argb: 'FF1F2937' } },
+                    bottom: { style: 'thin', color: { argb: 'FF1F2937' } },
+                    right: { style: 'thin', color: { argb: 'FF1F2937' } }
+                };
+            });
+            headerRow.height = 22;
+
+            latestResult.rows.forEach((row, index) => {
+                const excelRow = worksheet.addRow({
+                    periodIndex: row.periodIndex,
+                    label: row.label,
+                    usageMonths: row.usageMonths == null ? null : Number(row.usageMonths),
+                    depreciation: row.depreciation,
+                    rightOfUseBalance: row.rightOfUseBalance,
+                    interestExpense: row.interestExpense,
+                    leasePayment: row.leasePayment,
+                    closingBalance: row.closingBalance,
+                    leasePaymentPresentValue: row.leasePaymentPresentValue,
+                    leasePaymentCumulative: row.leasePaymentCumulative,
+                    liabilityReduction: row.liabilityReduction,
+                    currentLiability: row.currentLiability,
+                    nonCurrentLiability: row.nonCurrentLiability,
+                    accumulatedDepreciation: row.accumulatedDepreciation
+                });
+
+                excelRow.eachCell((cell, colNumber) => {
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+                    };
+                    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'center' : 'right' };
+                    if (colNumber === 1 || colNumber === 3) {
+                        cell.numFmt = '#,##0.######';
+                    } else if (colNumber >= 4) {
+                        cell.numFmt = '#,##0';
+                    }
+                    if (row.isOpeningRow) {
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFFEF3C7' }
+                        };
+                    }
+                    if (!row.isOpeningRow && index % 2 === 1) {
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFF8FAFC' }
+                        };
+                    }
+                });
+            });
+
+            worksheet.autoFilter = {
+                from: 'A10',
+                to: 'N10'
+            };
+
+            const noteRowNumber = worksheet.lastRow.number + 2;
+            worksheet.mergeCells(`A${noteRowNumber}:N${noteRowNumber}`);
+            worksheet.getCell(`A${noteRowNumber}`).value = '비용은 원단위 반올림 후 잔액에 반영되며, 마지막 회차에서 차액을 정리합니다.';
+            worksheet.getCell(`A${noteRowNumber}`).font = { italic: true, color: { argb: 'FF475569' } };
+
+            const journalWorksheet = workbook.addWorksheet('월별 분개');
+            journalWorksheet.pageSetup = {
+                paperSize: 9,
+                orientation: 'landscape',
+                fitToPage: true,
+                fitToWidth: 1,
+                fitToHeight: 0,
+                margins: {
+                    left: 0.3,
+                    right: 0.3,
+                    top: 0.5,
+                    bottom: 0.5,
+                    header: 0.2,
+                    footer: 0.2
+                }
+            };
+            journalWorksheet.columns = [
+                { width: 12 },
+                { width: 18 },
+                { width: 12 },
+                { width: 18 },
+                { width: 12 },
+                { width: 18 },
+                { width: 12 },
+                { width: 18 },
+                { width: 12 },
+                { width: 18 },
+                { width: 12 },
+                { width: 18 },
+                { width: 12 }
+            ];
+
+            const thinBorder = {
+                top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+            };
+
+            const darkBorder = {
+                top: { style: 'thin', color: { argb: 'FF1F2937' } },
+                left: { style: 'thin', color: { argb: 'FF1F2937' } },
+                bottom: { style: 'thin', color: { argb: 'FF1F2937' } },
+                right: { style: 'thin', color: { argb: 'FF1F2937' } }
+            };
+
+            function styleCell(address, options = {}) {
+                const cell = journalWorksheet.getCell(address);
+                if (options.value !== undefined) cell.value = options.value;
+                if (options.font) cell.font = options.font;
+                if (options.alignment) cell.alignment = options.alignment;
+                if (options.fill) cell.fill = options.fill;
+                if (options.border) cell.border = options.border;
+                if (options.numFmt) cell.numFmt = options.numFmt;
+                return cell;
+            }
+
+            function fillBlock(rowNumber, startColumn, line, fillArgb) {
+                const columns = [startColumn, startColumn + 1, startColumn + 2, startColumn + 3];
+                columns.forEach((columnNumber, offset) => {
+                    const cell = journalWorksheet.getRow(rowNumber).getCell(columnNumber);
+                    cell.border = thinBorder;
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: fillArgb }
+                    };
+                    cell.font = { name: 'Malgun Gothic', color: { argb: 'FF0F172A' } };
+                    cell.alignment = { vertical: 'middle', horizontal: offset === 1 || offset === 3 ? 'right' : 'left' };
+                    if (offset === 1 || offset === 3) {
+                        cell.numFmt = '#,##0';
+                    }
+                });
+
+                if (!line) return;
+
+                journalWorksheet.getRow(rowNumber).getCell(startColumn).value = line.debitAccount || '';
+                journalWorksheet.getRow(rowNumber).getCell(startColumn + 1).value = line.debitAmount || null;
+                journalWorksheet.getRow(rowNumber).getCell(startColumn + 2).value = line.creditAccount || '';
+                journalWorksheet.getRow(rowNumber).getCell(startColumn + 3).value = line.creditAmount || null;
+            }
+
+            function fillDebitBlock(rowNumber, startColumn, line, fillArgb) {
+                const columns = [startColumn, startColumn + 1];
+                columns.forEach((columnNumber, offset) => {
+                    const cell = journalWorksheet.getRow(rowNumber).getCell(columnNumber);
+                    cell.border = thinBorder;
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: fillArgb }
+                    };
+                    cell.font = { name: 'Malgun Gothic', color: { argb: 'FF0F172A' } };
+                    cell.alignment = { vertical: 'middle', horizontal: offset === 1 ? 'right' : 'left' };
+                    if (offset === 1) {
+                        cell.numFmt = '#,##0';
+                    }
+                });
+
+                if (!line) return;
+
+                journalWorksheet.getRow(rowNumber).getCell(startColumn).value = line.debitAccount || '';
+                journalWorksheet.getRow(rowNumber).getCell(startColumn + 1).value = line.debitAmount || null;
+            }
+
+            function fillSingleCreditBlock(topRow, bottomRow, startColumn, creditLine, fillArgb) {
+                [topRow, bottomRow].forEach((rowNumber) => {
+                    [startColumn, startColumn + 1].forEach((columnNumber, index) => {
+                        const cell = journalWorksheet.getRow(rowNumber).getCell(columnNumber);
+                        cell.border = thinBorder;
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: fillArgb }
+                        };
+                        cell.font = { name: 'Malgun Gothic', color: { argb: 'FF0F172A' } };
+                        cell.alignment = { vertical: 'middle', horizontal: index === 1 ? 'right' : 'left' };
+                        if (index === 1) {
+                            cell.numFmt = '#,##0';
+                        }
+                        if (rowNumber === bottomRow) {
+                            cell.value = null;
+                        }
+                    });
+                });
+
+                if (!creditLine) return;
+
+                journalWorksheet.getRow(topRow).getCell(startColumn).value = creditLine.creditAccount || '';
+                journalWorksheet.getRow(topRow).getCell(startColumn + 1).value = creditLine.creditAmount || null;
+            }
+
+            journalWorksheet.mergeCells('A1:M1');
+            styleCell('A1', {
+                value: '월별 분개표',
+                font: { name: 'Malgun Gothic', size: 18, bold: true, color: { argb: 'FFFFFFFF' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } }
+            });
+            journalWorksheet.getRow(1).height = 28;
+
+            journalWorksheet.mergeCells('A2:M2');
+            styleCell('A2', {
+                value: `개시부터 마지막 기간까지의 월별 분개 (${getAllocationModeLabel(latestResult.inputs.allocationMode)})`,
+                font: { name: 'Malgun Gothic', size: 10, color: { argb: 'FF475569' } },
+                alignment: { vertical: 'middle', horizontal: 'center' }
+            });
+
+            const openingRecognitionLines = buildOpeningRecognitionLines(
+                latestResult.rows,
+                latestResult.summary,
+                latestResult.inputs.paymentType
+            );
+
+            const openingTitleRow = 4;
+            journalWorksheet.mergeCells(`A${openingTitleRow}:M${openingTitleRow}`);
+            styleCell(`A${openingTitleRow}`, {
+                value: '개시시점 분개',
+                font: { name: 'Malgun Gothic', size: 11, bold: true, color: { argb: 'FF0F172A' } },
+                alignment: { vertical: 'middle', horizontal: 'left' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE68A' } },
+                border: thinBorder
+            });
+
+            const openingHeaderRow = openingTitleRow + 1;
+            ['A', 'B', 'C', 'D', 'E', 'F'].forEach((column) => {
+                styleCell(`${column}${openingHeaderRow}`, {
+                    font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                    alignment: { vertical: 'middle', horizontal: 'center' },
+                    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF111827' } },
+                    border: darkBorder
+                });
+            });
+            styleCell(`A${openingHeaderRow}`, { value: '연월' });
+            styleCell(`B${openingHeaderRow}`, { value: '차변 계정과목' });
+            styleCell(`C${openingHeaderRow}`, { value: '차변 금액' });
+            styleCell(`D${openingHeaderRow}`, { value: '대변 계정과목' });
+            styleCell(`E${openingHeaderRow}`, { value: '대변 금액' });
+            journalWorksheet.mergeCells(`F${openingHeaderRow}:M${openingHeaderRow}`);
+            styleCell(`F${openingHeaderRow}`, {
+                value: '비고',
+                font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF111827' } },
+                border: darkBorder
+            });
+
+            let openingDataRow = openingHeaderRow + 1;
+            openingRecognitionLines.forEach((line) => {
+                ['A', 'B', 'C', 'D', 'E'].forEach((column) => {
+                    styleCell(`${column}${openingDataRow}`, {
+                        font: { name: 'Malgun Gothic', color: { argb: 'FF0F172A' } },
+                        alignment: { vertical: 'middle', horizontal: column === 'C' || column === 'E' ? 'right' : 'left' },
+                        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } },
+                        border: thinBorder,
+                        numFmt: column === 'C' || column === 'E' ? '#,##0' : undefined
+                    });
+                });
+                journalWorksheet.mergeCells(`F${openingDataRow}:M${openingDataRow}`);
+                styleCell(`F${openingDataRow}`, {
+                    font: { name: 'Malgun Gothic', color: { argb: 'FF0F172A' } },
+                    alignment: { vertical: 'middle', horizontal: 'left' },
+                    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } },
+                    border: thinBorder
+                });
+
+                styleCell(`A${openingDataRow}`, { value: line.periodLabel });
+                styleCell(`B${openingDataRow}`, { value: line.debitAccount });
+                styleCell(`C${openingDataRow}`, { value: line.debitAmount });
+                styleCell(`D${openingDataRow}`, { value: line.creditAccount });
+                styleCell(`E${openingDataRow}`, { value: line.creditAmount });
+                styleCell(`F${openingDataRow}`, { value: line.note });
+                openingDataRow += 1;
+            });
+
+            const matrixTitleRow = openingDataRow + 2;
+            journalWorksheet.mergeCells(`A${matrixTitleRow}:M${matrixTitleRow}`);
+            styleCell(`A${matrixTitleRow}`, {
+                value: '월별 분개',
+                font: { name: 'Malgun Gothic', size: 11, bold: true, color: { argb: 'FF0F172A' } },
+                alignment: { vertical: 'middle', horizontal: 'left' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } },
+                border: thinBorder
+            });
+
+            const matrixHeaderTopRow = matrixTitleRow + 1;
+            const matrixHeaderBottomRow = matrixTitleRow + 2;
+
+            journalWorksheet.mergeCells(`A${matrixHeaderTopRow}:A${matrixHeaderBottomRow}`);
+            journalWorksheet.mergeCells(`B${matrixHeaderTopRow}:E${matrixHeaderTopRow}`);
+            journalWorksheet.mergeCells(`F${matrixHeaderTopRow}:I${matrixHeaderTopRow}`);
+            journalWorksheet.mergeCells(`J${matrixHeaderTopRow}:M${matrixHeaderTopRow}`);
+
+            styleCell(`A${matrixHeaderTopRow}`, {
+                value: '연월',
+                font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF111827' } },
+                border: darkBorder
+            });
+            styleCell(`B${matrixHeaderTopRow}`, {
+                value: '감가상각비분개',
+                font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF166534' } },
+                border: darkBorder
+            });
+            styleCell(`F${matrixHeaderTopRow}`, {
+                value: '리스료분개',
+                font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } },
+                border: darkBorder
+            });
+            styleCell(`J${matrixHeaderTopRow}`, {
+                value: '유동성대체 분개',
+                font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB45309' } },
+                border: darkBorder
+            });
+
+            const subHeaders = [
+                ['B', '차변 계정과목'], ['C', '차변 금액'], ['D', '대변 계정과목'], ['E', '대변 금액'],
+                ['F', '차변 계정과목'], ['G', '차변 금액'], ['H', '대변 계정과목'], ['I', '대변 금액'],
+                ['J', '차변 계정과목'], ['K', '차변 금액'], ['L', '대변 계정과목'], ['M', '대변 금액']
+            ];
+            subHeaders.forEach(([column, value]) => {
+                styleCell(`${column}${matrixHeaderBottomRow}`, {
+                    value,
+                    font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } },
+                    alignment: { vertical: 'middle', horizontal: 'center' },
+                    fill: {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: {
+                            argb: ['B', 'C', 'D', 'E'].includes(column)
+                                ? 'FF166534'
+                                : ['F', 'G', 'H', 'I'].includes(column)
+                                    ? 'FF1D4ED8'
+                                    : 'FFB45309'
+                        }
+                    },
+                    border: darkBorder
+                });
+            });
+
+            const matrixRows = buildJournalMatrixRows(latestResult.rows);
+            let matrixDataRow = matrixHeaderBottomRow + 1;
+
+            matrixRows.forEach((period) => {
+                const topRow = matrixDataRow;
+                const bottomRow = matrixDataRow + 1;
+
+                journalWorksheet.mergeCells(`A${topRow}:A${bottomRow}`);
+                styleCell(`A${topRow}`, {
+                    value: period.periodLabel,
+                    font: { name: 'Malgun Gothic', bold: true, color: { argb: 'FF0F172A' } },
+                    alignment: { vertical: 'middle', horizontal: 'center' },
+                    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: period.periodLabel === '개시' ? 'FFFFFBEB' : 'FFF8FAFC' } },
+                    border: thinBorder
+                });
+
+                fillBlock(topRow, 2, period.depreciationLines[0], 'FFE8F5E9');
+                fillBlock(bottomRow, 2, period.depreciationLines[1], 'FFE8F5E9');
+                fillDebitBlock(topRow, 6, period.paymentLines[0], 'FFE0F2FE');
+                fillDebitBlock(bottomRow, 6, period.paymentLines[1], 'FFE0F2FE');
+                fillSingleCreditBlock(topRow, bottomRow, 8, period.paymentCredit, 'FFE0F2FE');
+                fillBlock(topRow, 10, period.transferLines[0], 'FFFFF7ED');
+                fillBlock(bottomRow, 10, period.transferLines[1], 'FFFFF7ED');
+
+                matrixDataRow += 2;
+            });
+
+            journalWorksheet.views = [{ state: 'frozen', ySplit: matrixHeaderBottomRow }];
+
+            const journalNoteRow = matrixDataRow + 1;
+            journalWorksheet.mergeCells(`A${journalNoteRow}:M${journalNoteRow}`);
+            styleCell(`A${journalNoteRow}`, {
+                value: `개시시점 최초 인식 분개를 별도 표시했고, 월별 분개는 기간당 2행으로 정렬했습니다. 각 분개군의 차변 합계와 대변 합계는 일치합니다.`,
+                font: { name: 'Malgun Gothic', italic: true, color: { argb: 'FF475569' } },
+                alignment: { vertical: 'middle', horizontal: 'left' }
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const fileName = buildExportFileName();
+
+            if (typeof saveAs === 'function') {
+                saveAs(blob, fileName);
+                return;
+            }
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+        }
+
+        function markScheduleDirty() {
+            if (hasCalculated) {
+                latestResult = null;
+                elements.exportExcelBtn.disabled = true;
+                renderInfo('입력값이 변경되었습니다. 아래 결과를 최신 값으로 보려면 계산하기 버튼을 다시 눌러 주세요.');
+            }
+        }
+
+        function calculateSchedule() {
+            const leasePayment = cleanNumber(elements.leasePayment.value);
+            const startDate = parseDate(elements.leaseStart.value);
+            const endDate = parseDate(elements.leaseEnd.value);
+            const termMonths = Math.max(0, Math.floor(Number(elements.leaseTermMonths.value) || 0));
+            const paymentType = elements.paymentType.value;
+            const allocationMode = elements.allocationMode.value;
+            const annualRate = Math.max(0, Number(elements.annualRate.value || 0) / 100);
+            const messages = [];
+
+            updateTermHint(startDate, endDate, termMonths);
+
+            if (!leasePayment) messages.push({ type: 'error', message: '리스료를 입력해 주세요.' });
+            if (!startDate) messages.push({ type: 'error', message: '리스시작일을 입력해 주세요.' });
+            if (!endDate) messages.push({ type: 'error', message: '리스종료일을 입력해 주세요.' });
+            if (startDate && endDate && endDate < startDate) messages.push({ type: 'error', message: '리스종료일은 리스시작일보다 빠를 수 없습니다.' });
+            if (!termMonths) messages.push({ type: 'error', message: '리스기간(개월)은 1 이상이어야 합니다.' });
+
+            if (messages.some((item) => item.type === 'error')) {
+                latestResult = null;
+                elements.exportExcelBtn.disabled = true;
+                renderValidation(messages);
+                updateSummary(0, 0, 0, 0);
+                renderEmptyTable('입력값을 확인해 주세요.');
+                return;
+            }
+
+            const autoMonths = inferTermMonthsFromDates(startDate, endDate);
+            const expectedEnd = expectedEndDateFromStartAndTerm(startDate, termMonths);
+            const endGapDays = Math.abs(daysBetween(addDays(endDate, 1), addDays(expectedEnd, 1)));
+
+            if (autoMonths !== termMonths || endGapDays > 3) {
+                messages.push({
+                    type: 'warning',
+                    message: `입력한 기간은 날짜 기준 자동 추정 ${autoMonths}개월과 차이가 있습니다. 현재 계산은 ${termMonths}개월을 기준으로 리스부채를 산정합니다.`
+                });
+            }
+
+            const calculationStartDate = allocationMode === 'monthly'
+                ? normalizeMonthlyStartDate(startDate)
+                : startDate;
+            const rows = buildScheduleRows(startDate, endDate, termMonths, allocationMode);
+            const paymentEvents = buildPaymentEvents(calculationStartDate, termMonths, leasePayment, annualRate, paymentType);
+            const remainingPeriods = paymentType === 'advance' ? Math.max(termMonths - 1, 0) : termMonths;
+            const initialLiability = roundWon(calculatePv(paymentEvents.periodicRate, remainingPeriods, leasePayment));
+            const initialAsset = initialLiability + (paymentType === 'advance' ? leasePayment : 0);
+            const totalCash = leasePayment * termMonths;
+
+            const timeline = buildBoundaryTimeline(rows, paymentEvents);
+            const rowByBoundary = new Map(rows.map((row, index) => [dateKey(row.boundaryEnd), index]));
+
+            let balance = initialLiability;
+            let currentRowIndex = 0;
+            let currentRow = rows[currentRowIndex];
+            let cursor = calculationStartDate;
+            let currentIntervalStart = calculationStartDate;
+            let currentIntervalEnd = getNextLiabilityBoundary(calculationStartDate, paymentEvents);
+
+            currentRow.openingBalance = balance;
+
+            if (paymentType === 'advance' && paymentEvents.allEvents.length > 0) {
+                currentRow.leasePayment += leasePayment;
+            }
+
+            for (const boundary of timeline) {
+                if (boundary <= cursor) {
+                    continue;
+                }
+
+                const roundedInterest = roundWon(
+                    accruePeriodicInterest(
+                        balance,
+                        cursor,
+                        boundary,
+                        currentIntervalStart,
+                        currentIntervalEnd,
+                        paymentEvents.periodicRate
+                    )
+                );
+
+                currentRow.interestExpense += roundedInterest;
+                balance += roundedInterest;
+
+                const endEvents = paymentEvents.endEvents.get(dateKey(boundary)) || [];
+                balance = applyEventsToRow(endEvents, currentRow, balance);
+                const liabilityChangedAtEnd = endEvents.some((event) => event.affectsLiability);
+
+                const rowIndexAtBoundary = rowByBoundary.get(dateKey(boundary));
+                if (rowIndexAtBoundary !== undefined) {
+                    const remainingBeforeClose = countRemainingLiabilityEvents(paymentEvents.allEvents, boundary);
+
+                    if (remainingBeforeClose === 0 && balance !== 0) {
+                        currentRow.interestExpense -= balance;
+                        balance = 0;
+                    }
+
+                    currentRow.closingBalance = Math.max(0, balance);
+                    currentRow.liabilityReduction = Math.max(0, currentRow.openingBalance + currentRow.interestExpense - currentRow.closingBalance);
+
+                    currentRowIndex = rowIndexAtBoundary + 1;
+                    currentRow = rows[currentRowIndex] || null;
+
+                    if (currentRow) {
+                        currentRow.openingBalance = balance;
+                    }
+                }
+
+                const startEvents = paymentEvents.startEvents.get(dateKey(boundary)) || [];
+                let liabilityChangedAtStart = false;
+                if (currentRow) {
+                    liabilityChangedAtStart = startEvents.some((event) => event.affectsLiability);
+                    balance = applyEventsToRow(startEvents, currentRow, balance);
+                }
+
+                if (liabilityChangedAtEnd || liabilityChangedAtStart) {
+                    currentIntervalStart = boundary;
+                    currentIntervalEnd = getNextLiabilityBoundary(boundary, paymentEvents);
+                }
+
+                cursor = boundary;
+            }
+
+            const totalUsageMonths = rows.reduce((sum, row) => sum + row.usageMonths, 0);
+            let accumulatedDepreciation = 0;
+
+            rows.forEach((row, index) => {
+                const isLastRow = index === rows.length - 1;
+                const rawDepreciation = totalUsageMonths === 0 ? 0 : initialAsset * (row.usageMonths / totalUsageMonths);
+                const depreciation = isLastRow
+                    ? Math.max(0, initialAsset - accumulatedDepreciation)
+                    : roundWon(rawDepreciation);
+                accumulatedDepreciation += depreciation;
+
+                row.depreciation = depreciation;
+                row.accumulatedDepreciation = accumulatedDepreciation;
+                row.rightOfUseBalance = Math.max(0, initialAsset - accumulatedDepreciation);
+                row.liabilityPayment = roundWon(row.liabilityPayment);
+                row.leasePaymentPresentValue = roundWon(row.leasePaymentPresentValue);
+                row.openingBalance = roundWon(row.openingBalance);
+                row.interestExpense = roundWon(row.interestExpense);
+                row.leasePayment = roundWon(row.leasePayment);
+                row.closingBalance = roundWon(row.closingBalance);
+                row.liabilityReduction = Math.max(0, row.liabilityPayment - row.interestExpense);
+            });
+
+            const presentValueRowIndexes = rows
+                .map((row, index) => (row.leasePaymentPresentValue > 0 ? index : -1))
+                .filter((index) => index >= 0);
+
+            if (presentValueRowIndexes.length > 0) {
+                let allocatedPresentValue = 0;
+                presentValueRowIndexes.forEach((rowIndex, index) => {
+                    const row = rows[rowIndex];
+                    const isLastPresentValueRow = index === presentValueRowIndexes.length - 1;
+                    if (isLastPresentValueRow) {
+                        row.leasePaymentPresentValue = Math.max(0, initialLiability - allocatedPresentValue);
+                    } else {
+                        allocatedPresentValue += row.leasePaymentPresentValue;
+                    }
+                });
+            }
+
+            let cumulativePresentValue = 0;
+            rows.forEach((row) => {
+                cumulativePresentValue += row.leasePaymentPresentValue;
+                row.leasePaymentCumulative = cumulativePresentValue;
+            });
+
+            const displayRows = [
+                {
+                    isOpeningRow: true,
+                    periodIndex: 0,
+                    label: '개시',
+                    usageMonths: null,
+                    openingBalance: null,
+                    interestExpense: null,
+                    leasePayment: null,
+                    liabilityPayment: null,
+                    leasePaymentPresentValue: null,
+                    leasePaymentCumulative: null,
+                    liabilityReduction: null,
+                    closingBalance: initialLiability,
+                    currentLiability: 0,
+                    nonCurrentLiability: 0,
+                    depreciation: null,
+                    rightOfUseBalance: initialAsset,
+                    accumulatedDepreciation: null,
+                    boundaryEnd: calculationStartDate
+                },
+                ...rows
+            ];
+
+            let cumulativeUsageMonths = 0;
+            displayRows.forEach((row, index) => {
+                if (index > 0) {
+                    cumulativeUsageMonths += row.usageMonths;
+                    row.periodIndex = allocationMode === 'monthly'
+                        ? roundWon(cumulativeUsageMonths)
+                        : cumulativeUsageMonths;
+                }
+            });
+
+            displayRows.forEach((row, index) => {
+                const horizon = addMonthsPreserveDay(row.boundaryEnd, 12);
+                const currentLiability = displayRows
+                    .filter((futureRow, futureIndex) => futureIndex > index && futureRow.boundaryEnd <= horizon)
+                    .reduce((sum, futureRow) => sum + (futureRow.liabilityReduction || 0), 0);
+
+                row.currentLiability = Math.min(row.closingBalance || 0, currentLiability);
+                row.nonCurrentLiability = Math.max(0, (row.closingBalance || 0) - row.currentLiability);
+            });
+
+            const totalInterest = rows.reduce((sum, row) => sum + row.interestExpense, 0);
+
+            latestResult = {
+                inputs: {
+                    leasePayment,
+                    leaseStart: elements.leaseStart.value,
+                    leaseEnd: elements.leaseEnd.value,
+                    leaseTermMonths: termMonths,
+                    paymentType,
+                    allocationMode,
+                    annualRatePercent: Number(elements.annualRate.value || 0)
+                },
+                summary: {
+                    initialLiability,
+                    initialAsset,
+                    totalCash,
+                    totalInterest
+                },
+                rows: displayRows.map((row) => ({ ...row }))
+            };
+
+            hasCalculated = true;
+            elements.exportExcelBtn.disabled = false;
+            updateSummary(initialLiability, initialAsset, totalCash, totalInterest);
+            renderValidation(messages);
+            renderSchedule(displayRows);
+        }
+
+        function syncTermFromDates() {
+            const startDate = parseDate(elements.leaseStart.value);
+            const endDate = parseDate(elements.leaseEnd.value);
+            if (!startDate || !endDate || endDate < startDate) return;
+            elements.leaseTermMonths.value = inferTermMonthsFromDates(startDate, endDate);
+            termManuallyEdited = false;
+            updateTermHint(startDate, endDate, Number(elements.leaseTermMonths.value));
+            markScheduleDirty();
+        }
+
+        elements.leasePayment.addEventListener('input', (event) => {
+            const raw = event.target.value.replace(/[^\d]/g, '');
+            event.target.value = raw ? Number(raw).toLocaleString('ko-KR') : '';
+            markScheduleDirty();
+        });
+
+        elements.leaseStart.addEventListener('input', () => {
+            updateTermHint(
+                parseDate(elements.leaseStart.value),
+                parseDate(elements.leaseEnd.value),
+                Number(elements.leaseTermMonths.value)
+            );
+            markScheduleDirty();
+        });
+
+        elements.leaseEnd.addEventListener('input', () => {
+            updateTermHint(
+                parseDate(elements.leaseStart.value),
+                parseDate(elements.leaseEnd.value),
+                Number(elements.leaseTermMonths.value)
+            );
+            markScheduleDirty();
+        });
+
+        elements.leaseTermMonths.addEventListener('input', () => {
+            termManuallyEdited = true;
+            updateTermHint(
+                parseDate(elements.leaseStart.value),
+                parseDate(elements.leaseEnd.value),
+                Number(elements.leaseTermMonths.value)
+            );
+            markScheduleDirty();
+        });
+
+        elements.paymentType.addEventListener('change', markScheduleDirty);
+        elements.annualRate.addEventListener('input', markScheduleDirty);
+        elements.allocationMode.addEventListener('change', markScheduleDirty);
+        elements.syncTermBtn.addEventListener('click', syncTermFromDates);
+        elements.calculateBtn.addEventListener('click', calculateSchedule);
+        elements.exportExcelBtn.addEventListener('click', exportToExcel);
+        elements.leaseForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            calculateSchedule();
+        });
+
+        updateTermHint(
+            parseDate(elements.leaseStart.value),
+            parseDate(elements.leaseEnd.value),
+            Number(elements.leaseTermMonths.value)
+        );
+        renderInfo('필수값을 모두 입력한 뒤 계산하기 버튼을 눌러 주세요.');
+        renderEmptyTable('필수값을 입력한 뒤 계산하기 버튼을 누르면 산출표가 표시됩니다.');
+    </script>
+</body>
+</html>
