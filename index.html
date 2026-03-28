@@ -58,7 +58,6 @@
                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">통장 및 금융자료 편집기</h2>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-                    <!-- 실제 도구 카드 -->
                     <a href="https://ilsintax.github.io/work/%EC%A7%80%EB%8A%A5%ED%98%95%20%EA%B8%88%EC%9C%B5%EC%97%91%EC%85%80%EB%82%98%EB%88%84%EA%B8%B0%206.8" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-blue-500 mb-3"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                         <h3 class="font-bold text-lg mb-2">지능형 금융엑셀 나누기</h3>
@@ -84,15 +83,16 @@
                         <h3 class="font-bold text-lg mb-2">통장 적요 자동 생성기<br>(여러 계좌 동시 처리 지원)</h3>
                         <p class="text-sm text-slate-500">회계 프로그램에 업로드할 적요를 자동으로 생성해줍니다.</p>
                     </a>
-                    
-                    <!-- 신규 추가된 주식 처분손익 일괄 자동인식 카드 -->
                     <a href="https://ilsintax.github.io/work/주식매매차손익평가기_수량단가기준" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-blue-500 mb-3"><i class="fa-solid fa-arrow-trend-up"></i></div>
-                        <h3 class="font-bold text-lg mb-2">주식 처분손익 일괄 자동인식</h3>
+                        <h3 class="font-bold text-lg mb-2">국내주식 처분손익 일괄 자동인식</h3>
                         <p class="text-sm text-slate-500">적요에 매수주식 / @단가로 되어 있는 내용을 자동인식하여 처분손익을 계산해줍니다.(처분손익 엑셀업로드 지원)</p>
                     </a>
-                    
-                    <!-- 업데이트 예정 카드 -->
+                    <a href="https://ilsintax.github.io/work/외국주식매매차손익평가기" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
+                        <div class="text-3xl text-blue-500 mb-3"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <h3 class="font-bold text-lg mb-2">해외주식 처분손익 일괄 자동인식</h3>
+                        <p class="text-sm text-slate-500">적요에 매수주식 / @단가로 되어 있는 내용을 자동인식하여 처분손익을 계산해줍니다.(처분손익 엑셀업로드 지원)</p>
+                    </a>
                     <div class="tool-card-placeholder flex flex-col items-center justify-center text-center bg-white p-6 rounded-lg border-2 border-slate-300 text-slate-400">
                         <i class="fa-solid fa-plus text-2xl mb-3"></i>
                         <h3 class="font-semibold text-md">기능 추가 예정</h3>
@@ -104,9 +104,9 @@
             <!-- 2. 급여 등 계산기 섹션 -->
             <section>
                 <div class="flex items-center mb-6">
-                      <div class="category-title-icon bg-green-100 text-green-600">
-                          <i class="fa-solid fa-calculator"></i>
-                      </div>
+                    <div class="category-title-icon bg-green-100 text-green-600">
+                        <i class="fa-solid fa-calculator"></i>
+                    </div>
                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">급여 등 계산기</h2>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
@@ -130,13 +130,13 @@
 
             <!-- 3. 부가세 및 결산관련 편집기 섹션 -->
             <section>
-                 <div class="flex items-center mb-6">
-                     <div class="category-title-icon bg-amber-100 text-amber-600">
-                         <i class="fa-solid fa-building-columns"></i>
-                     </div>
-                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">부가세 및 결산관련 편집기</h2>
-                 </div>
-                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="flex items-center mb-6">
+                    <div class="category-title-icon bg-amber-100 text-amber-600">
+                        <i class="fa-solid fa-building-columns"></i>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-slate-800">부가세 및 결산관련 편집기</h2>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                     <a href="https://ilsintax.github.io/work/%EC%97%85%EC%B2%B4%EB%AC%B8%EC%9D%98%EC%82%AC%ED%95%AD%ED%8E%B8%EC%A7%91%EA%B8%B0" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-amber-500 mb-3"><i class="fa-solid fa-comments"></i></div>
                         <h3 class="font-bold text-lg mb-2">업체 문의사항 편집기</h3>
@@ -152,28 +152,21 @@
                         <h3 class="font-bold text-lg mb-2">거래처 카드 매입 내역 문의</h3>
                         <p class="text-sm text-slate-500">부가세 작업 시 스크래핑한 카드매입 내역 중 거래처에 문의 할 내용을 정리합니다.</p>
                     </a>
-                    
-                    <!-- 학원면세사업장신고도우미 카드 -->
                     <a href="https://ilsintax.github.io/work/학원수입신고계산기" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-amber-500 mb-3"><i class="fa-solid fa-school"></i></div>
                         <h3 class="font-bold text-lg mb-2">학원면세사업장신고도우미</h3>
                         <p class="text-sm text-slate-500">학원인 업체에게 면세사업장 현황신고를 쉽게 작성하도록 도와줍니다</p>
                     </a>
-
-                    <!-- 주택임대수입금액검토표도우미 카드 -->
                     <a href="https://ilsintax.github.io/work/주택임대사업장" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-amber-500 mb-3"><i class="fa-solid fa-house-chimney"></i></div>
                         <h3 class="font-bold text-lg mb-2">주택임대수입금액검토표도우미</h3>
                         <p class="text-sm text-slate-500">주택임대사업자 수입금액 검토표를 쉽게 작성하도록 도와줍니다.</p>
                     </a>
-
-                    <!-- 법인세요청자료폴더 생성기 카드 -->
                     <a href="https://ilsintax.github.io/work/법인세요청자료생성기" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-amber-500 mb-3"><i class="fa-solid fa-folder-plus"></i></div>
                         <h3 class="font-bold text-lg mb-2">법인세요청자료폴더 생성기</h3>
                         <p class="text-sm text-slate-500">법인세 결산시 필요한 서류를 빈폴더로 생성해줍니다.</p>
                     </a>
-
                     <div class="tool-card-placeholder flex flex-col items-center justify-center text-center bg-white p-6 rounded-lg border-2 border-slate-300 text-slate-400">
                         <i class="fa-solid fa-plus text-2xl mb-3"></i>
                         <h3 class="font-semibold text-md">기능 추가 예정</h3>
@@ -185,12 +178,12 @@
             <!-- 4. 기타자료 섹션 -->
             <section>
                 <div class="flex items-center mb-6">
-                      <div class="category-title-icon bg-violet-100 text-violet-600">
-                          <i class="fa-solid fa-box-archive"></i>
-                      </div>
-                      <h2 class="text-2xl md:text-3xl font-bold text-slate-800">기타 자료</h2>
+                    <div class="category-title-icon bg-violet-100 text-violet-600">
+                        <i class="fa-solid fa-box-archive"></i>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-slate-800">기타 자료</h2>
                 </div>
-                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                     <a href="https://ilsintax.github.io/work/리스계산기" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-violet-500 mb-3"><i class="fa-solid fa-file-contract"></i></div>
                         <h3 class="font-bold text-lg mb-2">사용권자산 리스회계 계산기</h3>
