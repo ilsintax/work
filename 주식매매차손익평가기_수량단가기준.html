@@ -512,6 +512,25 @@
     const downloadWihagoBtn = document.getElementById('download-wihago-btn');
     const semuMessages = document.getElementById('semu-messages');
     const wihagoMessages = document.getElementById('wihago-messages');
+    const defaultAccountValues = {
+      stockCode: '107',
+      stockName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C',
+      gainCode: '906',
+      gainName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C\uCC98\uBD84\uC774\uC775',
+      lossCode: '958',
+      lossName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C\uCC98\uBD84\uC190\uC2E4'
+    };
+
+    [
+      [stockAccountCodeInput, defaultAccountValues.stockCode],
+      [stockAccountNameInput, defaultAccountValues.stockName],
+      [gainAccountCodeInput, defaultAccountValues.gainCode],
+      [gainAccountNameInput, defaultAccountValues.gainName],
+      [lossAccountCodeInput, defaultAccountValues.lossCode],
+      [lossAccountNameInput, defaultAccountValues.lossName]
+    ].forEach(([input, value]) => {
+      if (input && !String(input.value || '').trim()) input.value = value;
+    });
 
     const mappingPrompts = [
       { key: 'stockCell', type: 'cell', text: '1/7: 주식명이 적힌 셀을 클릭하세요.' },
