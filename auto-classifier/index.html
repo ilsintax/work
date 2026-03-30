@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>자동분류 요약 도구 v013</title>
+  <title>자동분류 요약 도구 v015</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="./xlsx.full.min.js"></script>
   <link href="https://unpkg.com/tabulator-tables@6.3.1/dist/css/tabulator.min.css" rel="stylesheet">
@@ -70,7 +70,7 @@
     <header class="glass shadow-soft rounded-3xl border border-white/80 p-6 md:p-8">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p class="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">Simple Workflow v013</p>
+          <p class="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">Simple Workflow v015</p>
           <h1 class="mt-2 text-3xl font-bold tracking-tight md:text-5xl">자동분류 및 요약 도구</h1>
           <p class="mt-3 max-w-3xl leading-7 text-slate-600">
             엑셀을 올리거나 붙여넣고, 제목행과 필수열, 분류기준 열을 클릭으로 확정한 뒤 규칙을 만들고
@@ -402,7 +402,7 @@
   </div>
 
   <script>
-    const STORAGE_KEY = "auto_classifier_v013";
+    const STORAGE_KEY = "auto_classifier_v015";
     const state = {
       workbook: null,
       workbookName: "",
@@ -966,8 +966,50 @@
       if (!silent) setMessage("현재 설정을 브라우저에 저장했습니다.", "success");
     }
 
+    function resetRuleConfig() {
+      state.savedMeta = null;
+      state.classifierColumns = [];
+      state.requiredColumns = [];
+      state.subjects = [];
+      state.rules = [];
+      state.activeRuleId = "";
+      state.amountColumn = "";
+    }
+
+    function resetWorkspaceData() {
+      state.workbook = null;
+      state.workbookName = "";
+      state.sheetNames = [];
+      state.activeSheet = "";
+      state.sourceMatrix = [];
+      state.sourceType = "";
+      state.pastedMatrix = [];
+      state.headerRowNumber = 1;
+      state.columns = [];
+      state.rows = [];
+      state.setupConfirmed = false;
+      state.quickRule = { subject: "", conditions: [] };
+      state.editingRuleId = "";
+      state.resultViewMode = "unclassified";
+      state.resultSearch = "";
+      state.resultFilterColumn = "";
+      state.resultFilterValue = "";
+      state.recommendationFilter = "";
+      state.fillDownSubject = "";
+      state.ruleSearch = "";
+      state.ruleSort = "row";
+      state.selectedRowIds = [];
+    }
+
+    function resetAllForFreshStart() {
+      resetWorkspaceData();
+      resetRuleConfig();
+    }
+
     function loadLocal() {
       const raw = localStorage.getItem(STORAGE_KEY)
+        || localStorage.getItem("auto_classifier_v014")
+        || localStorage.getItem("auto_classifier_v013")
         || localStorage.getItem("auto_classifier_v012")
         || localStorage.getItem("auto_classifier_v011")
         || localStorage.getItem("auto_classifier_v010")
@@ -1028,7 +1070,7 @@
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows), "분류결과");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows()), "요약");
       const baseName = (state.workbookName || "자동분류결과").replace(/\.(xlsx|xls|csv)$/i, "");
-      XLSX.writeFile(wb, baseName + "_v013_분류결과.xlsx");
+      XLSX.writeFile(wb, baseName + "_v015_분류결과.xlsx");
       setMessage("분류 결과 Excel을 저장했습니다.", "success");
     }
 
@@ -1469,24 +1511,23 @@
     function handleFirstRun() {
       ensureElements();
       state.runMode = "first";
-      state.setupConfirmed = false;
-      state.resultViewMode = "unclassified";
-      state.quickRule = { subject: "", conditions: [] };
-      state.editingRuleId = "";
+      resetAllForFreshStart();
       renderAll();
       setTab("setup");
-      setMessage("최초작업 모드입니다. 제목행, 필수열, 분류기준 열, 금액 열을 차례로 잡아 주세요.", "success");
+      setMessage("최초작업 모드입니다. 이전 규칙과 분류과목은 화면에 보이지 않도록 비운 상태로 시작합니다.", "success");
     }
 
     function handleContinueRun() {
       ensureElements();
       state.runMode = "continue";
-      state.resultViewMode = "unclassified";
-      state.editingRuleId = "";
-      loadLocal();
+      resetAllForFreshStart();
       renderAll();
       setTab("setup");
-      setMessage("이어서작업 모드입니다. 저장된 분류과목과 규칙을 유지한 채 새 엑셀을 불러오면 됩니다.", "success");
+      if (els.configFileInput) {
+        els.configFileInput.value = "";
+        els.configFileInput.click();
+      }
+      setMessage("이어서작업 모드입니다. 규칙세트 JSON 파일을 선택해 불러와 주세요.", "success");
     }
 
     function handleApplyPaste() {
@@ -1548,10 +1589,6 @@
         button.addEventListener("click", () => setTab(button.dataset.tab));
       });
 
-      els.firstRunBtn.addEventListener("click", handleFirstRun);
-
-      els.continueRunBtn.addEventListener("click", handleContinueRun);
-
       els.pasteArea.addEventListener("paste", (event) => {
         const html = event.clipboardData.getData("text/html");
         const text = event.clipboardData.getData("text/plain");
@@ -1562,14 +1599,10 @@
         setMessage("붙여넣기 내용을 읽었습니다. 적용 버튼을 눌러 반영해 주세요.", "success");
       });
 
-      els.applyPasteBtn.addEventListener("click", handleApplyPaste);
-
       els.clearPasteBtn.addEventListener("click", () => {
         state.pastedMatrix = [];
         els.pasteArea.textContent = "";
       });
-
-      els.excelFileInput.addEventListener("change", handleExcelFileChange);
 
       els.sheetSelect.addEventListener("change", () => {
         if (!state.workbook) return;
@@ -1585,8 +1618,6 @@
         renderAll();
         setMessage("헤더 행을 다시 적용했습니다.", "success");
       });
-
-      els.confirmSetupBtn.addEventListener("click", handleConfirmSetup);
 
       els.addSubjectBtn.addEventListener("click", () => {
         const value = trimText(els.newSubjectInput.value);
@@ -1674,7 +1705,7 @@
       });
 
       els.saveLocalBtn.addEventListener("click", () => saveLocal(false));
-      els.saveJsonBtn.addEventListener("click", () => downloadJson("자동분류_규칙세트_v013.json", configPayload()));
+      els.saveJsonBtn.addEventListener("click", () => downloadJson("자동분류_규칙세트_v015.json", configPayload()));
       els.exportExcelBtn.addEventListener("click", exportExcel);
 
       els.configFileInput.addEventListener("change", async (event) => {
@@ -1692,8 +1723,9 @@
           autoMatchSavedHeaders();
           updateIgnoredRows();
           renderAll();
+          setTab("setup");
           saveLocal(true);
-          setMessage("규칙세트를 불러왔습니다.", "success");
+          setMessage("규칙세트를 불러왔습니다. 이제 이어서 엑셀을 올리거나 붙여넣으면 됩니다.", "success");
         } catch (error) {
           console.error(error);
           setMessage("규칙세트를 읽지 못했습니다.", "error");
@@ -1928,12 +1960,9 @@
 
     try {
       cacheElements();
-      loadLocal();
       bindEvents();
       renderAll();
-      if (state.savedMeta) {
-        setMessage("이전에 저장한 설정과 규칙을 불러왔습니다. 새 엑셀만 올려도 이어서 분류할 수 있습니다.", "success");
-      }
+      setMessage("최초작업 또는 이어서작업을 선택해 시작해 주세요.", "normal");
     } catch (error) {
       console.error(error);
       const box = document.getElementById("messageBox");
