@@ -8,56 +8,642 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --page-bg: #eff4fa;
+            --panel-bg: rgba(255, 255, 255, 0.9);
+            --panel-border: rgba(255, 255, 255, 0.72);
+            --text-strong: #0f172a;
+            --text-base: #334155;
+            --text-soft: #64748b;
+            --shadow-soft: 0 28px 60px -40px rgba(15, 23, 42, 0.34);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
+            margin: 0;
             font-family: 'Noto Sans KR', sans-serif;
+            color: var(--text-base);
+            background:
+                radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 24%),
+                radial-gradient(circle at top right, rgba(16, 185, 129, 0.08), transparent 20%),
+                linear-gradient(180deg, #f8fbff 0%, var(--page-bg) 40%, #eaf0f7 100%);
         }
-        .tool-card {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+
+        a {
+            color: inherit;
+            text-decoration: none;
         }
-        .tool-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+        .page-wrap {
+            max-width: 1360px;
         }
-        .tool-card-placeholder {
-            border-style: dashed;
-            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+
+        .hero-panel {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--panel-border);
+            border-radius: 30px;
+            padding: 1.7rem 1.4rem;
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.97), rgba(255, 255, 255, 0.8)),
+                linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(14, 165, 233, 0.03));
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
         }
-        .tool-card-placeholder:hover {
-            background-color: #f0f9ff;
-            border-color: #3b82f6;
+
+        .hero-panel::before,
+        .hero-panel::after {
+            content: "";
+            position: absolute;
+            border-radius: 999px;
+            pointer-events: none;
+            filter: blur(10px);
         }
+
+        .hero-panel::before {
+            width: 220px;
+            height: 220px;
+            top: -90px;
+            right: -40px;
+            background: rgba(59, 130, 246, 0.12);
+        }
+
+        .hero-panel::after {
+            width: 170px;
+            height: 170px;
+            bottom: -85px;
+            left: -20px;
+            background: rgba(14, 165, 233, 0.1);
+        }
+
+        .hero-kicker {
+            position: relative;
+            z-index: 1;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.46rem 0.82rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            background: rgba(255, 255, 255, 0.9);
+            color: #2563eb;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
+        .hero-kicker::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: currentColor;
+            box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.12);
+        }
+
+        .hero-title {
+            position: relative;
+            z-index: 1;
+            margin: 1rem 0 0;
+            color: var(--text-strong);
+            font-size: clamp(2.1rem, 4vw, 3.6rem);
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            line-height: 1.08;
+        }
+
+        .hero-copy {
+            position: relative;
+            z-index: 1;
+            max-width: 860px;
+            margin: 0.95rem auto 0;
+            color: #475569;
+            font-size: 0.98rem;
+            line-height: 1.75;
+        }
+
+        .hero-meta {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.65rem;
+            margin-top: 1.2rem;
+        }
+
+        .hero-meta span {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.65rem 0.92rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            background: rgba(255, 255, 255, 0.82);
+            color: #334155;
+            font-size: 0.87rem;
+            font-weight: 600;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            gap: 1.15rem;
+        }
+
+        .section-panel {
+            --accent: #2563eb;
+            --accent-soft: rgba(37, 99, 235, 0.11);
+            position: relative;
+            overflow: hidden;
+            padding: 1.2rem;
+            border: 1px solid var(--panel-border);
+            border-radius: 26px;
+            background: var(--panel-bg);
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(14px);
+        }
+
+        .section-panel::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent), transparent 78%);
+        }
+
+        .section-panel.blue {
+            --accent: #2563eb;
+            --accent-soft: rgba(37, 99, 235, 0.11);
+        }
+
+        .section-panel.green {
+            --accent: #16a34a;
+            --accent-soft: rgba(22, 163, 74, 0.11);
+        }
+
+        .section-panel.amber {
+            --accent: #d97706;
+            --accent-soft: rgba(217, 119, 6, 0.12);
+        }
+
+        .section-panel.violet {
+            --accent: #7c3aed;
+            --accent-soft: rgba(124, 58, 237, 0.12);
+        }
+
         .category-title-icon {
-            width: 32px;
-            height: 32px;
+            width: 42px;
+            height: 42px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border-radius: 8px;
+            border-radius: 13px;
             margin-right: 12px;
+            background: var(--accent-soft) !important;
+            color: var(--accent) !important;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.88);
+        }
+
+        .tool-list-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.72rem;
+        }
+
+        .tool-card {
+            position: relative;
+            display: grid;
+            grid-template-columns: 46px minmax(0, 1fr);
+            grid-template-areas:
+                "icon title"
+                "icon desc";
+            gap: 0.14rem 0.92rem;
+            align-items: start;
+            min-height: 86px;
+            padding: 0.95rem 1rem;
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.12) !important;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+            box-shadow: 0 18px 36px -32px rgba(15, 23, 42, 0.48);
+            transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+        }
+
+        .tool-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            border-radius: 18px 0 0 18px;
+            background: linear-gradient(180deg, var(--accent), rgba(255, 255, 255, 0));
+            opacity: 0.45;
+            transition: opacity 0.22s ease;
+        }
+
+        .tool-card::after {
+            content: "";
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            width: 0.58rem;
+            height: 0.58rem;
+            margin-top: -0.34rem;
+            border-top: 2px solid var(--accent);
+            border-right: 2px solid var(--accent);
+            transform: rotate(45deg);
+            opacity: 0.28;
+            transition: transform 0.22s ease, opacity 0.22s ease;
+        }
+
+        .tool-card:hover,
+        .tool-card:focus-visible {
+            transform: translateY(-2px);
+            border-color: rgba(148, 163, 184, 0.28) !important;
+            box-shadow: 0 24px 48px -34px rgba(15, 23, 42, 0.42);
+        }
+
+        .tool-card:hover::before,
+        .tool-card:focus-visible::before {
+            opacity: 1;
+        }
+
+        .tool-card:hover::after,
+        .tool-card:focus-visible::after {
+            opacity: 0.62;
+            transform: translateX(2px) rotate(45deg);
+        }
+
+        .tool-card > div:first-child {
+            grid-area: icon;
+            width: 46px;
+            height: 46px;
+            margin: 0 !important;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            background: var(--accent-soft);
+            color: var(--accent) !important;
+            font-size: 1.14rem !important;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.92);
+        }
+
+        .tool-card h3 {
+            grid-area: title;
+            margin: 0;
+            padding-right: 1.35rem;
+            color: var(--text-strong);
+            font-size: 0.99rem !important;
+            font-weight: 700;
+            line-height: 1.42;
+            letter-spacing: -0.02em;
+        }
+
+        .tool-card p {
+            grid-area: desc;
+            margin: 0;
+            padding-right: 1.4rem;
+            color: var(--text-soft);
+            font-size: 0.82rem !important;
+            line-height: 1.55;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .tool-card-placeholder {
+            min-height: 78px;
+            border-style: dashed;
+            border-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92)),
+                repeating-linear-gradient(
+                    -45deg,
+                    rgba(148, 163, 184, 0.03) 0,
+                    rgba(148, 163, 184, 0.03) 12px,
+                    rgba(255, 255, 255, 0.18) 12px,
+                    rgba(255, 255, 255, 0.18) 24px
+                );
+            transition: transform 0.22s ease, border-color 0.22s ease;
+        }
+
+        .tool-card-placeholder:hover {
+            transform: translateY(-2px);
+            border-color: rgba(148, 163, 184, 0.26);
+        }
+
+        .footer-panel {
+            border: 1px solid var(--panel-border);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(12px);
+        }
+
+        @media (min-width: 1280px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: start;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .hero-panel {
+                border-radius: 24px;
+                padding: 1.35rem 1.05rem;
+            }
+
+            .section-panel {
+                padding: 1rem;
+                border-radius: 22px;
+            }
+
+            .tool-card {
+                min-height: 82px;
+                padding: 0.9rem 0.92rem;
+            }
+
+            .tool-card > div:first-child {
+                width: 42px;
+                height: 42px;
+                font-size: 1.04rem !important;
+            }
+
+            .tool-card h3 {
+                font-size: 0.95rem !important;
+            }
+
+            .tool-card p {
+                -webkit-line-clamp: 1;
+            }
+        }
+
+        /* Compact main-screen layout override */
+        .page-wrap {
+            max-width: 1760px;
+            padding-top: 0.9rem !important;
+            padding-bottom: 1.2rem !important;
+        }
+
+        .hero-panel {
+            padding: 0.95rem 1.1rem;
+            border-radius: 22px;
+            text-align: left !important;
+        }
+
+        .hero-panel::before {
+            width: 150px;
+            height: 150px;
+            top: -70px;
+            right: -40px;
+        }
+
+        .hero-panel::after {
+            width: 120px;
+            height: 120px;
+            bottom: -70px;
+            left: -30px;
+        }
+
+        .hero-kicker,
+        .hero-meta {
+            display: none;
+        }
+
+        .hero-title {
+            margin: 0;
+            font-size: clamp(1.45rem, 2vw, 1.95rem);
+            line-height: 1.12;
+        }
+
+        .hero-copy {
+            max-width: none;
+            margin-top: 0.3rem;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: #64748b;
+        }
+
+        .dashboard-grid {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+            position: relative;
+            isolation: isolate;
+        }
+
+        .section-panel {
+            overflow: visible;
+            padding: 0.85rem 0.85rem 0.9rem;
+            border-radius: 20px;
+            z-index: 0;
+        }
+
+        .section-panel:hover,
+        .section-panel:focus-within {
+            z-index: 30;
+        }
+
+        .section-panel .flex.items-center.mb-6 {
+            margin-bottom: 0.55rem !important;
+        }
+
+        .section-panel h2 {
+            font-size: 1rem !important;
+            line-height: 1.3;
+            letter-spacing: -0.02em;
+        }
+
+        .category-title-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            margin-right: 8px;
+        }
+
+        .tool-list-grid {
+            gap: 0.42rem;
+        }
+
+        .tool-card {
+            overflow: visible;
+            min-height: 54px;
+            padding: 0.52rem 0.78rem 0.52rem 0.62rem;
+            grid-template-columns: 34px minmax(0, 1fr);
+            grid-template-areas: "icon title";
+            gap: 0 0.65rem;
+            align-items: center;
+            border-radius: 14px;
+            box-shadow: 0 14px 26px -28px rgba(15, 23, 42, 0.4);
+            z-index: 0;
+        }
+
+        .tool-card:hover,
+        .tool-card:focus-visible {
+            z-index: 40;
+        }
+
+        .tool-card::before {
+            width: 3px;
+            border-radius: 14px 0 0 14px;
+            opacity: 0.3;
+        }
+
+        .tool-card::after {
+            right: 0.72rem;
+            width: 0.46rem;
+            height: 0.46rem;
+            margin-top: -0.28rem;
+        }
+
+        .tool-card > div:first-child {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            font-size: 0.92rem !important;
+        }
+
+        .tool-card h3 {
+            padding-right: 0.95rem;
+            font-size: 0.87rem !important;
+            line-height: 1.34;
+            max-width: none;
+        }
+
+        .tool-card p {
+            position: absolute;
+            left: 2.65rem;
+            top: calc(100% - 0.12rem);
+            width: min(300px, calc(100vw - 3rem));
+            margin: 0;
+            padding: 0.72rem 0.8rem;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(15, 23, 42, 0.97);
+            color: #f8fafc !important;
+            box-shadow: 0 18px 36px -24px rgba(15, 23, 42, 0.55);
+            font-size: 0.76rem !important;
+            line-height: 1.55;
+            opacity: 0;
+            transform: translateY(6px);
+            pointer-events: none;
+            display: block;
+            -webkit-line-clamp: unset;
+            -webkit-box-orient: initial;
+            overflow: visible;
+            z-index: 60;
+        }
+
+        .tool-card:hover p,
+        .tool-card:focus-visible p {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .tool-card-placeholder {
+            min-height: 52px;
+            padding: 0.52rem 0.72rem !important;
+            border-radius: 14px;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 0.55rem;
+        }
+
+        .tool-card-placeholder i {
+            margin: 0 !important;
+            font-size: 0.82rem !important;
+        }
+
+        .tool-card-placeholder h3 {
+            margin: 0;
+            font-size: 0.82rem !important;
+            line-height: 1.25;
+        }
+
+        .tool-card-placeholder p {
+            display: none;
+        }
+
+        .footer-panel {
+            margin-top: 0.9rem !important;
+            padding: 0.9rem 1rem !important;
+            border-radius: 18px;
+        }
+
+        .footer-panel p {
+            margin-top: 0 !important;
+        }
+
+        @media (min-width: 900px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (min-width: 1280px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                align-items: start;
+            }
+        }
+
+        @media (hover: none) {
+            .tool-card {
+                grid-template-areas:
+                    "icon title"
+                    "desc desc";
+                align-items: start;
+                padding-top: 0.58rem;
+                padding-bottom: 0.58rem;
+            }
+
+            .tool-card p {
+                position: static;
+                width: auto;
+                margin-top: 0.18rem;
+                padding: 0;
+                background: none;
+                border: 0;
+                box-shadow: none;
+                color: var(--text-soft) !important;
+                font-size: 0.76rem !important;
+                opacity: 1;
+                transform: none;
+                -webkit-line-clamp: 2;
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+            }
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body>
 
-    <div class="container mx-auto px-4 py-8 md:py-16">
+    <div class="page-wrap mx-auto px-4 py-6 md:px-6 md:py-10">
 
         <!-- 헤더 -->
-        <header class="text-center mb-12 md:mb-16">
-            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">일신 업무 자동화 허브</h1>
-            <p class="mt-4 text-lg text-slate-600">반복적인 작업을 자동화하여 소중한 시간을 아끼세요.</p>
+        <header class="hero-panel text-center mb-8 md:mb-10">
+            <span class="hero-kicker">Ilsin Automation Hub</span>
+            <h1 class="hero-title">일신 업무 자동화 허브</h1>
+            <p class="hero-copy">분류별 자동화 도구를 빠르게 찾을 수 있도록 메뉴를 압축 정리했습니다.</p>
+            <div class="hero-meta">
+                <span>리스트형 빠른 메뉴</span>
+                <span>짧고 읽기 쉬운 설명</span>
+                <span>업무 영역별 빠른 탐색</span>
+            </div>
         </header>
 
-        <main class="space-y-12">
+        <main class="dashboard-grid">
 
             <!-- 1. 통장 및 금융자료 편집기 섹션 -->
-            <section>
+            <section class="section-panel blue">
                 <div class="flex items-center mb-6">
                     <div class="category-title-icon bg-blue-100 text-blue-600">
                         <i class="fa-solid fa-file-invoice-dollar"></i>
                     </div>
                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">통장 및 금융자료 편집기</h2>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="tool-list-grid">
                     <a href="https://ilsintax.github.io/work/%EC%A7%80%EB%8A%A5%ED%98%95%20%EA%B8%88%EC%9C%B5%EC%97%91%EC%85%80%EB%82%98%EB%88%84%EA%B8%B0%206.8" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-blue-500 mb-3"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                         <h3 class="font-bold text-lg mb-2">지능형 금융엑셀 나누기</h3>
@@ -80,7 +666,7 @@
                     </a>
                     <a href="https://ilsintax.github.io/work/%ED%86%B5%EC%9E%A5%EC%A0%81%EC%9A%94%EC%9E%90%EB%8F%99%EC%83%9D%EC%84%B1%EA%B8%B0" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-blue-500 mb-3"><i class="fa-solid fa-file-signature"></i></div>
-                        <h3 class="font-bold text-lg mb-2">통장 적요 자동 생성기<br>(여러 계좌 동시 처리 지원)</h3>
+                        <h3 class="font-bold text-lg mb-2">통장 적요 자동 생성기</h3>
                         <p class="text-sm text-slate-500">회계 프로그램에 업로드할 적요를 자동으로 생성해줍니다.</p>
                     </a>
                     <a href="https://ilsintax.github.io/work/주식매매차손익평가기_수량단가기준" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
@@ -107,14 +693,14 @@
             </section>
 
             <!-- 2. 급여 등 계산기 섹션 -->
-            <section>
+            <section class="section-panel green">
                 <div class="flex items-center mb-6">
                     <div class="category-title-icon bg-green-100 text-green-600">
                         <i class="fa-solid fa-calculator"></i>
                     </div>
                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">급여 등 계산기</h2>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="tool-list-grid">
                     <a href="https://ilsintax.github.io/work/%EA%B8%89%EC%97%AC%EC%9D%BC%ED%95%A0%EA%B3%84%EC%82%B0%EA%B8%B0" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-green-500 mb-3"><i class="fa-solid fa-user-clock"></i></div>
                         <h3 class="font-bold text-lg mb-2">입/퇴사자 일할계산기</h3>
@@ -144,14 +730,14 @@
             </section>
 
             <!-- 3. 부가세 및 결산관련 편집기 섹션 -->
-            <section>
+            <section class="section-panel amber">
                 <div class="flex items-center mb-6">
                     <div class="category-title-icon bg-amber-100 text-amber-600">
                         <i class="fa-solid fa-building-columns"></i>
                     </div>
                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">부가세 및 결산관련 편집기</h2>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="tool-list-grid">
                     <a href="https://ilsintax.github.io/work/%EC%97%85%EC%B2%B4%EB%AC%B8%EC%9D%98%EC%82%AC%ED%95%AD%ED%8E%B8%EC%A7%91%EA%B8%B0" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-amber-500 mb-3"><i class="fa-solid fa-comments"></i></div>
                         <h3 class="font-bold text-lg mb-2">업체 문의사항 편집기</h3>
@@ -191,14 +777,14 @@
             </section>
             
             <!-- 4. 기타자료 섹션 -->
-            <section>
+            <section class="section-panel violet">
                 <div class="flex items-center mb-6">
                     <div class="category-title-icon bg-violet-100 text-violet-600">
                         <i class="fa-solid fa-box-archive"></i>
                     </div>
                     <h2 class="text-2xl md:text-3xl font-bold text-slate-800">기타 자료</h2>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="tool-list-grid">
                     <a href="https://ilsintax.github.io/work/리스계산기" target="_blank" rel="noopener noreferrer" class="tool-card block bg-white p-6 rounded-lg border border-slate-200">
                         <div class="text-3xl text-violet-500 mb-3"><i class="fa-solid fa-file-contract"></i></div>
                         <h3 class="font-bold text-lg mb-2">사용권자산 리스회계 계산기</h3>
@@ -235,7 +821,7 @@
         </main>
 
         <!-- 푸터 -->
-        <footer class="text-center mt-16 pt-8 border-t border-slate-200">
+        <footer class="footer-panel text-center mt-12 px-6 py-7 md:mt-14">
             <p class="text-sm text-slate-500">&copy; 2025 Ilsin Tax Accounting Firm. All Rights Reserved.</p>
              <p class="text-xs text-slate-400 mt-2">이 페이지는 세무법인일신에 의해 디자인되었습니다.</p>
         </footer>
