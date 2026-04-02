@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사업소득 3.3% 역산 계산기</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+    <!-- 폰트 적용 (Pretendard) -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/variable/pretendardvariable.css" />
+    <style>
+        body {
+            font-family: 'Pretendard Variable', Pretendard, sans-serif;
+            background-color: #f3f4f6;
+        }
+        .input-transition { transition: border-color 0.3s ease, box-shadow 0.3s ease; }
+        
+        /* 테이블 관련 스타일 */
+        .table-container { max-height: 400px; overflow-y: auto; overflow-x: auto; border-radius: 0.5rem; border: 1px solid #e5e7eb; }
+        table { border-collapse: collapse; width: 100%; white-space: nowrap; }
+        th, td { padding: 0.75rem 1rem; border: 1px solid #e5e7eb; text-align: left; }
+        th { background-color: #f9fafb; font-weight: 600; color: #374151; position: sticky; top: 0; z-index: 10; }
+        
+        /* 인터랙션 호버/선택 스타일 */
+        .row-hover:hover { background-color: #eff6ff; cursor: pointer; }
+        .row-selected { background-color: #3b82f6 !important; color: white !important; }
+        
+        .col-hover:hover { background-color: #eff6ff; cursor: pointer; }
+        .col-selected-name { background-color: #dbeafe !important; } /* Blue 100 */
+        .col-selected-amount { background-color: #dcfce7 !important; } /* Green 100 */
+        .col-selected-extra { background-color: #f3f4f6 !important; } /* Gray 100 */
+        .summary-row td { background-color: #eff6ff; font-weight: 700; }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- 메인 컨테이너 (모드에 따라 너비 변경) -->
+    <div id="appContainer" class="bg-white rounded-3xl shadow-xl w-full max-w-md transition-all duration-500 overflow-hidden flex flex-col max-h-[90vh]">
+        <!-- 공통 헤더 -->
+        <div class="bg-blue-600 p-6 text-center shrink-0">
+            <h1 class="text-2xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
+                <span id="headerTitle">사업소득 3.3% 역산 계산기</span>
+            </h1>
+            <p id="headerSubtitle" class="text-blue-100 text-sm mt-2 opacity-90">원단위 절사 오차를 자동 보정합니다</p>
+        </div>
+
+        <!-- 스크롤 가능한 본문 영역 -->
+        <div id="contentArea" class="overflow-y-auto flex-grow relative">
+            
+            <!-- [뷰 1] 초기 메뉴 -->
+            <div id="view-menu" class="p-8">
+                <h2 class="text-lg font-semibold text-gray-700 text-center mb-6">원하시는 계산 방식을 선택해주세요</h2>
+                <div class="space-y-4">
+                    <button onclick="switchView('single')" class="w-full bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 text-blue-700 font-bold py-5 rounded-xl text-lg transition duration-200 flex flex-col items-center gap-2">
+                        <span>직접 입력 계산</span>
+                        <span class="text-sm font-normal text-blue-500">인원을 직접 추가하며 표 형태로 계산합니다</span>
+                    </button>
+                    <button onclick="switchView('batch')" class="w-full bg-green-50 hover:bg-green-100 border-2 border-green-200 text-green-700 font-bold py-5 rounded-xl text-lg transition duration-200 flex flex-col items-center gap-2">
+                        <span>일괄 계산 (엑셀 연동)</span>
+                        <span class="text-sm font-normal text-green-600">여러 명의 데이터를 한 번에 변환합니다</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- [뷰 2] 단건 계산 -->
+            <div id="view-single" class="hidden p-8">
+                <button onclick="switchView('menu')" class="text-gray-500 hover:text-gray-800 text-sm mb-6 flex items-center gap-1">
+                    ← 초기 메뉴로
+                </button>
+                
+                <label for="postTaxInput" class="block text-sm font-semibold text-gray-600 mb-2">세후 지급액 입력 (원)</label>
+                <div class="relative">
+                    <input type="text" id="postTaxInput" class="w-full text-right text-3xl font-bold text-gray-800 border-b-2 border-gray-300 focus:border-blue-600 focus:outline-none py-3 pr-8 input-transition bg-transparent" placeholder="0">
+                    <span class="absolute right-0 bottom-4 text-xl font-medium text-gray-500">원</span>
+                </div>
+
+                <button id="calcBtn" class="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-lg transition duration-200 shadow-md">
+                    단건 세전 금액 역산하기
+                </button>
+
+                <!-- 결과 영역 -->
+                <div id="singleResultArea" class="hidden mt-8 bg-gray-50 border border-gray-100 rounded-2xl p-6">
+                    <div class="mb-4">
+                        <p class="text-sm font-semibold text-gray-500 mb-1">계산된 세전 역산 금액</p>
+                        <div class="flex items-baseline justify-end gap-1">
+                            <span id="resPreTax" class="text-3xl font-extrabold text-blue-700 tracking-tight">0</span>
+                            <span class="text-lg font-bold text-blue-700">원</span>
+                        </div>
+                    </div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between text-gray-600"><span>사업소득세 (3%)</span><span class="font-medium">- <span id="resTax1">0</span> 원</span></div>
+                        <div class="flex justify-between text-gray-600"><span>지방소득세 (0.3%)</span><span class="font-medium">- <span id="resTax2">0</span> 원</span></div>
+                        <div class="border-t border-gray-200 my-2 pt-2 flex justify-between text-gray-800 font-semibold">
+                            <span class="text-gray-500">검증 (실제 지급액)</span><span><span id="resPostTax">0</span> 원</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [뷰 3] 일괄 계산 (튜토리얼) -->
+            <div id="view-batch" class="hidden p-6 md:p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <button onclick="switchView('menu')" class="text-gray-500 hover:text-gray-800 text-sm font-medium">← 돌아가기</button>
+                    <div class="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full" id="batchStepIndicator">Step 1 / 4</div>
+                </div>
+
+                <!-- Step 1: 엑셀 붙여넣기 -->
+                <div id="batch-step-1">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">1. 엑셀 데이터 붙여넣기</h3>
+                    <p class="text-gray-500 text-sm mb-4">엑셀에서 변환할 표(이름, 금액 등)를 복사(Ctrl+C)하여 아래 공간에 붙여넣기(Ctrl+V) 하세요.</p>
+                    <textarea id="pasteArea" class="w-full h-48 p-4 border border-gray-300 rounded-xl focus:border-blue-500 focus:ring focus:ring-blue-200 outline-none resize-none text-sm whitespace-pre" placeholder="여기에 엑셀 데이터를 붙여넣으세요..."></textarea>
+                    <button onclick="processStep1()" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition">데이터 인식하기 →</button>
+                </div>
+
+                <!-- Step 2: 제목행 선택 -->
+                <div id="batch-step-2" class="hidden">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">2. 제목 행(Header) 선택</h3>
+                    <p class="text-gray-500 text-sm mb-4">데이터의 기준이 되는 <strong class="text-blue-600">제목 행을 클릭</strong>해 주세요. 클릭한 행을 기준으로 표가 정리됩니다.</p>
+                    <div id="tableContainer2" class="table-container mb-4 text-sm text-gray-700"></div>
+                    <div class="flex gap-2">
+                        <button onclick="goToBatchStep(1)" class="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition">이전</button>
+                        <button onclick="processStep2()" id="btnStep2Next" class="w-2/3 bg-gray-400 text-white font-bold py-3 rounded-xl transition" disabled>선택 완료 →</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: 필수 열 선택 -->
+                <div id="batch-step-3" class="hidden">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">3. 이름 / 금액 열 지정</h3>
+                    <div class="flex flex-col gap-2 mb-4">
+                        <p class="text-gray-600 text-sm">
+                            <span id="badgeName" class="inline-block w-3 h-3 rounded-full bg-blue-200 mr-1"></span><strong class="text-blue-600">이름</strong> 열과 
+                            <span id="badgeAmount" class="inline-block w-3 h-3 rounded-full bg-green-200 ml-2 mr-1"></span><strong class="text-green-600">금액(세후)</strong> 열의 <b>제목</b>을 순서대로 클릭하세요.
+                        </p>
+                        <div class="flex gap-2 text-sm font-medium">
+                            <div id="statusName" class="px-3 py-1 bg-gray-100 rounded text-gray-500">이름: 미선택</div>
+                            <div id="statusAmount" class="px-3 py-1 bg-gray-100 rounded text-gray-500">금액: 미선택</div>
+                            <button onclick="resetStep3Cols()" class="px-2 py-1 text-red-500 hover:bg-red-50 rounded underline text-xs ml-auto">다시 선택</button>
+                        </div>
+                    </div>
+                    <div id="tableContainer3" class="table-container mb-4 text-sm text-gray-700"></div>
+                    <div class="flex gap-2">
+                        <button onclick="goToBatchStep(2)" class="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition">이전</button>
+                        <button onclick="processStep3()" id="btnStep3Next" class="w-2/3 bg-gray-400 text-white font-bold py-3 rounded-xl transition" disabled>확인 →</button>
+                    </div>
+                </div>
+
+                <!-- Step 4: 추가 열 선택 -->
+                <div id="batch-step-4" class="hidden">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">4. 추가 데이터 열 선택 (선택사항)</h3>
+                    <p class="text-gray-500 text-sm mb-4">결과 표에 함께 표시하고 싶은 추가 열(부서, 직급 등)이 있다면 제목을 클릭하세요.</p>
+                    <div id="tableContainer4" class="table-container mb-4 text-sm text-gray-700"></div>
+                    <div class="flex gap-2">
+                        <button onclick="goToBatchStep(3)" class="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition">이전</button>
+                        <button onclick="processStep4()" id="btnStep4Next" class="w-2/3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition">선택 안함(바로 계산) →</button>
+                    </div>
+                </div>
+
+                <!-- Step 5: 결과 화면 -->
+                <div id="batch-step-5" class="hidden">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">🎉 일괄 역산 완료</h3>
+                    <p class="text-gray-500 text-sm mb-4">결과를 드래그하여 복사하거나 아래 버튼을 클릭하여 엑셀에 바로 붙여넣으세요.</p>
+                    <div id="tableContainer5" class="table-container mb-4 text-sm text-gray-800"></div>
+                    
+                    <div class="flex gap-2 mt-4">
+                        <button onclick="switchView('menu')" class="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition">처음으로</button>
+                        <button onclick="copyResultTable()" class="w-1/3 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition flex justify-center items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                            표 전체 복사하기
+                        </button>
+                        <button onclick="downloadResultExcel()" class="w-1/3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition flex justify-center items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-8m0 8l-3-3m3 3l3-3M5 20h14"></path></svg>
+                            엑셀 다운로드
+                        </button>
+                    </div>
+                </div>
+
+            </div> <!-- end view-batch -->
+        </div>
+    </div>
+
+    <script>
+        // --- 코어 비즈니스 로직 ---
+        function roundDown10(value) {
+            return Math.floor(value / 10) * 10;
+        }
+
+        // 역산 핵심 함수 (단건/일괄 공통 사용)
+        function calculateReverseTax(targetPostTax) {
+            if (isNaN(targetPostTax) || targetPostTax <= 0) return null;
+
+            let preTaxGuess = Math.floor(targetPostTax / 0.967);
+            let tax1 = 0, tax2 = 0, calcPostTax = 0, diff = 0;
+            let iterations = 0;
+            const MAX_ITERATIONS = 100;
+
+            while (iterations < MAX_ITERATIONS) {
+                tax1 = roundDown10(preTaxGuess * 0.03);
+                tax2 = roundDown10(tax1 * 0.1);
+                calcPostTax = preTaxGuess - tax1 - tax2;
+                diff = targetPostTax - calcPostTax;
+
+                if (diff === 0) break;
+                preTaxGuess += diff;
+                iterations++;
+            }
+
+            if (iterations >= MAX_ITERATIONS) return null; // 에러
+            return { preTax: preTaxGuess, tax1: tax1, tax2: tax2, postTax: calcPostTax };
+        }
+
+        // --- 단건 계산 UI 로직 ---
+        const inputEl = document.getElementById('postTaxInput');
+        inputEl.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/[^0-9]/g, '');
+            e.target.value = value ? parseInt(value, 10).toLocaleString('ko-KR') : '';
+        });
+        inputEl.addEventListener('keypress', e => { if (e.key === 'Enter') executeSingleCalc(); });
+        document.getElementById('calcBtn').addEventListener('click', executeSingleCalc);
+
+        function executeSingleCalc() {
+            let val = parseInt(inputEl.value.replace(/,/g, ''), 10);
+            let result = calculateReverseTax(val);
+            
+            if(!result) {
+                alert("정확한 금액을 입력해주세요.");
+                inputEl.focus();
+                return;
+            }
+
+            document.getElementById('resPreTax').innerText = result.preTax.toLocaleString('ko-KR');
+            document.getElementById('resTax1').innerText = result.tax1.toLocaleString('ko-KR');
+            document.getElementById('resTax2').innerText = result.tax2.toLocaleString('ko-KR');
+            document.getElementById('resPostTax').innerText = result.postTax.toLocaleString('ko-KR');
+            document.getElementById('singleResultArea').classList.remove('hidden');
+        }
+
+        // --- 뷰 전환 및 레이아웃 관리 ---
+        const appContainer = document.getElementById('appContainer');
+        function switchView(viewId) {
+            document.getElementById('view-menu').classList.add('hidden');
+            document.getElementById('view-single').classList.add('hidden');
+            document.getElementById('view-batch').classList.add('hidden');
+
+            // 뷰에 따른 컨테이너 크기 조절
+            if(viewId === 'batch') {
+                appContainer.classList.remove('max-w-md');
+                appContainer.classList.add('max-w-4xl'); // 일괄 계산은 넓게
+                goToBatchStep(1); // 일괄 계산 초기화
+                document.getElementById('headerTitle').innerText = "일괄 역산 계산기";
+                document.getElementById('headerSubtitle').innerText = "엑셀 데이터를 한 번에 변환합니다";
+            } else {
+                appContainer.classList.remove('max-w-4xl');
+                appContainer.classList.add('max-w-md');
+                if(viewId === 'menu') {
+                    document.getElementById('headerTitle').innerText = "사업소득 역산 계산기";
+                    document.getElementById('headerSubtitle').innerText = "원단위 절사 오차를 자동 보정합니다";
+                }
+            }
+            
+            document.getElementById(`view-${viewId}`).classList.remove('hidden');
+        }
+
+        // --- 일괄 계산(Batch) 상태 관리 ---
+        let batchData = {
+            rawRows: [],
+            headerIndex: -1,
+            headers: [],
+            dataRows: [],
+            colName: -1,
+            colAmount: -1,
+            colExtras: [],
+            finalResults: [],
+            summary: null
+        };
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString('ko-KR');
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getFinalTableColumns() {
+            const columns = [{ key: 'name', label: '\uC774\uB984', numeric: false }];
+            batchData.colExtras.forEach(cIdx => {
+                columns.push({
+                    key: `extra_${cIdx}`,
+                    label: batchData.headers[cIdx] || `\uCD94\uAC00\uD56D\uBAA9 ${cIdx + 1}`,
+                    numeric: false
+                });
+            });
+            columns.push(
+                { key: 'preTax', label: '\uC138\uC804 \uC5ED\uC0B0\uC561', numeric: true },
+                { key: 'tax1', label: '\uC0AC\uC5C5\uC18C\uB4DD\uC138(3%)', numeric: true },
+                { key: 'tax2', label: '\uC9C0\uBC29\uC18C\uB4DD\uC138(0.3%)', numeric: true },
+                { key: 'postTax', label: '\uC2E4\uC9C0\uAE09\uC561(\uC138\uD6C4)', numeric: true }
+            );
+            return columns;
+        }
+
+        function buildFinalResultsData() {
+            const results = [];
+            const summary = { preTax: 0, tax1: 0, tax2: 0, postTax: 0, count: 0 };
+
+            batchData.dataRows.forEach(row => {
+                const name = (row[batchData.colName] || '').trim();
+                const amountStr = (row[batchData.colAmount] || '').replace(/[^0-9]/g, '');
+                const amount = parseInt(amountStr, 10);
+
+                if (!name || isNaN(amount) || amount <= 0) return;
+
+                const res = calculateReverseTax(amount);
+                if (!res) return;
+
+                const item = {
+                    name,
+                    preTax: res.preTax,
+                    tax1: res.tax1,
+                    tax2: res.tax2,
+                    postTax: res.postTax
+                };
+
+                batchData.colExtras.forEach(cIdx => {
+                    item[`extra_${cIdx}`] = row[cIdx] || '';
+                });
+
+                results.push(item);
+                summary.preTax += item.preTax;
+                summary.tax1 += item.tax1;
+                summary.tax2 += item.tax2;
+                summary.postTax += item.postTax;
+                summary.count += 1;
+            });
+
+            batchData.finalResults = results;
+            batchData.summary = summary;
+        }
+
+        function goToBatchStep(step) {
+            for(let i=1; i<=5; i++) {
+                document.getElementById(`batch-step-${i}`).classList.add('hidden');
+            }
+            document.getElementById(`batch-step-${step}`).classList.remove('hidden');
+            
+            if(step <= 4) {
+                document.getElementById('batchStepIndicator').innerText = `Step ${step} / 4`;
+            } else {
+                document.getElementById('batchStepIndicator').innerText = `완료!`;
+            }
+        }
+
+        // Step 1 처리: 붙여넣은 데이터 파싱
+        function processStep1() {
+            const rawText = document.getElementById('pasteArea').value.trim();
+            if(!rawText) { alert("데이터를 붙여넣어 주세요."); return; }
+
+            // TSV(탭 분리) 형식 파싱. 빈 줄 제외.
+            batchData.rawRows = rawText.split('\n').map(row => row.split('\t')).filter(row => row.join('').trim() !== '');
+            
+            if(batchData.rawRows.length < 2) {
+                alert("제목 행과 데이터 행이 최소 1줄 이상 필요합니다."); return;
+            }
+
+            batchData.headerIndex = -1; // 초기화
+            renderTableStep2();
+            goToBatchStep(2);
+        }
+
+        // Step 2 처리: 제목행 렌더링 및 이벤트
+        function renderTableStep2() {
+            const container = document.getElementById('tableContainer2');
+            let html = `<table><tbody>`;
+            // 미리보기용으로 최대 10줄만 렌더링
+            const previewRows = batchData.rawRows.slice(0, 10); 
+            previewRows.forEach((row, rIdx) => {
+                let isSelected = batchData.headerIndex === rIdx;
+                let trClass = isSelected ? 'row-selected' : 'row-hover';
+                html += `<tr class="${trClass}" onclick="selectHeaderRow(${rIdx})">`;
+                row.forEach(cell => { html += `<td>${cell||''}</td>`; });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+            if(batchData.rawRows.length > 10) html += `<p class="p-2 text-center text-gray-500 text-xs">... 이후 데이터 생략 ...</p>`;
+            
+            container.innerHTML = html;
+            
+            const btn = document.getElementById('btnStep2Next');
+            if(batchData.headerIndex !== -1) {
+                btn.disabled = false;
+                btn.classList.replace('bg-gray-400', 'bg-blue-600');
+                btn.classList.add('hover:bg-blue-700');
+            } else {
+                btn.disabled = true;
+                btn.classList.replace('bg-blue-600', 'bg-gray-400');
+                btn.classList.remove('hover:bg-blue-700');
+            }
+        }
+
+        function selectHeaderRow(idx) {
+            batchData.headerIndex = idx;
+            renderTableStep2(); // 리렌더링하여 선택 스타일 적용
+        }
+
+        function processStep2() {
+            batchData.headers = batchData.rawRows[batchData.headerIndex];
+            // 선택한 헤더행 아래부터 데이터로 간주
+            batchData.dataRows = batchData.rawRows.slice(batchData.headerIndex + 1);
+            
+            resetStep3Cols(); // Step3 상태 초기화
+            renderTableStep3();
+            goToBatchStep(3);
+        }
+
+        // Step 3 처리: 필수열 (이름/금액) 렌더링 및 이벤트
+        function resetStep3Cols() {
+            batchData.colName = -1;
+            batchData.colAmount = -1;
+            updateStep3Status();
+            renderTableStep3(); // 재렌더링
+        }
+
+        function updateStep3Status() {
+            const elName = document.getElementById('statusName');
+            const elAmt = document.getElementById('statusAmount');
+            const btn = document.getElementById('btnStep3Next');
+
+            if(batchData.colName !== -1) {
+                elName.innerHTML = `이름: <strong class="text-blue-600">${batchData.headers[batchData.colName]}</strong>`;
+                elName.className = "px-3 py-1 bg-blue-100 rounded text-blue-800";
+            } else {
+                elName.innerText = "이름: 미선택";
+                elName.className = "px-3 py-1 bg-gray-100 rounded text-gray-500";
+            }
+
+            if(batchData.colAmount !== -1) {
+                elAmt.innerHTML = `금액: <strong class="text-green-600">${batchData.headers[batchData.colAmount]}</strong>`;
+                elAmt.className = "px-3 py-1 bg-green-100 rounded text-green-800";
+            } else {
+                elAmt.innerText = "금액: 미선택";
+                elAmt.className = "px-3 py-1 bg-gray-100 rounded text-gray-500";
+            }
+
+            // 둘 다 선택되어야 다음 진행 가능
+            if(batchData.colName !== -1 && batchData.colAmount !== -1) {
+                btn.disabled = false;
+                btn.classList.replace('bg-gray-400', 'bg-blue-600');
+                btn.classList.add('hover:bg-blue-700');
+            } else {
+                btn.disabled = true;
+                btn.classList.replace('bg-blue-600', 'bg-gray-400');
+                btn.classList.remove('hover:bg-blue-700');
+            }
+        }
+
+        function renderTableStep3() {
+            const container = document.getElementById('tableContainer3');
+            let html = `<table><thead><tr>`;
+            
+            batchData.headers.forEach((th, cIdx) => {
+                let bgClass = "col-hover";
+                if(batchData.colName === cIdx) bgClass = "col-selected-name";
+                else if(batchData.colAmount === cIdx) bgClass = "col-selected-amount";
+                
+                html += `<th class="${bgClass} cursor-pointer" onclick="selectColStep3(${cIdx})">${th || '(빈 제목)'}</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+            
+            const previewRows = batchData.dataRows.slice(0, 3); // 3줄만 미리보기
+            previewRows.forEach(row => {
+                html += `<tr>`;
+                batchData.headers.forEach((_, cIdx) => {
+                    let bgClass = "";
+                    if(batchData.colName === cIdx) bgClass = "col-selected-name";
+                    else if(batchData.colAmount === cIdx) bgClass = "col-selected-amount";
+                    html += `<td class="${bgClass}">${row[cIdx] || ''}</td>`;
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        function selectColStep3(cIdx) {
+            // 이미 선택된 열 클릭 시 무시
+            if(batchData.colName === cIdx || batchData.colAmount === cIdx) return;
+
+            if(batchData.colName === -1) {
+                batchData.colName = cIdx;
+            } else if (batchData.colAmount === -1) {
+                batchData.colAmount = cIdx;
+            }
+            updateStep3Status();
+            renderTableStep3();
+        }
+
+        function processStep3() {
+            batchData.colExtras = []; // 추가열 초기화
+            renderTableStep4();
+            goToBatchStep(4);
+        }
+
+        // Step 4 처리: 추가 선택열
+        function renderTableStep4() {
+            const container = document.getElementById('tableContainer4');
+            let html = `<table><thead><tr>`;
+            
+            batchData.headers.forEach((th, cIdx) => {
+                // 이미 필수열로 선택된 것은 비활성화 느낌
+                if(cIdx === batchData.colName || cIdx === batchData.colAmount) {
+                    html += `<th class="bg-gray-200 text-gray-400 cursor-not-allowed" title="필수열로 지정됨">${th}</th>`;
+                } else {
+                    let bgClass = batchData.colExtras.includes(cIdx) ? "col-selected-extra border-blue-400" : "col-hover";
+                    html += `<th class="${bgClass} cursor-pointer" onclick="toggleColStep4(${cIdx})">${th}</th>`;
+                }
+            });
+            html += `</tr></thead><tbody>`;
+            
+            const previewRows = batchData.dataRows.slice(0, 3);
+            previewRows.forEach(row => {
+                html += `<tr>`;
+                batchData.headers.forEach((_, cIdx) => {
+                    if(cIdx === batchData.colName || cIdx === batchData.colAmount) {
+                        html += `<td class="bg-gray-100 text-gray-400">${row[cIdx] || ''}</td>`;
+                    } else {
+                        let bgClass = batchData.colExtras.includes(cIdx) ? "col-selected-extra" : "";
+                        html += `<td class="${bgClass}">${row[cIdx] || ''}</td>`;
+                    }
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+            
+            const btn = document.getElementById('btnStep4Next');
+            if(batchData.colExtras.length > 0) {
+                btn.innerText = "계산 실행하기 →";
+            } else {
+                btn.innerText = "선택 안함(바로 계산) →";
+            }
+        }
+
+        function toggleColStep4(cIdx) {
+            const idx = batchData.colExtras.indexOf(cIdx);
+            if(idx > -1) batchData.colExtras.splice(idx, 1);
+            else batchData.colExtras.push(cIdx);
+            renderTableStep4();
+        }
+
+        function processStep4() {
+            generateFinalResults();
+            goToBatchStep(5);
+        }
+
+        // Step 5 처리: 최종 계산 및 렌더링
+        function generateFinalResults() {
+            const container = document.getElementById('tableContainer5');
+            let html = `<table id="finalDataTable"><thead><tr>`;
+            
+            // 헤더 구성
+            html += `<th>이름</th>`;
+            batchData.colExtras.forEach(cIdx => { html += `<th>${batchData.headers[cIdx]}</th>`; });
+            html += `<th>세전 역산액</th><th>사업소득세(3%)</th><th>지방소득세(0.3%)</th><th>실지급액(세후)</th>`;
+            html += `</tr></thead><tbody>`;
+
+            batchData.dataRows.forEach(row => {
+                let name = (row[batchData.colName] || '').trim();
+                let amountStr = (row[batchData.colAmount] || '').replace(/[^0-9]/g, '');
+                let amount = parseInt(amountStr, 10);
+                
+                // 이름이 비어있거나 금액이 유효하지 않은(없는) 행은 무시하고 건너뜀
+                if (!name || isNaN(amount) || amount <= 0) {
+                    return; 
+                }
+                
+                let trHtml = `<tr><td>${name}</td>`;
+                batchData.colExtras.forEach(cIdx => { trHtml += `<td>${row[cIdx] || ''}</td>`; });
+
+                let res = calculateReverseTax(amount);
+                if(res) {
+                    trHtml += `<td class="font-bold text-blue-700">${res.preTax.toLocaleString('ko-KR')}</td>`;
+                    trHtml += `<td>${res.tax1.toLocaleString('ko-KR')}</td>`;
+                    trHtml += `<td>${res.tax2.toLocaleString('ko-KR')}</td>`;
+                    trHtml += `<td>${res.postTax.toLocaleString('ko-KR')}</td>`;
+                } else {
+                    trHtml += `<td colspan="4" class="text-red-500 text-sm">계산 실패</td>`;
+                }
+                trHtml += `</tr>`;
+                
+                html += trHtml;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        // 결과 클립보드 복사 기능
+        function copyResultTable() {
+            const table = document.getElementById('finalDataTable');
+            let text = "";
+            for(let i=0; i<table.rows.length; i++) {
+                let rowText = [];
+                for(let j=0; j<table.rows[i].cells.length; j++) {
+                    // 숫자 포맷용 콤마를 엑셀 복사를 위해 제거하려면 여기서 처리할 수 있으나, 
+                    // 엑셀은 콤마 있는 숫자도 잘 인식하므로 그대로 둡니다.
+                    rowText.push(table.rows[i].cells[j].innerText);
+                }
+                text += rowText.join('\t') + '\n';
+            }
+            
+            // textarea 트릭을 사용하여 복사
+            const tempElem = document.createElement('textarea');
+            tempElem.value = text;
+            document.body.appendChild(tempElem);
+            tempElem.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempElem);
+            
+            alert("엑셀 호환 표 형식이 복사되었습니다.\n엑셀에 붙여넣기(Ctrl+V) 하세요!");
+        }
+        function generateFinalResults() {
+            const container = document.getElementById('tableContainer5');
+            buildFinalResultsData();
+
+            if (batchData.finalResults.length === 0) {
+                container.innerHTML = `<div class="p-6 text-center text-sm text-gray-500">\uACC4\uC0B0 \uAC00\uB2A5\uD55C \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC774\uB984\uACFC \uC138\uD6C4 \uAE08\uC561 \uC5F4\uC744 \uB2E4\uC2DC \uD655\uC778\uD574\uC8FC\uC138\uC694.</div>`;
+                return;
+            }
+
+            const columns = getFinalTableColumns();
+            let html = `<table id="finalDataTable"><thead><tr>`;
+
+            columns.forEach(col => {
+                html += `<th>${escapeHtml(col.label)}</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+
+            batchData.finalResults.forEach(item => {
+                html += `<tr>`;
+                columns.forEach(col => {
+                    const value = item[col.key];
+                    const cellText = col.numeric ? formatNumber(value) : escapeHtml(value);
+                    const cellClass = col.key === 'preTax' ? ' class="font-bold text-blue-700"' : '';
+                    html += `<td${cellClass}>${cellText}</td>`;
+                });
+                html += `</tr>`;
+            });
+
+            html += `</tbody><tfoot><tr class="summary-row">`;
+            columns.forEach((col, index) => {
+                let value = '';
+                if (index === 0) {
+                    value = `\uD569\uACC4 (${formatNumber(batchData.summary.count)}\uAC74)`;
+                } else if (col.numeric) {
+                    value = formatNumber(batchData.summary[col.key]);
+                }
+                html += `<td>${escapeHtml(value)}</td>`;
+            });
+            html += `</tr></tfoot></table>`;
+            container.innerHTML = html;
+        }
+
+        function copyResultTable() {
+            if (!batchData.finalResults.length) {
+                alert("\uBA3C\uC800 \uC77C\uAD04 \uACC4\uC0B0 \uACB0\uACFC\uB97C \uC0DD\uC131\uD574\uC8FC\uC138\uC694.");
+                return;
+            }
+
+            const columns = getFinalTableColumns();
+            let text = "";
+            text += columns.map(col => col.label).join('\t') + '\n';
+
+            batchData.finalResults.forEach(item => {
+                const rowText = columns.map(col => col.numeric ? formatNumber(item[col.key]) : item[col.key]);
+                text += rowText.join('\t') + '\n';
+            });
+
+            const summaryRow = columns.map((col, index) => {
+                if (index === 0) return `\uD569\uACC4 (${formatNumber(batchData.summary.count)}\uAC74)`;
+                return col.numeric ? formatNumber(batchData.summary[col.key]) : '';
+            });
+            text += summaryRow.join('\t') + '\n';
+
+            const tempElem = document.createElement('textarea');
+            tempElem.value = text;
+            document.body.appendChild(tempElem);
+            tempElem.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempElem);
+
+            alert("\uC5D1\uC140 \uBD99\uC5EC\uB123\uAE30\uC6A9 \uD45C \uD615\uC2DD\uC73C\uB85C \uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4.\n\uC5D1\uC140\uC5D0\uC11C \uBD99\uC5EC\uB123\uAE30(Ctrl+V) \uD558\uC138\uC694.");
+        }
+
+        async function downloadResultExcel() {
+            if (!batchData.finalResults.length) {
+                alert("\uBA3C\uC800 \uC77C\uAD04 \uACC4\uC0B0 \uACB0\uACFC\uB97C \uC0DD\uC131\uD574\uC8FC\uC138\uC694.");
+                return;
+            }
+
+            if (typeof ExcelJS === 'undefined') {
+                alert("\uC5D1\uC140 \uB77C\uC774\uBE0C\uB7EC\uB9AC\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC778\uD130\uB137 \uC5F0\uACB0 \uC0C1\uD0DC\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.");
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            workbook.creator = 'Codex';
+            workbook.created = new Date();
+
+            const worksheet = workbook.addWorksheet('\uC0AC\uC5C5\uC18C\uB4DD \uC5ED\uC0B0\uACB0\uACFC');
+            const columns = getFinalTableColumns();
+            const headerLabels = columns.map(col => col.label);
+
+            worksheet.addRow(['\uC0AC\uC5C5\uC18C\uB4DD 3.3% \uC5ED\uC0B0 \uACC4\uC0B0 \uACB0\uACFC']);
+            worksheet.mergeCells(1, 1, 1, columns.length);
+            worksheet.getCell(1, 1).font = { name: 'Malgun Gothic', size: 16, bold: true, color: { argb: 'FF1D4ED8' } };
+            worksheet.getCell(1, 1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            worksheet.addRow([`\uC0DD\uC131\uC77C\uC2DC: ${new Date().toLocaleString('ko-KR')}`]);
+            worksheet.mergeCells(2, 1, 2, columns.length);
+            worksheet.getCell(2, 1).font = { name: 'Malgun Gothic', size: 10, color: { argb: 'FF6B7280' } };
+            worksheet.getCell(2, 1).alignment = { horizontal: 'right' };
+
+            worksheet.addRow(headerLabels);
+            const headerRow = worksheet.getRow(3);
+            headerRow.height = 22;
+
+            headerRow.eachCell(cell => {
+                cell.font = { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+                };
+            });
+
+            batchData.finalResults.forEach(item => {
+                const values = columns.map(col => col.numeric ? Number(item[col.key] || 0) : String(item[col.key] || ''));
+                worksheet.addRow(values);
+            });
+
+            const summaryValues = columns.map((col, index) => {
+                if (index === 0) return `\uD569\uACC4 (${formatNumber(batchData.summary.count)}\uAC74)`;
+                return col.numeric ? Number(batchData.summary[col.key] || 0) : '';
+            });
+            worksheet.addRow(summaryValues);
+
+            worksheet.columns = columns.map(col => ({
+                width: col.numeric ? 16 : 18
+            }));
+
+            const startDataRow = 4;
+            const lastRowNumber = worksheet.rowCount;
+
+            for (let rowNumber = startDataRow; rowNumber <= lastRowNumber; rowNumber++) {
+                const row = worksheet.getRow(rowNumber);
+                const isSummary = rowNumber === lastRowNumber;
+
+                row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    const isNumeric = columns[colNumber - 1] && columns[colNumber - 1].numeric;
+                    cell.font = {
+                        name: 'Malgun Gothic',
+                        bold: isSummary
+                    };
+                    cell.alignment = {
+                        vertical: 'middle',
+                        horizontal: isNumeric ? 'right' : 'left'
+                    };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+                    };
+
+                    if (isNumeric) {
+                        cell.numFmt = '#,##0';
+                    }
+
+                    if (isSummary) {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+                        cell.font = {
+                            name: 'Malgun Gothic',
+                            bold: true,
+                            color: { argb: 'FF1E3A8A' }
+                        };
+                    }
+                });
+            }
+
+            worksheet.views = [{ state: 'frozen', ySplit: 3 }];
+            worksheet.autoFilter = {
+                from: { row: 3, column: 1 },
+                to: { row: lastRowNumber - 1, column: columns.length }
+            };
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob(
+                [buffer],
+                { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+            );
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const today = new Date().toISOString().slice(0, 10);
+
+            link.href = url;
+            link.download = `\uC0AC\uC5C5\uC18C\uB4DD\uC5ED\uC0B0\uACB0\uACFC_${today}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        let directInputResults = [];
+        let directInputSummary = null;
+
+        function initializeDirectInputView() {
+            const view = document.getElementById('view-single');
+            if (!view) return;
+
+            view.innerHTML = `
+                <button onclick="switchView('menu')" class="text-gray-500 hover:text-gray-800 text-sm mb-6 flex items-center gap-1">
+                    \u2190 \uCD08\uAE30 \uBA54\uB274\uB85C
+                </button>
+                <div class="mb-4">
+                    <h2 class="text-xl font-bold text-gray-800 mb-2">\uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0</h2>
+                    <p class="text-sm text-gray-500">\uC774\uB984\uACFC \uC138\uD6C4 \uC9C0\uAE09\uC561\uC744 \uC9C1\uC811 \uC785\uB825\uD55C \uB4A4 \uACC4\uC0B0\uD558\uBA74, \uACB0\uACFC\uB97C \uD45C\uB85C \uD655\uC778\uD558\uACE0 \uBCF5\uC0AC\uD558\uAC70\uB098 \uC5D1\uC140\uB85C \uB2E4\uC6B4\uB85C\uB4DC\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.</p>
+                </div>
+                <div class="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)] items-start">
+                <div class="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <p class="text-sm font-semibold text-gray-700">\uC785\uB825 \uC778\uC6D0</p>
+                        <button id="addPersonBtn" type="button" class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-200 transition">+ \uC778\uC6D0 \uCD94\uAC00</button>
+                    </div>
+                    <div id="directInputRows" class="space-y-3"></div>
+                    <button id="directCalcBtn" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-base transition duration-200 shadow-md">
+                        \uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0\uD558\uAE30
+                    </button>
+                </div>
+                <div id="singleResultArea" class="hidden bg-gray-50 border border-gray-100 rounded-2xl p-4 min-w-0">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-500 mb-1">\uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0 \uACB0\uACFC</p>
+                            <p class="text-xs text-gray-400">\uD45C \uBCF5\uC0AC\uC640 \uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC\uB97C \uBC14\uB85C \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.</p>
+                        </div>
+                        <div class="text-sm font-semibold text-blue-700" id="directResultCount">0\uAC74</div>
+                    </div>
+                    <div id="directResultTableContainer" class="table-container mb-3 text-sm text-gray-800"></div>
+                    <div class="flex gap-2">
+                        <button id="directCopyBtn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition">\uD45C \uC804\uCCB4 \uBCF5\uC0AC\uD558\uAE30</button>
+                        <button id="directExcelBtn" class="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition">\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC</button>
+                    </div>
+                </div>
+                </div>
+            `;
+
+            document.getElementById('addPersonBtn').addEventListener('click', () => addDirectInputRow());
+            document.getElementById('directCalcBtn').addEventListener('click', executeDirectCalc);
+            document.getElementById('directCopyBtn').addEventListener('click', copyDirectResultTable);
+            document.getElementById('directExcelBtn').addEventListener('click', downloadDirectResultExcel);
+
+            addDirectInputRow();
+        }
+
+        function addDirectInputRow(name = '', amount = '') {
+            const container = document.getElementById('directInputRows');
+            if (!container) return;
+
+            const row = document.createElement('div');
+            row.className = 'grid grid-cols-12 gap-2 items-center';
+            row.innerHTML = `
+                <input type="text" class="direct-name col-span-4 w-full px-3 py-3 border border-gray-300 rounded-xl focus:border-blue-500 focus:ring focus:ring-blue-200 outline-none" placeholder="\uC774\uB984" value="${escapeHtml(name)}">
+                <div class="col-span-6 relative">
+                    <input type="text" class="direct-amount w-full px-3 py-3 pr-10 border border-gray-300 rounded-xl text-right focus:border-blue-500 focus:ring focus:ring-blue-200 outline-none" placeholder="\uC138\uD6C4 \uC9C0\uAE09\uC561" value="${escapeHtml(amount)}">
+                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">\uC6D0</span>
+                </div>
+                <button type="button" class="direct-remove col-span-2 px-3 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl text-sm font-bold transition">\uC0AD\uC81C</button>
+            `;
+
+            const amountInput = row.querySelector('.direct-amount');
+            amountInput.addEventListener('input', function(e) {
+                let value = e.target.value.replace(/[^0-9]/g, '');
+                e.target.value = value ? parseInt(value, 10).toLocaleString('ko-KR') : '';
+            });
+
+            row.querySelector('.direct-remove').addEventListener('click', () => {
+                if (container.children.length === 1) {
+                    row.querySelector('.direct-name').value = '';
+                    amountInput.value = '';
+                    return;
+                }
+                row.remove();
+            });
+
+            container.appendChild(row);
+        }
+
+        function getDirectInputColumns() {
+            return [
+                { key: 'name', label: '\uC774\uB984', numeric: false },
+                { key: 'preTax', label: '\uC138\uC804 \uC5ED\uC0B0\uC561', numeric: true },
+                { key: 'tax1', label: '\uC0AC\uC5C5\uC18C\uB4DD\uC138(3%)', numeric: true },
+                { key: 'tax2', label: '\uC9C0\uBC29\uC18C\uB4DD\uC138(0.3%)', numeric: true },
+                { key: 'postTax', label: '\uC2E4\uC9C0\uAE09\uC561(\uC138\uD6C4)', numeric: true }
+            ];
+        }
+
+        function executeDirectCalc() {
+            const rows = Array.from(document.querySelectorAll('#directInputRows > div'));
+            const results = [];
+            const summary = { preTax: 0, tax1: 0, tax2: 0, postTax: 0, count: 0 };
+
+            rows.forEach(row => {
+                const name = row.querySelector('.direct-name').value.trim();
+                const amountText = row.querySelector('.direct-amount').value.replace(/,/g, '').trim();
+                const amount = parseInt(amountText, 10);
+
+                if (!name && !amountText) return;
+                if (!name || isNaN(amount) || amount <= 0) return;
+
+                const result = calculateReverseTax(amount);
+                if (!result) return;
+
+                const item = {
+                    name,
+                    preTax: result.preTax,
+                    tax1: result.tax1,
+                    tax2: result.tax2,
+                    postTax: result.postTax
+                };
+
+                results.push(item);
+                summary.preTax += item.preTax;
+                summary.tax1 += item.tax1;
+                summary.tax2 += item.tax2;
+                summary.postTax += item.postTax;
+                summary.count += 1;
+            });
+
+            if (!results.length) {
+                alert('\uC774\uB984\uACFC \uC138\uD6C4 \uC9C0\uAE09\uC561\uC744 \uCD5C\uC18C 1\uBA85 \uC774\uC0C1 \uC62C\uBC14\uB974\uAC8C \uC785\uB825\uD574\uC8FC\uC138\uC694.');
+                return;
+            }
+
+            directInputResults = results;
+            directInputSummary = summary;
+            renderDirectResultTable();
+        }
+
+        function renderDirectResultTable() {
+            const container = document.getElementById('directResultTableContainer');
+            const area = document.getElementById('singleResultArea');
+            const countEl = document.getElementById('directResultCount');
+            const columns = getDirectInputColumns();
+
+            let html = `<table id="directResultTable"><thead><tr>`;
+            columns.forEach(col => {
+                html += `<th>${escapeHtml(col.label)}</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+
+            directInputResults.forEach(item => {
+                html += `<tr>`;
+                columns.forEach(col => {
+                    const value = col.numeric ? formatNumber(item[col.key]) : escapeHtml(item[col.key]);
+                    const cellClass = col.key === 'preTax' ? ' class="font-bold text-blue-700"' : '';
+                    html += `<td${cellClass}>${value}</td>`;
+                });
+                html += `</tr>`;
+            });
+
+            html += `</tbody><tfoot><tr class="summary-row">`;
+            columns.forEach((col, index) => {
+                let value = '';
+                if (index === 0) value = `\uD569\uACC4 (${formatNumber(directInputSummary.count)}\uAC74)`;
+                else if (col.numeric) value = formatNumber(directInputSummary[col.key]);
+                html += `<td>${escapeHtml(value)}</td>`;
+            });
+            html += `</tr></tfoot></table>`;
+
+            container.innerHTML = html;
+            countEl.innerText = `${formatNumber(directInputSummary.count)}\uAC74`;
+            area.classList.remove('hidden');
+            updateDirectViewLayout();
+        }
+
+        function copyDirectResultTable() {
+            if (!directInputResults.length) {
+                alert('\uBA3C\uC800 \uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0 \uACB0\uACFC\uB97C \uC0DD\uC131\uD574\uC8FC\uC138\uC694.');
+                return;
+            }
+
+            const columns = getDirectInputColumns();
+            let text = columns.map(col => col.label).join('\t') + '\n';
+
+            directInputResults.forEach(item => {
+                text += columns.map(col => col.numeric ? formatNumber(item[col.key]) : item[col.key]).join('\t') + '\n';
+            });
+
+            text += columns.map((col, index) => {
+                if (index === 0) return `\uD569\uACC4 (${formatNumber(directInputSummary.count)}\uAC74)`;
+                return col.numeric ? formatNumber(directInputSummary[col.key]) : '';
+            }).join('\t') + '\n';
+
+            const tempElem = document.createElement('textarea');
+            tempElem.value = text;
+            document.body.appendChild(tempElem);
+            tempElem.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempElem);
+
+            alert('\uC5D1\uC140 \uBD99\uC5EC\uB123\uAE30\uC6A9 \uD45C \uD615\uC2DD\uC73C\uB85C \uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4.\n\uC5D1\uC140\uC5D0\uC11C \uBD99\uC5EC\uB123\uAE30(Ctrl+V) \uD558\uC138\uC694.');
+        }
+
+        async function downloadDirectResultExcel() {
+            if (!directInputResults.length) {
+                alert('\uBA3C\uC800 \uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0 \uACB0\uACFC\uB97C \uC0DD\uC131\uD574\uC8FC\uC138\uC694.');
+                return;
+            }
+
+            if (typeof ExcelJS === 'undefined') {
+                alert('\uC5D1\uC140 \uB77C\uC774\uBE0C\uB7EC\uB9AC\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC778\uD130\uB137 \uC5F0\uACB0 \uC0C1\uD0DC\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.');
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            workbook.creator = 'Codex';
+            workbook.created = new Date();
+
+            const worksheet = workbook.addWorksheet('\uC9C1\uC811\uC785\uB825 \uACC4\uC0B0\uACB0\uACFC');
+            const columns = getDirectInputColumns();
+
+            worksheet.addRow(['\uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0 \uACB0\uACFC']);
+            worksheet.mergeCells(1, 1, 1, columns.length);
+            worksheet.getCell(1, 1).font = { name: 'Malgun Gothic', size: 16, bold: true, color: { argb: 'FF1D4ED8' } };
+            worksheet.getCell(1, 1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            worksheet.addRow([`\uC0DD\uC131\uC77C\uC2DC: ${new Date().toLocaleString('ko-KR')}`]);
+            worksheet.mergeCells(2, 1, 2, columns.length);
+            worksheet.getCell(2, 1).font = { name: 'Malgun Gothic', size: 10, color: { argb: 'FF6B7280' } };
+            worksheet.getCell(2, 1).alignment = { horizontal: 'right' };
+
+            worksheet.addRow(columns.map(col => col.label));
+            worksheet.getRow(3).eachCell(cell => {
+                cell.font = { name: 'Malgun Gothic', bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+                    right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+                };
+            });
+
+            directInputResults.forEach(item => {
+                worksheet.addRow(columns.map(col => col.numeric ? Number(item[col.key] || 0) : String(item[col.key] || '')));
+            });
+
+            worksheet.addRow(columns.map((col, index) => {
+                if (index === 0) return `\uD569\uACC4 (${formatNumber(directInputSummary.count)}\uAC74)`;
+                return col.numeric ? Number(directInputSummary[col.key] || 0) : '';
+            }));
+
+            worksheet.columns = columns.map(col => ({ width: col.numeric ? 16 : 18 }));
+            const lastRowNumber = worksheet.rowCount;
+
+            for (let rowNumber = 4; rowNumber <= lastRowNumber; rowNumber++) {
+                const row = worksheet.getRow(rowNumber);
+                const isSummary = rowNumber === lastRowNumber;
+
+                row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    const isNumeric = columns[colNumber - 1] && columns[colNumber - 1].numeric;
+                    cell.font = { name: 'Malgun Gothic', bold: isSummary };
+                    cell.alignment = { vertical: 'middle', horizontal: isNumeric ? 'right' : 'left' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+                    };
+                    if (isNumeric) cell.numFmt = '#,##0';
+                    if (isSummary) {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+                        cell.font = { name: 'Malgun Gothic', bold: true, color: { argb: 'FF1E3A8A' } };
+                    }
+                });
+            }
+
+            worksheet.views = [{ state: 'frozen', ySplit: 3 }];
+            worksheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: lastRowNumber - 1, column: columns.length } };
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const today = new Date().toISOString().slice(0, 10);
+
+            link.href = url;
+            link.download = `\uC9C1\uC811\uC785\uB825\uACC4\uC0B0\uACB0\uACFC_${today}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function updateDirectViewLayout() {
+            const isSingleVisible = !document.getElementById('view-single').classList.contains('hidden');
+            if (!isSingleVisible) return;
+
+            const table = document.getElementById('directResultTable');
+            const hasResults = !!table && !!directInputResults.length;
+            const baseWidth = 1180;
+            const tableWidth = hasResults ? table.scrollWidth + 520 : baseWidth;
+            const viewportLimit = Math.max(960, window.innerWidth - 48);
+            const targetWidth = Math.min(Math.max(baseWidth, tableWidth), viewportLimit);
+
+            appContainer.style.maxWidth = `${targetWidth}px`;
+            document.body.classList.remove('items-center');
+            document.body.classList.add('items-start');
+        }
+
+        function switchView(viewId) {
+            const contentArea = document.getElementById('contentArea');
+            document.getElementById('view-menu').classList.add('hidden');
+            document.getElementById('view-single').classList.add('hidden');
+            document.getElementById('view-batch').classList.add('hidden');
+
+            appContainer.classList.remove('max-w-md', 'max-w-4xl', 'max-w-5xl');
+            appContainer.style.maxWidth = '';
+            appContainer.classList.add('max-h-[90vh]');
+            contentArea.classList.add('overflow-y-auto');
+            contentArea.classList.remove('overflow-visible');
+            document.body.classList.remove('items-start');
+            document.body.classList.add('items-center');
+
+            if (viewId === 'batch') {
+                appContainer.classList.add('max-w-4xl');
+                goToBatchStep(1);
+                document.getElementById('headerTitle').innerText = '\uC77C\uAD04 \uC5ED\uC0B0 \uACC4\uC0B0\uAE30';
+                document.getElementById('headerSubtitle').innerText = '\uC5D1\uC140 \uB370\uC774\uD130\uB97C \uD55C \uBC88\uC5D0 \uBCC0\uD658\uD569\uB2C8\uB2E4';
+            } else {
+                if (viewId === 'single') {
+                    appContainer.classList.add('max-w-5xl');
+                    appContainer.classList.remove('max-h-[90vh]');
+                    contentArea.classList.remove('overflow-y-auto');
+                    contentArea.classList.add('overflow-visible');
+                    document.getElementById('headerTitle').innerText = '\uC9C1\uC811 \uC785\uB825 \uACC4\uC0B0\uAE30';
+                    document.getElementById('headerSubtitle').innerText = '\uC778\uC6D0\uC744 \uCD94\uAC00\uD558\uBA70 \uD45C \uD615\uD0DC\uB85C \uACC4\uC0B0\uD569\uB2C8\uB2E4';
+                    updateDirectViewLayout();
+                } else if (viewId === 'menu') {
+                    appContainer.classList.add('max-w-md');
+                    document.getElementById('headerTitle').innerText = '\uC0AC\uC5C5\uC18C\uB4DD \uC5ED\uC0B0 \uACC4\uC0B0\uAE30';
+                    document.getElementById('headerSubtitle').innerText = '\uAC04\uB2E8\uD55C \uC785\uB825\uACFC \uC5D1\uC140 \uC5F0\uB3D9\uC744 \uBAA8\uB450 \uC9C0\uC6D0\uD569\uB2C8\uB2E4';
+                } else {
+                    appContainer.classList.add('max-w-md');
+                }
+            }
+
+            document.getElementById(`view-${viewId}`).classList.remove('hidden');
+        }
+
+        initializeDirectInputView();
+        window.addEventListener('resize', updateDirectViewLayout);
+    </script>
+</body>
+</html>
