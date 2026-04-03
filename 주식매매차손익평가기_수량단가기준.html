@@ -1,0 +1,3210 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>주식 매매차손익 평가기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script
+    src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
+    onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.min.js'">
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=SUIT:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #12253a;
+      --line: #d7e2f0;
+      --accent: #0f766e;
+      --buy-soft: #fee2e2;
+      --sale-soft: #dbeafe;
+      --gain-soft: #fef3c7;
+      --balance-soft: #dcfce7;
+    }
+
+    body {
+      font-family: 'SUIT', sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(20, 184, 166, 0.10), transparent 34%),
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.10), transparent 28%),
+        linear-gradient(180deg, #f8fbff 0%, #eef4fa 100%);
+      color: var(--ink);
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(215, 226, 240, 0.9);
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+      backdrop-filter: blur(8px);
+    }
+
+    .preview-table {
+      border-collapse: collapse;
+      width: max-content;
+      min-width: 100%;
+      font-size: 0.85rem;
+    }
+
+    .preview-table td,
+    .preview-table th {
+      border: 1px solid var(--line);
+      padding: 0.42rem 0.55rem;
+      white-space: nowrap;
+      min-width: 88px;
+      background: white;
+    }
+
+    .preview-table th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 1;
+      font-weight: 700;
+    }
+
+    .selectable:hover {
+      background: #ecfeff !important;
+      cursor: pointer;
+    }
+
+    .selected-cell {
+      background: #99f6e4 !important;
+      box-shadow: inset 0 0 0 2px #0f766e;
+    }
+
+    .selected-row {
+      background: #fde68a !important;
+    }
+
+    .selected-col {
+      background: #dbeafe !important;
+    }
+
+    .mapping-pill {
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+    }
+
+    .sheet-tab.active {
+      color: white;
+      background: linear-gradient(135deg, #0f766e, #0f4c81);
+      border-color: transparent;
+    }
+
+    .sheet-tab {
+      transition: all 0.2s ease;
+    }
+
+    .sheet-tab:hover {
+      transform: translateY(-1px);
+    }
+
+    .mini-label {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #0f766e;
+    }
+
+    .tutorial-card {
+      background:
+        linear-gradient(135deg, rgba(15, 118, 110, 0.06), rgba(59, 130, 246, 0.05)),
+        #ffffff;
+      border: 1px solid rgba(191, 219, 254, 0.9);
+    }
+
+    .tutorial-step {
+      border: 1px solid #dbeafe;
+      background: rgba(248, 250, 252, 0.95);
+    }
+  </style>
+</head>
+<body class="min-h-screen py-8 px-4">
+  <div class="mx-auto max-w-7xl space-y-6">
+    <section class="card rounded-3xl p-6 md:p-8">
+      <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div class="space-y-3">
+          <p class="mini-label">Stock Worksheet Builder</p>
+          <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">주식 매매차손익 평가기</h1>
+          <p class="text-slate-600 max-w-3xl leading-7">
+            엑셀 파일을 업로드한 뒤 주식명 셀, 제목행, 거래일자, 적요, 차변, 대변, 잔액을 선택하면
+            각 시트의 주식명을 읽어 종목별 상세 시트와 일자별 손익집계 시트를 새 엑셀로 만듭니다.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+          <p class="font-semibold">처리 기준</p>
+          <p>차변과 대변은 방향 판단용이며, 거래금액은 적요의 <strong class="font-semibold text-slate-900">수량 × @단가</strong>로 계산합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tutorial-card rounded-3xl p-6 md:p-8 space-y-6">
+      <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div class="space-y-2">
+          <p class="mini-label">Tutorial</p>
+          <h2 class="text-2xl font-extrabold tracking-tight">처음 사용 전 꼭 확인할 내용</h2>
+          <p class="text-slate-600 leading-7">
+            아래 규칙으로 적요를 읽고, 위하고 또는 세무사랑에서 내려받은 엑셀을 기준으로 처리합니다.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+          <p class="font-semibold">대표 인식 예시</p>
+          <p><strong class="font-semibold text-slate-900">테라뷰 / 1288주 / @10120</strong></p>
+        </div>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <article class="tutorial-step rounded-3xl p-5 space-y-3">
+          <p class="text-sm font-bold text-teal-700">적요 인식 규칙</p>
+          <h3 class="text-xl font-bold"><strong>oo주 / @단가</strong> 순서인 행만 인식</h3>
+          <div class="space-y-2 text-sm leading-7 text-slate-700">
+            <p>주식 매수 및 매도 시 적요 안에 <strong class="font-semibold text-slate-900">oo주 / @단가</strong>가 반드시 이 순서로 있어야 합니다.</p>
+            <p><strong class="font-semibold text-slate-900">주식수주</strong> 다음에 <strong class="font-semibold text-slate-900">@단가</strong>가 이어지지 않으면 해당 행은 계산에서 제외합니다.</p>
+            <p>적요를 인식하면 그 행의 매수 및 매도가액은 <strong class="font-semibold text-slate-900">주식수 × @단가</strong>로 계산합니다.</p>
+            <p><strong class="font-semibold text-slate-900">(매매차익)</strong>, <strong class="font-semibold text-slate-900">(수수료)</strong>, <strong class="font-semibold text-slate-900">(제세금)</strong>으로 시작하는 적요는 재업로드 시 중복 계산되지 않도록 무시합니다.</p>
+          </div>
+        </article>
+
+        <article class="tutorial-step rounded-3xl p-5 space-y-3">
+          <p class="text-sm font-bold text-sky-700">미리보기 기준</p>
+          <h3 class="text-xl font-bold">처음 지정할 때는 첫 시트만 대표로 표시</h3>
+          <div class="space-y-2 text-sm leading-7 text-slate-700">
+            <p>거래처 및 일자 등의 형식이 모든 시트에서 동일하다고 보고, 선택 단계에서는 첫 시트만 보여줍니다.</p>
+            <p>화면에는 첫 시트만 보이지만, 선택한 좌표는 전체 시트에 동일하게 적용됩니다.</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="grid gap-4 xl:grid-cols-2">
+        <article class="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-5 space-y-4">
+          <div>
+            <p class="text-sm font-bold text-emerald-700">위하고 사용 시 엑셀 다운로드 방법</p>
+            <h3 class="mt-1 text-xl font-bold">위하고</h3>
+          </div>
+          <ol class="space-y-2 text-sm leading-7 text-slate-700">
+            <li>1. <strong class="font-semibold text-slate-900">거래처원장</strong>으로 이동합니다.</li>
+            <li>2. <strong class="font-semibold text-slate-900">주식 계정과목 입력 후 내용</strong>을 선택합니다.</li>
+            <li>3. <strong class="font-semibold text-slate-900">인쇄</strong>를 누릅니다.</li>
+            <li>4. <strong class="font-semibold text-slate-900">전체내용순백지 출력</strong>을 선택합니다.</li>
+            <li>5. <strong class="font-semibold text-slate-900">엑셀버튼</strong>을 누릅니다.</li>
+            <li>6. <strong class="font-semibold text-slate-900">그룹별 시트 분할 인쇄</strong>로 저장합니다.</li>
+          </ol>
+        </article>
+
+        <article class="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-5 space-y-4">
+          <div>
+            <p class="text-sm font-bold text-indigo-700">세무사랑 사용 시 엑셀 다운로드 방법</p>
+            <h3 class="mt-1 text-xl font-bold">세무사랑</h3>
+          </div>
+          <ol class="space-y-2 text-sm leading-7 text-slate-700">
+            <li>1. <strong class="font-semibold text-slate-900">거래처원장</strong>으로 이동합니다.</li>
+            <li>2. <strong class="font-semibold text-slate-900">주식 계정과목 입력 후 내용</strong>을 선택합니다.</li>
+            <li>3. <strong class="font-semibold text-slate-900">거래처 처음부터 끝까지</strong>를 선택합니다.</li>
+            <li>4. 상단의 <strong class="font-semibold text-slate-900">CF9 일괄출력</strong>을 누릅니다.</li>
+            <li>5. <strong class="font-semibold text-slate-900">엑셀저장</strong>으로 내려받습니다.</li>
+          </ol>
+        </article>
+      </div>
+
+      <div class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+        <p class="font-semibold">사용 파일 기준</p>
+        <p class="mt-1">위의 방식으로 저장한 엑셀을 이 프로그램에 업로드해서 사용합니다.</p>
+      </div>
+    </section>
+
+    <section class="card rounded-3xl p-6 md:p-8 space-y-5">
+      <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 class="text-xl font-bold">1. 파일 업로드</h2>
+          <p class="text-sm text-slate-500 mt-1">XLSX/XLS 파일을 읽고, 형식 지정 단계에서는 첫 시트만 대표 미리보기로 보여줍니다.</p>
+        </div>
+        <div id="status-badge" class="hidden rounded-full px-4 py-2 text-sm font-semibold"></div>
+      </div>
+
+      <label for="file-input" class="block cursor-pointer rounded-3xl border-2 border-dashed border-slate-300 bg-white/70 px-6 py-12 text-center transition hover:border-teal-400 hover:bg-teal-50/50">
+        <div class="space-y-2">
+          <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+            <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+              <path d="M12 16V4m0 0-4 4m4-4 4 4" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M5 17.5A3.5 3.5 0 0 0 8.5 21h7a3.5 3.5 0 0 0 3.5-3.5" stroke-linecap="round"></path>
+            </svg>
+          </div>
+          <p class="text-lg font-semibold">클릭하여 엑셀 파일 업로드</p>
+          <p class="text-sm text-slate-500">업로드 후 미리보기에서 셀과 열을 순서대로 선택합니다.</p>
+        </div>
+        <input id="file-input" type="file" accept=".xlsx,.xls" class="hidden" />
+      </label>
+
+      <div id="file-name" class="text-sm text-slate-500"></div>
+    </section>
+
+    <section id="mapping-section" class="card rounded-3xl p-6 md:p-8 space-y-5 hidden">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div class="space-y-2">
+          <h2 class="text-xl font-bold">2. 기준 위치 선택</h2>
+          <p class="text-sm text-slate-500">대표로 보이는 첫 시트에서 기준 좌표를 선택하면 같은 좌표를 다른 시트에도 적용합니다.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+            <span class="text-sm font-semibold text-slate-700">최종잔액 0인셀</span>
+            <label class="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-sm text-slate-700">
+              <input type="radio" name="ending-zero-filter" value="include" checked class="h-4 w-4 accent-teal-700" />
+              포함
+            </label>
+            <label class="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-sm text-slate-700">
+              <input type="radio" name="ending-zero-filter" value="exclude" class="h-4 w-4 accent-teal-700" />
+              불포함
+            </label>
+          </div>
+          <button id="start-mapping-btn" class="rounded-2xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800">
+            선택 시작
+          </button>
+          <button id="reset-mapping-btn" class="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            선택 초기화
+          </button>
+        </div>
+      </div>
+
+      <div id="mapping-guide" class="hidden rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sky-900">
+        <p id="mapping-prompt" class="font-semibold"></p>
+        <p class="mt-2 text-sm text-sky-800">선택 중에는 미리보기에서 셀을 클릭하세요. 제목행은 행 아무 셀이나 눌러도 됩니다.</p>
+      </div>
+
+      <div id="mapping-summary" class="flex flex-wrap gap-2"></div>
+      <div id="sheet-tabs" class="flex flex-wrap gap-2"></div>
+      <div id="preview-container" class="max-h-[620px] overflow-auto rounded-2xl border border-slate-200 bg-white"></div>
+    </section>
+
+    <section id="config-section" class="card rounded-3xl p-6 md:p-8 space-y-5 hidden">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div class="space-y-2">
+          <h2 class="text-xl font-bold">3. 종목별 기초값 입력</h2>
+          <p class="text-sm text-slate-500">시트별로 읽은 주식명을 확인하고 기초주식수와 기초취득원가를 입력하세요.</p>
+        </div>
+        <button id="build-workbook-btn" class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+          손익 엑셀 만들기
+        </button>
+      </div>
+
+      <div class="overflow-auto rounded-2xl border border-slate-200 bg-white">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-slate-700">
+            <tr>
+              <th class="border-b border-slate-200 px-4 py-3 text-left">원본 시트명</th>
+              <th class="border-b border-slate-200 px-4 py-3 text-left">주식명</th>
+              <th class="border-b border-slate-200 px-4 py-3 text-right">인식 거래행</th>
+              <th class="border-b border-slate-200 px-4 py-3 text-right">기초주식수</th>
+              <th class="border-b border-slate-200 px-4 py-3 text-right">기초취득원가</th>
+              <th class="border-b border-slate-200 px-4 py-3 text-left">메모</th>
+            </tr>
+          </thead>
+          <tbody id="stock-config-body"></tbody>
+        </table>
+      </div>
+
+      <div class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+        <p class="font-semibold">안내</p>
+        <p class="mt-1">기초주식수가 0보다 큰 종목은 정확한 매도손익 계산을 위해 기초취득원가도 함께 입력하는 것이 안전합니다.</p>
+      </div>
+    </section>
+
+    <section id="result-section" class="card rounded-3xl p-6 md:p-8 space-y-5 hidden">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 class="text-xl font-bold">4. 결과 다운로드</h2>
+          <p class="text-sm text-slate-500 mt-1">종목별 상세 시트와 일자별 손익집계 시트가 포함된 엑셀입니다.</p>
+        </div>
+        <a id="download-btn" href="#" class="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+          엑셀 다운로드
+        </a>
+      </div>
+
+      <div id="result-summary" class="grid gap-3 md:grid-cols-3"></div>
+      <div id="result-messages" class="space-y-2"></div>
+    </section>
+
+    <section id="extra-work-section" class="card rounded-3xl p-6 md:p-8 space-y-5 hidden">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 class="text-xl font-bold">5. 추가작업</h2>
+          <p class="text-sm text-slate-500 mt-1">기존 손익 계산 결과는 그대로 두고, 회계프로그램 업로드용 파일을 추가로 만들 수 있습니다.</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <p class="font-semibold">생성 가능</p>
+          <p>손익계산 / 매매차익 업로드 / 평가차익 업로드</p>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
+        <div>
+          <p class="text-sm font-bold text-slate-700">추가작업 여부(매매차익 회계프로그램 업로드)</p>
+          <p class="text-sm text-slate-500 mt-1"><strong class="font-semibold text-slate-700">예</strong>를 선택하면 공통 계정과목과 업로드용 파일 생성 옵션이 열립니다.</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <label class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+            <input type="radio" name="extra-work-yn" value="no" checked class="h-4 w-4 accent-teal-700" />
+            아니오
+          </label>
+          <label class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+            <input type="radio" name="extra-work-yn" value="yes" class="h-4 w-4 accent-teal-700" />
+            예
+          </label>
+        </div>
+      </div>
+
+      <div id="extra-work-panel" class="hidden space-y-5">
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
+          <div>
+            <p class="text-sm font-bold text-slate-700">공통 필수 입력</p>
+            <p class="text-sm text-slate-500 mt-1">회계 업로드 파일에서 사용할 계정과목 코드와 계정과목명을 먼저 입력합니다.</p>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <label class="space-y-2 text-sm">
+              <span class="font-semibold text-slate-700">주식 계정과목코드</span>
+              <input id="stock-account-code" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" placeholder="예: 146000" />
+            </label>
+            <label class="space-y-2 text-sm">
+              <span class="font-semibold text-slate-700">주식 계정과목명</span>
+              <input id="stock-account-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" placeholder="예: 유가증권처분손익대체계정" />
+            </label>
+            <div class="hidden xl:block"></div>
+
+            <label class="space-y-2 text-sm">
+              <span class="font-semibold text-slate-700">처분이익 코드</span>
+              <input id="gain-account-code" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" placeholder="예: 911000" />
+            </label>
+            <label class="space-y-2 text-sm">
+              <span class="font-semibold text-slate-700">처분이익 계정과목명</span>
+              <input id="gain-account-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" placeholder="예: 유가증권처분이익" />
+            </label>
+            <div class="hidden xl:block"></div>
+
+            <label class="space-y-2 text-sm">
+              <span class="font-semibold text-slate-700">처분손실 코드</span>
+              <input id="loss-account-code" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" placeholder="예: 921000" />
+            </label>
+            <label class="space-y-2 text-sm">
+              <span class="font-semibold text-slate-700">처분손실 계정과목명</span>
+              <input id="loss-account-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" placeholder="예: 유가증권처분손실" />
+            </label>
+          </div>
+        </div>
+
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p class="text-sm font-bold text-slate-700">업로드 파일 생성</p>
+              <p class="text-sm text-slate-500 mt-1">버튼을 눌러 업로드 형식별 추가 입력을 진행합니다.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button id="open-semu-form-btn" type="button" class="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700">
+                세무사랑용 업로드파일생성
+              </button>
+              <button id="open-wihago-form-btn" type="button" class="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+                위하고용 업로드파일생성
+              </button>
+            </div>
+          </div>
+
+          <div id="semu-form-panel" class="hidden rounded-3xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-4">
+            <div>
+              <p class="text-sm font-bold text-indigo-700">세무사랑 필수 입력</p>
+              <p class="text-sm text-slate-600 mt-1">회사명과 사업자등록번호는 헤더 셀에, 해당연도는 매매일자의 월/일과 합쳐 <strong class="font-semibold text-slate-900">yyyymmdd</strong>를 만드는 데 사용합니다.</p>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-3">
+              <label class="space-y-2 text-sm">
+                <span class="font-semibold text-slate-700">회사명</span>
+                <input id="semu-company-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100" placeholder="예: 세무법인일신" />
+              </label>
+              <label class="space-y-2 text-sm">
+                <span class="font-semibold text-slate-700">사업자등록번호</span>
+                <input id="semu-business-no" type="text" inputmode="numeric" maxlength="10" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100" placeholder="숫자만 입력" />
+              </label>
+              <label class="space-y-2 text-sm">
+                <span class="font-semibold text-slate-700">해당연도</span>
+                <input id="semu-fiscal-year" type="text" inputmode="numeric" maxlength="4" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100" placeholder="예: 2026" />
+              </label>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button id="generate-semu-btn" type="button" class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+                확인 후 세무사랑 엑셀 생성
+              </button>
+              <a id="download-semu-btn" href="#" class="hidden rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+                세무사랑 업로드 엑셀 다운로드
+              </a>
+            </div>
+
+            <div id="semu-messages" class="space-y-2"></div>
+          </div>
+
+          <div id="wihago-form-panel" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50/60 p-5 space-y-4">
+            <div>
+              <p class="text-sm font-bold text-emerald-700">위하고 생성 안내</p>
+              <p class="text-sm text-slate-600 mt-1">위하고는 회사명, 사업자등록번호, 연도 입력 없이 생성합니다. 날짜는 매매일자의 월과 일을 분리해서 <strong class="font-semibold text-slate-900">A열 월 / B열 일</strong>에 넣습니다.</p>
+            </div>
+
+            <div class="rounded-2xl border border-emerald-100 bg-white px-4 py-4 text-sm text-slate-700">
+              <p class="font-semibold">입력 열</p>
+              <p class="mt-1">A 월, B 일, C 구분, D 계정과목코드, E 계정과목명, F 거래처코드, G 거래처명, H 적요명, I 차변, J 대변</p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button id="generate-wihago-btn" type="button" class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+                확인 후 위하고 엑셀 생성
+              </button>
+              <a id="download-wihago-btn" href="#" class="hidden rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+                위하고 업로드 엑셀 다운로드
+              </a>
+            </div>
+
+            <div id="wihago-messages" class="space-y-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-orange-200 bg-orange-50/40 p-5 space-y-5">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">6. 평가차익 추가작업</h3>
+            <p class="text-sm text-slate-500 mt-1">평가차액 입력을 완료한 경우에만 회계프로그램 업로드 파일을 추가로 만들 수 있습니다.</p>
+          </div>
+          <div class="rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm text-slate-700">
+            <p class="font-semibold">반영 기준</p>
+            <p>종목별 요약의 평가차액을 기준으로 업로드 행을 만듭니다.</p>
+          </div>
+        </div>
+
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
+          <div>
+            <p class="text-sm font-bold text-slate-700">추가작업 여부(평가차익 회계프로그램 업로드)</p>
+            <p class="text-sm text-slate-500 mt-1">`예`를 선택하면 평가연월일과 평가 계정과목을 입력한 뒤 업로드 파일 생성 버튼을 열 수 있습니다.</p>
+          </div>
+          <div class="flex flex-wrap gap-3">
+            <label class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+              <input type="radio" name="valuation-extra-yn" value="no" checked class="h-4 w-4 accent-orange-600" />
+              아니오
+            </label>
+            <label class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+              <input type="radio" name="valuation-extra-yn" value="yes" class="h-4 w-4 accent-orange-600" />
+              예
+            </label>
+          </div>
+
+          <div id="valuation-extra-panel" class="hidden space-y-5">
+            <div class="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
+              <div>
+                <p class="text-sm font-bold text-slate-700">공통 필수 입력</p>
+                <p class="text-sm text-slate-500 mt-1">주식 계정과목, 평가연월일, 평가이익/손실 계정을 먼저 입력한 뒤 확인 버튼을 누르세요.</p>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">주식 계정과목코드</span>
+                  <input id="valuation-stock-account-code" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" placeholder="예: 107" />
+                </label>
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">주식 계정과목명</span>
+                  <input id="valuation-stock-account-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" placeholder="예: 단기매매증권" />
+                </label>
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">평가연월일</span>
+                  <input id="valuation-date" type="date" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" />
+                </label>
+
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">평가이익 코드</span>
+                  <input id="valuation-gain-account-code" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" placeholder="예: 905" />
+                </label>
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">평가이익 계정과목명</span>
+                  <input id="valuation-gain-account-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" placeholder="예: 단기매매증권평가이익" />
+                </label>
+                <div class="hidden xl:block"></div>
+
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">평가손실 코드</span>
+                  <input id="valuation-loss-account-code" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" placeholder="예: 957" />
+                </label>
+                <label class="space-y-2 text-sm">
+                  <span class="font-semibold text-slate-700">평가손실 계정과목명</span>
+                  <input id="valuation-loss-account-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100" placeholder="예: 단기매매증권평가손실" />
+                </label>
+              </div>
+
+              <div class="flex flex-wrap gap-3">
+                <button id="valuation-confirm-btn" type="button" class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+                  확인
+                </button>
+              </div>
+
+              <div id="valuation-setup-messages" class="space-y-2"></div>
+            </div>
+
+            <div id="valuation-actions-panel" class="hidden rounded-3xl border border-orange-100 bg-orange-50/60 p-5 space-y-4">
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p class="text-sm font-bold text-orange-700">업로드 파일 생성</p>
+                  <p class="text-sm text-slate-600 mt-1">확인 후 형식별 생성 버튼을 눌러 평가차익 업로드 파일을 만듭니다.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button id="open-valuation-semu-form-btn" type="button" class="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700">
+                    세무사랑용 업로드파일생성
+                  </button>
+                  <button id="open-valuation-wihago-form-btn" type="button" class="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+                    위하고용 업로드파일생성
+                  </button>
+                </div>
+              </div>
+
+              <div id="valuation-semu-form-panel" class="hidden rounded-3xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-4">
+                <div>
+                  <p class="text-sm font-bold text-indigo-700">세무사랑 필수 입력</p>
+                  <p class="text-sm text-slate-600 mt-1">회사명과 사업자등록번호를 입력하면 평가연월일 기준 세무사랑 업로드 파일을 생성합니다.</p>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <label class="space-y-2 text-sm">
+                    <span class="font-semibold text-slate-700">회사명</span>
+                    <input id="valuation-semu-company-name" type="text" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100" placeholder="예: 세무법인일신" />
+                  </label>
+                  <label class="space-y-2 text-sm">
+                    <span class="font-semibold text-slate-700">사업자등록번호</span>
+                    <input id="valuation-semu-business-no" type="text" inputmode="numeric" maxlength="10" class="w-full rounded-2xl border border-slate-300 px-4 py-3 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100" placeholder="숫자만 입력" />
+                  </label>
+                </div>
+
+                <div class="flex flex-wrap gap-3">
+                  <button id="generate-valuation-semu-btn" type="button" class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+                    확인 후 평가차익 세무사랑 엑셀 생성
+                  </button>
+                  <a id="download-valuation-semu-btn" href="#" class="hidden rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+                    평가차익 세무사랑 업로드 엑셀 다운로드
+                  </a>
+                </div>
+
+                <div id="valuation-semu-messages" class="space-y-2"></div>
+              </div>
+
+              <div id="valuation-wihago-form-panel" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50/60 p-5 space-y-4">
+                <div>
+                  <p class="text-sm font-bold text-emerald-700">위하고 생성 안내</p>
+                  <p class="text-sm text-slate-600 mt-1">평가연월일의 월/일을 사용해 평가차익 위하고 업로드 파일을 생성합니다.</p>
+                </div>
+
+                <div class="rounded-2xl border border-emerald-100 bg-white px-4 py-4 text-sm text-slate-700">
+                  <p class="font-semibold">입력 열</p>
+                  <p class="mt-1">A 월, B 일, C 구분, D 계정과목코드, E 계정과목명, F 거래처코드, G 거래처명, H 적요명, I 차변, J 대변</p>
+                </div>
+
+                <div class="flex flex-wrap gap-3">
+                  <button id="generate-valuation-wihago-btn" type="button" class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+                    확인 후 평가차익 위하고 엑셀 생성
+                  </button>
+                  <a id="download-valuation-wihago-btn" href="#" class="hidden rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">
+                    평가차익 위하고 업로드 엑셀 다운로드
+                  </a>
+                </div>
+
+                <div id="valuation-wihago-messages" class="space-y-2"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const fileNameEl = document.getElementById('file-name');
+    const statusBadge = document.getElementById('status-badge');
+    const mappingSection = document.getElementById('mapping-section');
+    const configSection = document.getElementById('config-section');
+    const resultSection = document.getElementById('result-section');
+    const extraWorkSection = document.getElementById('extra-work-section');
+    const previewContainer = document.getElementById('preview-container');
+    const sheetTabs = document.getElementById('sheet-tabs');
+    const mappingGuide = document.getElementById('mapping-guide');
+    const mappingPrompt = document.getElementById('mapping-prompt');
+    const mappingSummary = document.getElementById('mapping-summary');
+    const stockConfigBody = document.getElementById('stock-config-body');
+    const resultSummary = document.getElementById('result-summary');
+    const resultMessages = document.getElementById('result-messages');
+    const downloadBtn = document.getElementById('download-btn');
+    const startMappingBtn = document.getElementById('start-mapping-btn');
+    const resetMappingBtn = document.getElementById('reset-mapping-btn');
+    const buildWorkbookBtn = document.getElementById('build-workbook-btn');
+    const endingZeroFilterInputs = document.querySelectorAll('input[name="ending-zero-filter"]');
+    const extraWorkInputs = document.querySelectorAll('input[name="extra-work-yn"]');
+    const extraWorkPanel = document.getElementById('extra-work-panel');
+    const stockAccountCodeInput = document.getElementById('stock-account-code');
+    const stockAccountNameInput = document.getElementById('stock-account-name');
+    const gainAccountCodeInput = document.getElementById('gain-account-code');
+    const gainAccountNameInput = document.getElementById('gain-account-name');
+    const lossAccountCodeInput = document.getElementById('loss-account-code');
+    const lossAccountNameInput = document.getElementById('loss-account-name');
+    const openSemuFormBtn = document.getElementById('open-semu-form-btn');
+    const openWihagoFormBtn = document.getElementById('open-wihago-form-btn');
+    const semuFormPanel = document.getElementById('semu-form-panel');
+    const wihagoFormPanel = document.getElementById('wihago-form-panel');
+    const semuCompanyNameInput = document.getElementById('semu-company-name');
+    const semuBusinessNoInput = document.getElementById('semu-business-no');
+    const semuFiscalYearInput = document.getElementById('semu-fiscal-year');
+    const generateSemuBtn = document.getElementById('generate-semu-btn');
+    const generateWihagoBtn = document.getElementById('generate-wihago-btn');
+    const downloadSemuBtn = document.getElementById('download-semu-btn');
+    const downloadWihagoBtn = document.getElementById('download-wihago-btn');
+    const semuMessages = document.getElementById('semu-messages');
+    const wihagoMessages = document.getElementById('wihago-messages');
+    const valuationExtraInputs = document.querySelectorAll('input[name="valuation-extra-yn"]');
+    const valuationExtraPanel = document.getElementById('valuation-extra-panel');
+    const valuationStockAccountCodeInput = document.getElementById('valuation-stock-account-code');
+    const valuationStockAccountNameInput = document.getElementById('valuation-stock-account-name');
+    const valuationDateInput = document.getElementById('valuation-date');
+    const valuationGainAccountCodeInput = document.getElementById('valuation-gain-account-code');
+    const valuationGainAccountNameInput = document.getElementById('valuation-gain-account-name');
+    const valuationLossAccountCodeInput = document.getElementById('valuation-loss-account-code');
+    const valuationLossAccountNameInput = document.getElementById('valuation-loss-account-name');
+    const valuationConfirmBtn = document.getElementById('valuation-confirm-btn');
+    const valuationSetupMessages = document.getElementById('valuation-setup-messages');
+    const valuationActionsPanel = document.getElementById('valuation-actions-panel');
+    const openValuationSemuFormBtn = document.getElementById('open-valuation-semu-form-btn');
+    const openValuationWihagoFormBtn = document.getElementById('open-valuation-wihago-form-btn');
+    const valuationSemuFormPanel = document.getElementById('valuation-semu-form-panel');
+    const valuationWihagoFormPanel = document.getElementById('valuation-wihago-form-panel');
+    const valuationSemuCompanyNameInput = document.getElementById('valuation-semu-company-name');
+    const valuationSemuBusinessNoInput = document.getElementById('valuation-semu-business-no');
+    const generateValuationSemuBtn = document.getElementById('generate-valuation-semu-btn');
+    const generateValuationWihagoBtn = document.getElementById('generate-valuation-wihago-btn');
+    const downloadValuationSemuBtn = document.getElementById('download-valuation-semu-btn');
+    const downloadValuationWihagoBtn = document.getElementById('download-valuation-wihago-btn');
+    const valuationSemuMessages = document.getElementById('valuation-semu-messages');
+    const valuationWihagoMessages = document.getElementById('valuation-wihago-messages');
+    const defaultAccountValues = {
+      stockCode: '107',
+      stockName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C',
+      gainCode: '906',
+      gainName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C\uCC98\uBD84\uC774\uC775',
+      lossCode: '958',
+      lossName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C\uCC98\uBD84\uC190\uC2E4'
+    };
+    const defaultValuationAccountValues = {
+      stockCode: '107',
+      stockName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C',
+      gainCode: '905',
+      gainName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C\uD3C9\uAC00\uC774\uC775',
+      lossCode: '957',
+      lossName: '\uB2E8\uAE30\uB9E4\uB9E4\uC99D\uAD8C\uD3C9\uAC00\uC190\uC2E4'
+    };
+
+    [
+      [stockAccountCodeInput, defaultAccountValues.stockCode],
+      [stockAccountNameInput, defaultAccountValues.stockName],
+      [gainAccountCodeInput, defaultAccountValues.gainCode],
+      [gainAccountNameInput, defaultAccountValues.gainName],
+      [lossAccountCodeInput, defaultAccountValues.lossCode],
+      [lossAccountNameInput, defaultAccountValues.lossName],
+      [valuationStockAccountCodeInput, defaultValuationAccountValues.stockCode],
+      [valuationStockAccountNameInput, defaultValuationAccountValues.stockName],
+      [valuationGainAccountCodeInput, defaultValuationAccountValues.gainCode],
+      [valuationGainAccountNameInput, defaultValuationAccountValues.gainName],
+      [valuationLossAccountCodeInput, defaultValuationAccountValues.lossCode],
+      [valuationLossAccountNameInput, defaultValuationAccountValues.lossName]
+    ].forEach(([input, value]) => {
+      if (input && !String(input.value || '').trim()) input.value = value;
+    });
+
+    setupEvaluationWorkflow();
+    const evaluationChoiceInputs = document.querySelectorAll('input[name="evaluation-work-yn"]');
+    const evaluationWorkPanel = document.getElementById('evaluation-work-panel');
+    const evaluationStockList = document.getElementById('evaluation-stock-list');
+    const evaluationWorkMessages = document.getElementById('evaluation-work-messages');
+
+    const mappingPrompts = [
+      { key: 'stockCell', type: 'cell', text: '1/7: 주식명이 적힌 셀을 클릭하세요.' },
+      { key: 'headerRow', type: 'row', text: '2/7: 제목행을 클릭하세요.' },
+      { key: 'dateCol', type: 'col', text: "3/7: <strong>거래일자</strong> 열을 클릭하세요." },
+      { key: 'descCol', type: 'col', text: "4/7: <strong>적요</strong> 열을 클릭하세요." },
+      { key: 'debitCol', type: 'col', text: "5/7: <strong>차변</strong> 열을 클릭하세요." },
+      { key: 'creditCol', type: 'col', text: "6/7: <strong>대변</strong> 열을 클릭하세요." },
+      { key: 'balanceCol', type: 'col', text: "7/7: <strong>잔액</strong> 열을 클릭하세요." }
+    ];
+
+    const state = {
+      workbook: null,
+      selectedFileName: '',
+      activeSheetName: '',
+      previewRowLimit: 80,
+      wizardActive: false,
+      wizardStep: 0,
+      selections: {},
+      stockConfigs: [],
+      excludedSheets: [],
+      includeZeroEndingSheets: true,
+      outputMeta: null,
+      latestBuild: null,
+      evaluationChoice: '',
+      evaluationReady: false,
+      evaluationDraft: [],
+      evaluationSummary: [],
+      busyActions: {}
+    };
+
+    function checkXLSX() {
+      if (typeof XLSX === 'undefined') {
+        alert('XLSX 라이브러리를 불러오지 못했습니다.');
+        return false;
+      }
+      return true;
+    }
+
+    function checkExcelJS() {
+      if (typeof ExcelJS === 'undefined') {
+        alert('ExcelJS 라이브러리를 불러오지 못했습니다.');
+        return false;
+      }
+      return true;
+    }
+
+    function showStatus(text, tone = 'ready') {
+      const toneMap = {
+        ready: 'bg-slate-100 text-slate-700',
+        active: 'bg-sky-100 text-sky-800',
+        success: 'bg-emerald-100 text-emerald-800',
+        warn: 'bg-amber-100 text-amber-800'
+      };
+      statusBadge.className = `rounded-full px-4 py-2 text-sm font-semibold ${toneMap[tone] || toneMap.ready}`;
+      statusBadge.textContent = text;
+      statusBadge.classList.remove('hidden');
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function stripHtml(value) {
+      return String(value ?? '').replace(/<[^>]*>/g, '');
+    }
+
+    function getSheetData(ws, fillMerges = false) {
+      if (!ws || !ws['!ref']) return [];
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const data = Array.from({ length: range.e.r + 1 }, () => Array(range.e.c + 1).fill(null));
+      for (const addr in ws) {
+        if (addr[0] === '!') continue;
+        const cellPos = XLSX.utils.decode_cell(addr);
+        data[cellPos.r][cellPos.c] = ws[addr].w ?? ws[addr].v;
+      }
+      if (fillMerges && ws['!merges']) {
+        ws['!merges'].forEach((merge) => {
+          const mergedValue = data[merge.s.r][merge.s.c];
+          for (let row = merge.s.r; row <= merge.e.r; row++) {
+            for (let col = merge.s.c; col <= merge.e.c; col++) {
+              data[row][col] = mergedValue;
+            }
+          }
+        });
+      }
+      return data;
+    }
+
+    function formatDisplayNumber(value) {
+      return new Intl.NumberFormat('ko-KR').format(Number(value || 0));
+    }
+
+    function parseNumeric(value) {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (value === null || value === undefined || value === '') return 0;
+      const raw = String(value).trim();
+      if (!raw) return 0;
+      const negativeMatch = raw.match(/^\((.+)\)$/);
+      const normalized = (negativeMatch ? `-${negativeMatch[1]}` : raw).replace(/[,\s원]/g, '');
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function digitsOnly(value) {
+      return String(value ?? '').replace(/\D/g, '');
+    }
+
+    function shouldSkipMemo(text) {
+      return /^\(\s*(?:\uB9E4\uB9E4\uCC28\uC775|\uC218\uC218\uB8CC|\uC81C\uC138\uAE08)\s*\)/.test(String(text ?? '').trim());
+    }
+
+    function clearElementChildren(element) {
+      element.innerHTML = '';
+    }
+
+    function setupEvaluationWorkflow() {
+      const card = document.createElement('div');
+      card.className = 'rounded-3xl border border-amber-200 bg-amber-50/40 p-5 space-y-4';
+      card.innerHTML = `
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p class="text-sm font-bold text-slate-700">평가차액 작업을 하시겠습니까?</p>
+            <p class="text-sm text-slate-500 mt-1">아니오를 선택하면 기존과 동일하게 손익엑셀만들기를 진행합니다. 예를 선택하면 종목별 요약의 총평가금액과 평가차액만 추가로 반영합니다.</p>
+          </div>
+          <div id="evaluation-action-slot" class="shrink-0"></div>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <label class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+            <input type="radio" name="evaluation-work-yn" value="no" class="h-4 w-4 accent-amber-600" />
+            아니오
+          </label>
+          <label class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+            <input type="radio" name="evaluation-work-yn" value="yes" class="h-4 w-4 accent-amber-600" />
+            예
+          </label>
+        </div>
+        <div id="evaluation-work-panel" class="hidden space-y-4">
+          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+            <p class="font-semibold">평가차액 반영 범위</p>
+            <p class="mt-1">매수/매도 시트와 매매차익 업로드 엑셀에는 영향을 주지 않고, 종목별 요약의 총평가금액과 평가차액에만 반영됩니다.</p>
+          </div>
+          <div id="evaluation-stock-list" class="space-y-4"></div>
+          <div id="evaluation-work-messages" class="space-y-2"></div>
+        </div>
+      `;
+
+      const infoBox = Array.from(configSection.children).find((element) => element.classList?.contains('rounded-2xl') && element.classList?.contains('border-amber-200'));
+      if (infoBox) {
+        configSection.insertBefore(card, infoBox.nextSibling);
+      } else {
+        configSection.appendChild(card);
+      }
+
+      const actionSlot = card.querySelector('#evaluation-action-slot');
+      if (actionSlot) {
+        buildWorkbookBtn.textContent = '손익엑셀만들기';
+        actionSlot.appendChild(buildWorkbookBtn);
+      }
+
+      const extraWorkHeading = extraWorkSection.querySelector('h2');
+      if (extraWorkHeading) extraWorkHeading.textContent = '5. 매매차익 추가작업';
+      buildWorkbookBtn.classList.add('hidden');
+    }
+
+    function renderEvaluationMessages(messages, tone = 'warn') {
+      clearElementChildren(evaluationWorkMessages);
+      const box = document.createElement('div');
+      box.className = tone === 'success'
+        ? 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900'
+        : 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+
+      messages.forEach((message, index) => {
+        const line = document.createElement('p');
+        line.className = index === 0 ? 'font-semibold' : 'mt-2';
+        line.textContent = message;
+        box.appendChild(line);
+      });
+
+      evaluationWorkMessages.appendChild(box);
+    }
+
+    function createEvaluationDraftFromResults(results) {
+      return results
+        .filter((result) => parseNumeric(result.totals.endingQty) > 0)
+        .map((result, index) => {
+          const endingQty = parseNumeric(result.totals.endingQty);
+          const endingCost = parseNumeric(result.totals.endingCost);
+          return {
+            id: result.config.id,
+            stockName: result.config.stockName,
+            endingQty,
+            endingCost,
+            unitCost: endingQty > 0 ? Math.round(endingCost / endingQty) : 0,
+            accounts: [{ id: `${result.config.id}-account-${index}`, qty: '', price: '' }]
+          };
+        });
+    }
+
+    function calculateEvaluationDraftItem(item) {
+      const enteredQty = item.accounts.reduce((sum, account) => sum + parseNumeric(account.qty), 0);
+      const totalEvaluation = item.accounts.reduce((sum, account) => sum + (parseNumeric(account.qty) * parseNumeric(account.price)), 0);
+      const hasEmpty = item.accounts.some((account) => String(account.qty).trim() === '' || String(account.price).trim() === '');
+      return {
+        enteredQty,
+        totalEvaluation,
+        valuationDiff: totalEvaluation - item.endingCost,
+        hasEmpty,
+        qtyMatches: enteredQty === item.endingQty
+      };
+    }
+
+    function getEvaluationValidation() {
+      const items = state.evaluationDraft.map((item) => {
+        const computed = calculateEvaluationDraftItem(item);
+        return {
+          ...item,
+          enteredQty: computed.enteredQty,
+          totalEvaluation: computed.totalEvaluation,
+          valuationDiff: computed.valuationDiff,
+          hasEmpty: computed.hasEmpty,
+          qtyMatches: computed.qtyMatches
+        };
+      });
+
+      const issues = [];
+      items.forEach((item) => {
+        if (item.hasEmpty) issues.push(`[${item.stockName}] 기말주식수와 기말단가를 모두 입력해 주세요.`);
+        if (!item.hasEmpty && !item.qtyMatches) issues.push(`[${item.stockName}] 오른쪽 기말주식수 합계가 왼쪽 기말주식수와 다릅니다.`);
+      });
+
+      return { items, issues };
+    }
+
+    function updateEvaluationDraftSummary(stockId) {
+      const item = state.evaluationDraft.find((draft) => draft.id === stockId);
+      const summaryBox = evaluationStockList.querySelector(`[data-evaluation-summary="${stockId}"]`);
+      if (!item || !summaryBox) return;
+
+      const computed = calculateEvaluationDraftItem(item);
+      const enteredQtyEl = summaryBox.querySelector('[data-summary-field="enteredQty"]');
+      const totalEvaluationEl = summaryBox.querySelector('[data-summary-field="totalEvaluation"]');
+
+      if (enteredQtyEl) enteredQtyEl.textContent = formatDisplayNumber(computed.enteredQty);
+      if (totalEvaluationEl) totalEvaluationEl.textContent = formatDisplayNumber(computed.totalEvaluation);
+
+      summaryBox.classList.toggle('border-emerald-200', computed.qtyMatches);
+      summaryBox.classList.toggle('bg-emerald-50', computed.qtyMatches);
+      summaryBox.classList.toggle('text-emerald-900', computed.qtyMatches);
+      summaryBox.classList.toggle('border-amber-200', !computed.qtyMatches);
+      summaryBox.classList.toggle('bg-amber-50', !computed.qtyMatches);
+      summaryBox.classList.toggle('text-amber-900', !computed.qtyMatches);
+    }
+
+    function syncBuildWorkbookAvailability() {
+      if (!state.evaluationChoice) {
+        state.evaluationReady = false;
+        state.evaluationSummary = [];
+        buildWorkbookBtn.classList.add('hidden');
+        clearElementChildren(evaluationWorkMessages);
+        return;
+      }
+
+      if (state.evaluationChoice === 'no') {
+        state.evaluationReady = true;
+        state.evaluationSummary = [];
+        buildWorkbookBtn.classList.remove('hidden');
+        clearElementChildren(evaluationWorkMessages);
+        return;
+      }
+
+      const { items, issues } = getEvaluationValidation();
+      state.evaluationSummary = items;
+
+      if (!items.length) {
+        state.evaluationReady = true;
+        buildWorkbookBtn.classList.remove('hidden');
+        renderEvaluationMessages([
+          '기말 주식이 남아 있는 종목이 없어 평가차액 입력 없이 진행할 수 있습니다.',
+          '손익엑셀만들기 버튼을 사용할 수 있습니다.'
+        ], 'success');
+        return;
+      }
+
+      if (issues.length) {
+        state.evaluationReady = false;
+        buildWorkbookBtn.classList.add('hidden');
+        renderEvaluationMessages(['평가차액 입력값을 확인해 주세요.', ...issues.slice(0, 10)], 'warn');
+        return;
+      }
+
+      state.evaluationReady = true;
+      buildWorkbookBtn.classList.remove('hidden');
+      renderEvaluationMessages([
+        '기말평가 입력이 모두 완료되었습니다.',
+        '손익엑셀만들기 버튼을 사용할 수 있습니다.'
+      ], 'success');
+    }
+
+    function renderEvaluationDraft() {
+      evaluationStockList.innerHTML = '';
+      if (!state.evaluationDraft.length) {
+        syncBuildWorkbookAvailability();
+        return;
+      }
+
+      state.evaluationDraft.forEach((item) => {
+        const computed = calculateEvaluationDraftItem(item);
+        const card = document.createElement('div');
+        card.className = 'rounded-3xl border border-slate-200 bg-white p-5 space-y-4';
+        card.innerHTML = `
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-base font-bold text-slate-900">${escapeHtml(item.stockName)}</p>
+              <div class="mt-3 grid gap-2 text-sm text-slate-700">
+                <div class="flex items-center justify-between gap-3"><span>기말주식수</span><strong>${formatDisplayNumber(item.endingQty)}</strong></div>
+                <div class="flex items-center justify-between gap-3"><span>단가</span><strong>${formatDisplayNumber(item.unitCost)}</strong></div>
+                <div class="flex items-center justify-between gap-3"><span>누적취득원가</span><strong>${formatDisplayNumber(item.endingCost)}</strong></div>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-sm font-semibold text-slate-700">증권계좌별 입력</p>
+                <button type="button" class="evaluation-add rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-amber-400 hover:text-amber-700" data-stock-id="${escapeHtml(item.id)}">추가</button>
+              </div>
+              <div class="space-y-3">
+                ${item.accounts.map((account, index) => `
+                  <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                    <label class="space-y-2 text-sm">
+                      <span class="font-semibold text-slate-700">기말주식수 ${index + 1}</span>
+                      <input type="number" min="0" step="1" value="${escapeHtml(account.qty)}" data-stock-id="${escapeHtml(item.id)}" data-account-id="${escapeHtml(account.id)}" data-field="qty" class="evaluation-input w-full rounded-2xl border border-slate-300 px-4 py-3 text-right focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+                    </label>
+                    <label class="space-y-2 text-sm">
+                      <span class="font-semibold text-slate-700">기말단가 ${index + 1}</span>
+                      <input type="number" min="0" step="1" value="${escapeHtml(account.price)}" data-stock-id="${escapeHtml(item.id)}" data-account-id="${escapeHtml(account.id)}" data-field="price" class="evaluation-input w-full rounded-2xl border border-slate-300 px-4 py-3 text-right focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+                    </label>
+                    <div class="flex items-end">
+                      ${item.accounts.length > 1 ? `<button type="button" class="evaluation-remove rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-100" data-stock-id="${escapeHtml(item.id)}" data-account-id="${escapeHtml(account.id)}">삭제</button>` : '<div class="w-full"></div>'}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <div data-evaluation-summary="${escapeHtml(item.id)}" class="rounded-2xl border ${computed.qtyMatches ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'} px-4 py-3 text-sm">
+                <p class="font-semibold">입력 기말주식수 합계 <span data-summary-field="enteredQty">${formatDisplayNumber(computed.enteredQty)}</span>주 / 기준 기말주식수 ${formatDisplayNumber(item.endingQty)}주</p>
+                <p class="mt-1">기말평가잔액 <span data-summary-field="totalEvaluation">${formatDisplayNumber(computed.totalEvaluation)}</span>원</p>
+              </div>
+            </div>
+          </div>
+        `;
+        evaluationStockList.appendChild(card);
+      });
+
+      evaluationStockList.querySelectorAll('.evaluation-add').forEach((button) => {
+        button.addEventListener('click', () => {
+          const item = state.evaluationDraft.find((draft) => draft.id === button.dataset.stockId);
+          if (!item) return;
+          item.accounts.push({ id: `${item.id}-${Date.now()}-${item.accounts.length}`, qty: '', price: '' });
+          renderEvaluationDraft();
+        });
+      });
+
+      evaluationStockList.querySelectorAll('.evaluation-remove').forEach((button) => {
+        button.addEventListener('click', () => {
+          const item = state.evaluationDraft.find((draft) => draft.id === button.dataset.stockId);
+          if (!item) return;
+          item.accounts = item.accounts.filter((account) => account.id !== button.dataset.accountId);
+          if (!item.accounts.length) item.accounts = [{ id: `${item.id}-fallback`, qty: '', price: '' }];
+          renderEvaluationDraft();
+        });
+      });
+
+      evaluationStockList.querySelectorAll('.evaluation-input').forEach((input) => {
+        input.addEventListener('input', () => {
+          const item = state.evaluationDraft.find((draft) => draft.id === input.dataset.stockId);
+          const account = item?.accounts.find((entry) => entry.id === input.dataset.accountId);
+          if (!account) return;
+          account[input.dataset.field] = input.value;
+          updateEvaluationDraftSummary(item.id);
+          syncBuildWorkbookAvailability();
+        });
+      });
+
+      syncBuildWorkbookAvailability();
+    }
+
+    function resetEvaluationWorkflow() {
+      state.evaluationChoice = '';
+      state.evaluationReady = false;
+      state.evaluationDraft = [];
+      state.evaluationSummary = [];
+      buildWorkbookBtn.classList.add('hidden');
+      evaluationWorkPanel.classList.add('hidden');
+      clearElementChildren(evaluationStockList);
+      clearElementChildren(evaluationWorkMessages);
+      evaluationChoiceInputs.forEach((input) => {
+        input.checked = false;
+      });
+    }
+
+    function handleEvaluationChoiceChange(choice) {
+      state.evaluationChoice = choice;
+      if (choice === 'no') {
+        state.evaluationDraft = [];
+        state.evaluationSummary = [];
+        evaluationWorkPanel.classList.add('hidden');
+        syncBuildWorkbookAvailability();
+        return;
+      }
+
+      const results = state.stockConfigs.map((config) => buildStockLedger(config));
+      state.evaluationDraft = createEvaluationDraftFromResults(results);
+      evaluationWorkPanel.classList.remove('hidden');
+      renderEvaluationDraft();
+    }
+
+    function handleEvaluationConfigChange() {
+      if (!state.evaluationChoice) {
+        buildWorkbookBtn.classList.add('hidden');
+        return;
+      }
+      if (state.evaluationChoice === 'no') {
+        buildWorkbookBtn.classList.remove('hidden');
+        return;
+      }
+
+      const results = state.stockConfigs.map((config) => buildStockLedger(config));
+      state.evaluationDraft = createEvaluationDraftFromResults(results);
+      renderEvaluationDraft();
+      renderEvaluationMessages([
+        '기초값이 변경되어 평가차액 입력을 다시 확인해 주세요.'
+      ], 'warn');
+    }
+
+    function ensureEvaluationReadyForBuild() {
+      if (!state.evaluationChoice) {
+        alert('평가차액 작업 여부를 먼저 선택해 주세요.');
+        return false;
+      }
+      if (state.evaluationChoice === 'no') {
+        state.evaluationSummary = [];
+        return true;
+      }
+
+      const { items, issues } = getEvaluationValidation();
+      if (issues.length) {
+        state.evaluationSummary = items;
+        state.evaluationReady = false;
+        renderEvaluationDraft();
+        alert(`평가차액 입력을 확인해 주세요.\n\n${issues.slice(0, 10).join('\n')}`);
+        return false;
+      }
+
+      state.evaluationSummary = items;
+      state.evaluationReady = true;
+      return true;
+    }
+
+    function resetAdditionalOutputs() {
+      extraWorkSection.classList.add('hidden');
+      extraWorkPanel.classList.add('hidden');
+      semuFormPanel.classList.add('hidden');
+      wihagoFormPanel.classList.add('hidden');
+      valuationExtraPanel.classList.add('hidden');
+      valuationActionsPanel.classList.add('hidden');
+      valuationSemuFormPanel.classList.add('hidden');
+      valuationWihagoFormPanel.classList.add('hidden');
+      clearElementChildren(semuMessages);
+      clearElementChildren(wihagoMessages);
+      clearElementChildren(valuationSetupMessages);
+      clearElementChildren(valuationSemuMessages);
+      clearElementChildren(valuationWihagoMessages);
+      extraWorkInputs.forEach((input) => {
+        input.checked = input.value === 'no';
+      });
+      valuationExtraInputs.forEach((input) => {
+        input.checked = input.value === 'no';
+      });
+
+      if (downloadSemuBtn.href && downloadSemuBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadSemuBtn.href);
+      }
+      downloadSemuBtn.href = '#';
+      downloadSemuBtn.classList.add('hidden');
+
+      if (downloadWihagoBtn.href && downloadWihagoBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadWihagoBtn.href);
+      }
+      downloadWihagoBtn.href = '#';
+      downloadWihagoBtn.classList.add('hidden');
+
+      if (downloadValuationSemuBtn.href && downloadValuationSemuBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadValuationSemuBtn.href);
+      }
+      downloadValuationSemuBtn.href = '#';
+      downloadValuationSemuBtn.classList.add('hidden');
+
+      if (downloadValuationWihagoBtn.href && downloadValuationWihagoBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadValuationWihagoBtn.href);
+      }
+      downloadValuationWihagoBtn.href = '#';
+      downloadValuationWihagoBtn.classList.add('hidden');
+    }
+
+    function formatDateParts(year, month, day) {
+      const y = String(year).padStart(4, '0');
+      const m = String(month).padStart(2, '0');
+      const d = String(day).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function parseDateValue(rawValue, cell) {
+      if (cell && cell.t === 'n') {
+        const parsed = XLSX.SSF.parse_date_code(cell.v);
+        if (parsed) return formatDateParts(parsed.y, parsed.m, parsed.d);
+      }
+
+      if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
+        return formatDateParts(rawValue.getFullYear(), rawValue.getMonth() + 1, rawValue.getDate());
+      }
+
+      const text = String(rawValue ?? '').trim();
+      if (!text) return '';
+
+      let match = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+      if (match) return formatDateParts(match[1], match[2], match[3]);
+
+      match = text.match(/^(\d{1,2})[./-](\d{1,2})$/);
+      if (match) return formatDateParts(new Date().getFullYear(), match[1], match[2]);
+
+      return text;
+    }
+
+    function sanitizeSheetName(name, usedNames) {
+      const base = String(name || '시트').replace(/[/\\?*:[\]]/g, ' ').trim() || '시트';
+      let candidate = base.slice(0, 31);
+      let index = 2;
+      while (usedNames.has(candidate)) {
+        const suffix = ` (${index})`;
+        candidate = `${base.slice(0, Math.max(0, 31 - suffix.length))}${suffix}`;
+        index += 1;
+      }
+      usedNames.add(candidate);
+      return candidate;
+    }
+
+    function isRecognizedTradeDate(text) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(text ?? '').trim());
+    }
+
+    function getEndingBalanceSnapshot(ws, data) {
+      const headerRowIndex = state.selections.headerRow?.row ?? 0;
+      let lastDateRowIndex = -1;
+      let lastTradeDate = '';
+
+      for (let rowIndex = headerRowIndex + 1; rowIndex < data.length; rowIndex++) {
+        const row = data[rowIndex] || [];
+        const dateCellRef = XLSX.utils.encode_cell({ r: rowIndex, c: state.selections.dateCol.col });
+        const tradeDate = parseDateValue(row[state.selections.dateCol.col], ws[dateCellRef]);
+        if (isRecognizedTradeDate(tradeDate)) {
+          lastDateRowIndex = rowIndex;
+          lastTradeDate = tradeDate;
+        }
+      }
+
+      if (lastDateRowIndex < 0) {
+        return {
+          hasDateRow: false,
+          lastDateRowIndex: -1,
+          lastTradeDate: '',
+          hasBalanceValue: false,
+          endingBalance: null
+        };
+      }
+
+      const rawBalance = data[lastDateRowIndex]?.[state.selections.balanceCol.col];
+      const hasBalanceValue = !(rawBalance === null || rawBalance === undefined || String(rawBalance).trim() === '');
+
+      return {
+        hasDateRow: true,
+        lastDateRowIndex,
+        lastTradeDate,
+        hasBalanceValue,
+        endingBalance: hasBalanceValue ? parseNumeric(rawBalance) : null
+      };
+    }
+
+    function parseTradeDescription(desc, fallbackStockName = '') {
+      const text = String(desc ?? '').trim();
+      if (!text || shouldSkipMemo(text) || !text.includes('@')) return null;
+
+      const parts = text
+        .split('/')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      if (!parts.length) return null;
+
+      const pricePart = parts.find((part) => part.includes('@'));
+      const priceMatch = pricePart ? pricePart.match(/@\s*([0-9,]+)/) : null;
+      const qtyPart = parts.find((part) => !/잔고/.test(part) && /([0-9,]+)\s*주/.test(part));
+      const qtyMatch = qtyPart ? qtyPart.match(/([0-9,]+)\s*주/) : null;
+      const balancePart = parts.find((part) => /잔고/.test(part));
+      const balanceMatch = balancePart ? balancePart.match(/잔고\s*([0-9,]+)\s*주/) : null;
+      const stockPart = parts.slice(1).find((part) => !part.includes('@') && !/잔고/.test(part) && !/([0-9,]+)\s*주/.test(part));
+
+      if (!qtyMatch || !priceMatch) return null;
+
+      const typeText = parts[0] || '';
+      let directionFromText = '';
+      if (/매도/.test(typeText)) directionFromText = 'sell';
+      if (/매수|입고/.test(typeText)) directionFromText = 'buy';
+
+      return {
+        raw: text,
+        typeText,
+        stockName: stockPart || fallbackStockName || '',
+        quantity: parseNumeric(qtyMatch[1]),
+        unitPrice: parseNumeric(priceMatch[1]),
+        balanceQuantity: balanceMatch ? parseNumeric(balanceMatch[1]) : null,
+        directionFromText
+      };
+    }
+
+    function extractCounterpartyInfo(rawStockCellText) {
+      const text = String(rawStockCellText ?? '').trim();
+      const matches = Array.from(text.matchAll(/\[([^\]]+)\]/g));
+      const target = matches.find((match) => /(\d{5,6})/.test(match[1]));
+
+      if (!target) {
+        return {
+          code: '',
+          name: text,
+          issue: `주식명 셀 '${text}' 에서 5~6자리 거래처코드를 찾지 못했습니다.`
+        };
+      }
+
+      const codeMatch = target[1].match(/(\d{5,6})/);
+      const code = codeMatch ? codeMatch[1] : '';
+      const name = text.slice(target.index + target[0].length).replace(/^\s+/, '');
+
+      return {
+        code,
+        name,
+        issue: !name ? `주식명 셀 '${text}' 에서 거래처명을 찾지 못했습니다.` : ''
+      };
+    }
+
+    function buildAccountingDate(dateText, fiscalYear) {
+      const raw = String(dateText ?? '').trim();
+      const year = digitsOnly(fiscalYear);
+      if (!/^\d{4}$/.test(year)) return '';
+
+      let match = raw.match(/^(?:\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+      if (!match) {
+        match = raw.match(/^(\d{1,2})[-./](\d{1,2})$/);
+      }
+
+      if (!match) return '';
+      const month = String(match[1]).padStart(2, '0');
+      const day = String(match[2]).padStart(2, '0');
+      return `${year}${month}${day}`;
+    }
+
+    function extractMonthDay(dateText) {
+      const raw = String(dateText ?? '').trim();
+      let match = raw.match(/^(?:\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+      if (!match) {
+        match = raw.match(/^(\d{1,2})[-./](\d{1,2})$/);
+      }
+      if (!match) {
+        return { month: '', day: '' };
+      }
+      return {
+        month: String(Number(match[1])),
+        day: String(Number(match[2]))
+      };
+    }
+
+    function createSemuRow({ date, division, code, accountName, counterpartyCode, counterpartyName, memo, amount }) {
+      const row = new Array(15).fill('');
+      row[0] = date;
+      row[1] = division;
+      row[2] = code;
+      row[3] = accountName;
+      row[4] = counterpartyCode;
+      row[5] = counterpartyName;
+      row[7] = memo;
+      row[8] = amount;
+      row[14] = 1;
+      return row;
+    }
+
+    function createWihagoRow({ month, day, division, code, accountName, counterpartyCode, counterpartyName, memo, amount }) {
+      const row = new Array(20).fill('');
+      row[0] = month;
+      row[1] = day;
+      row[2] = division;
+      row[3] = code;
+      row[4] = accountName;
+      row[5] = counterpartyCode;
+      row[6] = counterpartyName;
+      row[7] = memo;
+      if (String(division) === '3') {
+        row[8] = amount;
+      } else if (String(division) === '4') {
+        row[9] = amount;
+      }
+      return row;
+    }
+
+    function renderSheetTabs() {
+      sheetTabs.innerHTML = '';
+      if (!state.workbook || !state.workbook.SheetNames.length) return;
+      const firstSheetName = state.workbook.SheetNames[0];
+      state.activeSheetName = firstSheetName;
+
+      const badge = document.createElement('div');
+      badge.className = 'rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900';
+      badge.innerHTML = `<span class="font-semibold">대표 미리보기 시트</span>  ${escapeHtml(firstSheetName)} <span class="text-teal-700">· 형식 지정은 첫 시트만 표시됩니다.</span>`;
+      sheetTabs.appendChild(badge);
+    }
+
+    function renderMappingSummary() {
+      mappingSummary.innerHTML = '';
+      mappingPrompts.forEach((prompt) => {
+        const value = state.selections[prompt.key];
+        let label = '미선택';
+        if (value) {
+          if (prompt.type === 'cell') label = `R${value.row + 1} C${value.col + 1}`;
+          if (prompt.type === 'row') label = `${value.row + 1}행`;
+          if (prompt.type === 'col') label = `${value.col + 1}열`;
+        }
+
+        const pill = document.createElement('div');
+        pill.className = 'mapping-pill rounded-full px-4 py-2 text-sm text-slate-700';
+        pill.textContent = `${stripHtml(prompt.text).split(':')[1].trim()}  ${label}`;
+        mappingSummary.appendChild(pill);
+      });
+    }
+
+    function renderPreview() {
+      if (!state.workbook || !state.activeSheetName) return;
+      const ws = state.workbook.Sheets[state.activeSheetName];
+      const data = getSheetData(ws, true);
+      const rows = data.slice(0, state.previewRowLimit);
+      let html = '<table class="preview-table"><tbody>';
+
+      rows.forEach((row, rowIndex) => {
+        html += `<tr data-row-index="${rowIndex}">`;
+        row.forEach((cell, colIndex) => {
+          const classes = [];
+          if (state.wizardActive) classes.push('selectable');
+          if (state.selections.stockCell && state.selections.stockCell.row === rowIndex && state.selections.stockCell.col === colIndex) classes.push('selected-cell');
+          if (state.selections.headerRow && state.selections.headerRow.row === rowIndex) classes.push('selected-row');
+          if (['dateCol', 'descCol', 'debitCol', 'creditCol', 'balanceCol'].some((key) => state.selections[key] && state.selections[key].col === colIndex)) classes.push('selected-col');
+          html += `<td class="${classes.join(' ')}" data-row-index="${rowIndex}" data-col-index="${colIndex}">${escapeHtml(cell ?? '')}</td>`;
+        });
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      previewContainer.innerHTML = html;
+      previewContainer.querySelectorAll('td').forEach((cell) => cell.addEventListener('click', handlePreviewCellClick));
+    }
+
+    function startMapping() {
+      state.selections = {};
+      state.stockConfigs = [];
+      state.excludedSheets = [];
+      state.includeZeroEndingSheets = document.querySelector('input[name="ending-zero-filter"]:checked')?.value !== 'exclude';
+      state.outputMeta = null;
+      state.latestBuild = null;
+      state.wizardActive = true;
+      state.wizardStep = 0;
+      mappingGuide.classList.remove('hidden');
+      configSection.classList.add('hidden');
+      resultSection.classList.add('hidden');
+      resetAdditionalOutputs();
+      renderMappingSummary();
+      mappingPrompt.innerHTML = mappingPrompts[0].text;
+      showStatus('기준 위치 선택 중', 'active');
+      renderPreview();
+    }
+
+    function resetMapping() {
+      state.wizardActive = false;
+      state.wizardStep = 0;
+      state.selections = {};
+      state.stockConfigs = [];
+      state.excludedSheets = [];
+      state.includeZeroEndingSheets = true;
+      endingZeroFilterInputs.forEach((input) => {
+        input.checked = input.value === 'include';
+      });
+      state.outputMeta = null;
+      state.latestBuild = null;
+      mappingGuide.classList.add('hidden');
+      configSection.classList.add('hidden');
+      resultSection.classList.add('hidden');
+      resetAdditionalOutputs();
+      renderMappingSummary();
+      renderPreview();
+      showStatus('선택을 초기화했습니다.', 'ready');
+    }
+
+    function handlePreviewCellClick(event) {
+      if (!state.wizardActive) return;
+      const row = Number(event.currentTarget.dataset.rowIndex);
+      const col = Number(event.currentTarget.dataset.colIndex);
+      const prompt = mappingPrompts[state.wizardStep];
+      if (!prompt) return;
+
+      if (prompt.type === 'cell') state.selections[prompt.key] = { row, col };
+      if (prompt.type === 'row') state.selections[prompt.key] = { row };
+      if (prompt.type === 'col') state.selections[prompt.key] = { col };
+
+      state.wizardStep += 1;
+      renderMappingSummary();
+      renderPreview();
+
+      if (state.wizardStep < mappingPrompts.length) {
+        mappingPrompt.innerHTML = mappingPrompts[state.wizardStep].text;
+        return;
+      }
+
+      state.wizardActive = false;
+      mappingGuide.classList.add('hidden');
+      buildStockConfigurations();
+    }
+
+    function buildStockConfigurations() {
+      const configs = [];
+      const excludedSheets = [];
+
+      state.workbook.SheetNames.forEach((sheetName, index) => {
+        const ws = state.workbook.Sheets[sheetName];
+        const data = getSheetData(ws, true);
+        const stockCell = state.selections.stockCell || { row: 0, col: 0 };
+        const headerRow = state.selections.headerRow ? state.selections.headerRow.row : 0;
+        const rawStockCellText = String(data?.[stockCell.row]?.[stockCell.col] ?? '').trim() || sheetName;
+        const stockName = rawStockCellText || sheetName;
+        const endingSnapshot = getEndingBalanceSnapshot(ws, data);
+        let tradeCount = 0;
+
+        for (let row = headerRow + 1; row < data.length; row++) {
+          const desc = data[row]?.[state.selections.descCol.col];
+          if (parseTradeDescription(desc, stockName)) tradeCount += 1;
+        }
+
+        if (!state.includeZeroEndingSheets && endingSnapshot.hasDateRow && endingSnapshot.hasBalanceValue && endingSnapshot.endingBalance === 0) {
+          excludedSheets.push({
+            sourceSheetName: sheetName,
+            stockName,
+            endingBalance: endingSnapshot.endingBalance,
+            lastTradeDate: endingSnapshot.lastTradeDate
+          });
+          return;
+        }
+
+        const notes = [];
+        if (tradeCount === 0) notes.push('적요에 @가 있는 거래행이 없습니다.');
+        if (!state.includeZeroEndingSheets && endingSnapshot.hasDateRow && endingSnapshot.hasBalanceValue) {
+          notes.push(`최종잔액 ${formatDisplayNumber(endingSnapshot.endingBalance)}주 기준`);
+        }
+
+        configs.push({
+          id: `stock-${index}`,
+          sourceSheetName: sheetName,
+          stockName,
+          rawStockCellText,
+          initialQty: 0,
+          initialCost: 0,
+          tradeCount,
+          note: notes.join(' / ')
+        });
+      });
+
+      state.stockConfigs = configs;
+      state.excludedSheets = excludedSheets;
+      renderConfigTable();
+      resetEvaluationWorkflow();
+      configSection.classList.remove('hidden');
+
+      if (!configs.length) {
+        showStatus('최종잔액 0 제외 조건으로 처리할 시트가 없습니다.', 'warn');
+        return;
+      }
+
+      if (!state.includeZeroEndingSheets && excludedSheets.length) {
+        showStatus(`기준 위치 선택이 완료되었습니다. 최종잔액 0 시트 ${formatDisplayNumber(excludedSheets.length)}개를 제외했습니다.`, 'success');
+        return;
+      }
+
+      showStatus('기준 위치 선택이 완료되었습니다.', 'success');
+    }
+
+    function renderConfigTable() {
+      stockConfigBody.innerHTML = '';
+
+      if (!state.stockConfigs.length) {
+        const emptyRow = document.createElement('tr');
+        emptyRow.innerHTML = `<td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">표시할 시트가 없습니다. 최종잔액 0인 시트 제외 옵션을 확인해주세요.</td>`;
+        stockConfigBody.appendChild(emptyRow);
+        return;
+      }
+
+      state.stockConfigs.forEach((config) => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-slate-100';
+        row.innerHTML = `
+          <td class="px-4 py-3 font-medium text-slate-700">${escapeHtml(config.sourceSheetName)}</td>
+          <td class="px-4 py-3">
+            <input data-id="${config.id}" data-field="stockName" type="text" value="${escapeHtml(config.stockName)}" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" />
+          </td>
+          <td class="px-4 py-3 text-right font-semibold ${config.tradeCount ? 'text-slate-900' : 'text-amber-700'}">${formatDisplayNumber(config.tradeCount)}</td>
+          <td class="px-4 py-3">
+            <input data-id="${config.id}" data-field="initialQty" type="number" min="0" step="1" value="${config.initialQty}" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-right text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" />
+          </td>
+          <td class="px-4 py-3">
+            <input data-id="${config.id}" data-field="initialCost" type="number" min="0" step="1" value="${config.initialCost}" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-right text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-100" />
+          </td>
+          <td class="px-4 py-3 text-sm text-slate-500">${escapeHtml(config.note || '-')}</td>
+        `;
+        stockConfigBody.appendChild(row);
+      });
+
+      stockConfigBody.querySelectorAll('input').forEach((input) => {
+        input.addEventListener('input', (event) => {
+          const { id, field } = event.currentTarget.dataset;
+          const target = state.stockConfigs.find((item) => item.id === id);
+          if (!target) return;
+          target[field] = field === 'stockName' ? event.currentTarget.value : parseNumeric(event.currentTarget.value);
+          handleEvaluationConfigChange();
+        });
+      });
+    }
+
+    function collectSheetTransactions(config) {
+      const ws = state.workbook.Sheets[config.sourceSheetName];
+      const data = getSheetData(ws, true);
+      const headerRowIndex = state.selections.headerRow.row;
+      const transactions = [];
+      const issues = [];
+
+      for (let rowIndex = headerRowIndex + 1; rowIndex < data.length; rowIndex++) {
+        const row = data[rowIndex] || [];
+        const desc = row[state.selections.descCol.col];
+        const parsedDesc = parseTradeDescription(desc, config.stockName);
+        if (!parsedDesc) continue;
+
+        const debitAmount = parseNumeric(row[state.selections.debitCol.col]);
+        const creditAmount = parseNumeric(row[state.selections.creditCol.col]);
+        const direction = debitAmount > 0 ? 'buy' : creditAmount > 0 ? 'sell' : parsedDesc.directionFromText;
+        const amount = Math.round(parsedDesc.quantity * parsedDesc.unitPrice);
+
+        if (!direction) {
+          issues.push(`[${config.sourceSheetName}] ${rowIndex + 1}행은 차변/대변 금액과 적요 방향을 판단하지 못했습니다.`);
+          continue;
+        }
+
+        if (amount <= 0) {
+          issues.push(`[${config.sourceSheetName}] ${rowIndex + 1}행은 수량 또는 단가를 계산하지 못했습니다.`);
+          continue;
+        }
+
+        const dateCellRef = XLSX.utils.encode_cell({ r: rowIndex, c: state.selections.dateCol.col });
+        const dateCell = ws[dateCellRef];
+        const tradeDate = parseDateValue(row[state.selections.dateCol.col], dateCell);
+
+        transactions.push({
+          sourceRow: rowIndex + 1,
+          tradeDate,
+          direction,
+          quantity: parsedDesc.quantity,
+          unitPrice: parsedDesc.unitPrice,
+          amount,
+          desc: parsedDesc.raw,
+          balanceQuantity: parsedDesc.balanceQuantity
+        });
+      }
+
+      return { transactions, issues };
+    }
+
+    function buildStockLedger(config) {
+      const { transactions, issues } = collectSheetTransactions(config);
+      const ledgerRows = [];
+      const dailyItems = [];
+      const warnings = [...issues];
+
+      let holdingQty = parseNumeric(config.initialQty);
+      let totalCost = parseNumeric(config.initialCost);
+      let totalAcquisition = totalCost;
+      let totalSale = 0;
+      let totalGain = 0;
+      let totalBuyQty = 0;
+      let totalBuyAmount = 0;
+      let totalSellQty = 0;
+
+      ledgerRows.push({
+        acquisitionDate: '전기이월',
+        acquisitionQty: holdingQty || '',
+        cumulativeQty: holdingQty || 0,
+        acquisitionAmount: totalCost || 0,
+        cumulativeCost: totalCost || 0,
+        saleDate: '',
+        disposalQty: '',
+        movingAverageCost: 0,
+        saleAmount: 0,
+        gainLoss: 0,
+        stockBalance: holdingQty || 0
+      });
+
+      transactions.forEach((trade) => {
+        if (trade.direction === 'buy') {
+          holdingQty += trade.quantity;
+          totalCost += trade.amount;
+          totalAcquisition += trade.amount;
+          totalBuyQty += trade.quantity;
+          totalBuyAmount += trade.amount;
+
+          ledgerRows.push({
+            acquisitionDate: trade.tradeDate,
+            acquisitionQty: trade.quantity,
+            cumulativeQty: holdingQty,
+            acquisitionAmount: trade.amount,
+            cumulativeCost: totalCost,
+            saleDate: '',
+            disposalQty: '',
+            movingAverageCost: '',
+            saleAmount: '',
+            gainLoss: '',
+            stockBalance: holdingQty
+          });
+          return;
+        }
+
+        const beforeQty = holdingQty;
+        const beforeCost = totalCost;
+        if (trade.quantity > beforeQty) {
+          warnings.push(`[${config.stockName}] ${trade.tradeDate} 매도수량 ${formatDisplayNumber(trade.quantity)}주가 보유수량 ${formatDisplayNumber(beforeQty)}주를 초과했습니다.`);
+        }
+
+        const disposalCost = beforeQty > 0 ? Math.round((beforeCost / beforeQty) * trade.quantity) : 0;
+        const gainLoss = trade.amount - disposalCost;
+        holdingQty = Math.max(0, beforeQty - trade.quantity);
+        totalCost = Math.max(0, beforeCost - disposalCost);
+        if (holdingQty === 0) totalCost = 0;
+
+        totalSale += trade.amount;
+        totalGain += gainLoss;
+        totalSellQty += trade.quantity;
+
+        ledgerRows.push({
+          acquisitionDate: '',
+          acquisitionQty: '',
+          cumulativeQty: beforeQty,
+          acquisitionAmount: '',
+          cumulativeCost: beforeCost,
+          saleDate: trade.tradeDate,
+          disposalQty: trade.quantity,
+          movingAverageCost: disposalCost,
+          saleAmount: trade.amount,
+          gainLoss,
+          stockBalance: holdingQty
+        });
+
+        dailyItems.push({
+          date: trade.tradeDate,
+          stockName: config.stockName,
+          rawStockCellText: config.rawStockCellText,
+          sourceSheetName: config.sourceSheetName,
+          sourceRow: trade.sourceRow,
+          disposalQty: trade.quantity,
+          disposalCost,
+          saleAmount: trade.amount,
+          gainLoss,
+          desc: trade.desc
+        });
+      });
+
+      return {
+        config,
+        ledgerRows,
+        warnings,
+        dailyItems,
+        totals: {
+          totalAcquisition,
+          totalSale,
+          totalGain,
+          totalBuyQty,
+          totalBuyAmount,
+          totalSellQty,
+          endingQty: holdingQty,
+          endingCost: totalCost,
+          tradeCount: transactions.length
+        }
+      };
+    }
+
+    function validateConfigs() {
+      const issues = [];
+      state.stockConfigs.forEach((config) => {
+        if (!String(config.stockName || '').trim()) issues.push(`[${config.sourceSheetName}] 주식명이 비어 있습니다.`);
+        if (config.initialQty > 0 && config.initialCost === 0) issues.push(`[${config.stockName || config.sourceSheetName}] 기초주식수는 있는데 기초취득원가가 0입니다.`);
+      });
+      return issues;
+    }
+
+    function renderResultSummary(warnings) {
+      if (!state.outputMeta) return;
+
+      resultSummary.innerHTML = `
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <p class="text-sm text-slate-500">생성된 종목 시트</p>
+          <p class="mt-1 text-2xl font-extrabold">${formatDisplayNumber(state.outputMeta.stockCount)}개</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <p class="text-sm text-slate-500">매도 집계 건수</p>
+          <p class="mt-1 text-2xl font-extrabold">${formatDisplayNumber(state.outputMeta.saleRowCount)}건</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <p class="text-sm text-slate-500">총 처분손익</p>
+          <p class="mt-1 text-2xl font-extrabold">${formatDisplayNumber(state.outputMeta.totalGain)}원</p>
+        </div>
+      `;
+
+      resultMessages.innerHTML = '';
+      const box = document.createElement('div');
+      if (!warnings.length) {
+        box.className = 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900';
+        box.textContent = '검토가 필요한 경고 없이 파일이 생성되었습니다.';
+        resultMessages.appendChild(box);
+        return;
+      }
+
+      box.className = 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+      const title = document.createElement('p');
+      title.className = 'font-semibold';
+      title.textContent = `검토가 필요한 항목 ${formatDisplayNumber(warnings.length)}건`;
+      box.appendChild(title);
+
+      warnings.slice(0, 12).forEach((warning) => {
+        const line = document.createElement('p');
+        line.className = 'mt-2';
+        line.textContent = `- ${warning}`;
+        box.appendChild(line);
+      });
+      if (warnings.length > 12) {
+        const more = document.createElement('p');
+        more.className = 'mt-2 text-amber-700';
+        more.textContent = `외 ${formatDisplayNumber(warnings.length - 12)}건은 엑셀의 '검토필요' 시트에서 확인할 수 있습니다.`;
+        box.appendChild(more);
+      }
+
+      resultMessages.appendChild(box);
+    }
+
+    function validateAccountingBaseFields() {
+      const requiredFields = [
+        { label: '주식 계정과목코드', value: stockAccountCodeInput.value.trim() },
+        { label: '주식 계정과목명', value: stockAccountNameInput.value.trim() },
+        { label: '처분이익 코드', value: gainAccountCodeInput.value.trim() },
+        { label: '처분이익 계정과목명', value: gainAccountNameInput.value.trim() },
+        { label: '처분손실 코드', value: lossAccountCodeInput.value.trim() },
+        { label: '처분손실 계정과목명', value: lossAccountNameInput.value.trim() }
+      ];
+
+      const missing = requiredFields.filter((field) => !field.value);
+      if (missing.length) {
+        alert(`다음 항목을 입력해주세요.\n\n${missing.map((field) => `- ${field.label}`).join('\n')}`);
+        return false;
+      }
+      return true;
+    }
+
+    function renderSemuMessages(messages, tone = 'warn') {
+      clearElementChildren(semuMessages);
+      const box = document.createElement('div');
+      box.className = tone === 'success'
+        ? 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900'
+        : 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+
+      messages.forEach((message, index) => {
+        const line = document.createElement(index === 0 ? 'p' : 'p');
+        line.className = index === 0 ? 'font-semibold' : 'mt-2';
+        line.textContent = message;
+        box.appendChild(line);
+      });
+
+      semuMessages.appendChild(box);
+    }
+
+    function renderWihagoMessages(messages, tone = 'warn') {
+      clearElementChildren(wihagoMessages);
+      const box = document.createElement('div');
+      box.className = tone === 'success'
+        ? 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900'
+        : 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+
+      messages.forEach((message, index) => {
+        const line = document.createElement('p');
+        line.className = index === 0 ? 'font-semibold' : 'mt-2';
+        line.textContent = message;
+        box.appendChild(line);
+      });
+
+      wihagoMessages.appendChild(box);
+    }
+
+    async function runBusyAction(key, button, busyLabel, action) {
+      if (!button || state.busyActions[key]) return;
+
+      state.busyActions[key] = true;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.classList.add('opacity-60', 'cursor-not-allowed');
+      if (busyLabel) button.textContent = busyLabel;
+
+      try {
+        await action();
+      } finally {
+        state.busyActions[key] = false;
+        button.disabled = false;
+        button.classList.remove('opacity-60', 'cursor-not-allowed');
+        button.textContent = originalText;
+      }
+    }
+
+    function buildSemuRows() {
+      if (!state.latestBuild) {
+        return { rows: [], issues: ['먼저 손익 계산 엑셀을 생성해주세요.'] };
+      }
+
+      const companyName = semuCompanyNameInput.value.trim();
+      const businessNo = digitsOnly(semuBusinessNoInput.value);
+      const fiscalYear = digitsOnly(semuFiscalYearInput.value);
+      const issues = [];
+
+      if (!companyName) issues.push('회사명을 입력해주세요.');
+      if (!/^\d{10}$/.test(businessNo)) issues.push('사업자등록번호는 숫자 10자리로 입력해주세요.');
+      if (!/^\d{4}$/.test(fiscalYear)) issues.push('해당연도는 4자리 숫자로 입력해주세요.');
+      if (issues.length) return { rows: [], issues };
+
+      const stockCode = stockAccountCodeInput.value.trim();
+      const stockName = stockAccountNameInput.value.trim();
+      const gainCode = gainAccountCodeInput.value.trim();
+      const gainName = gainAccountNameInput.value.trim();
+      const lossCode = lossAccountCodeInput.value.trim();
+      const lossName = lossAccountNameInput.value.trim();
+
+      const rows = [];
+      const rowIssues = [];
+      const items = state.latestBuild.dailyItems
+        .filter((item) => Number(item.gainLoss) !== 0)
+        .sort((a, b) => {
+          const dateA = buildAccountingDate(a.date, fiscalYear);
+          const dateB = buildAccountingDate(b.date, fiscalYear);
+          return `${dateA}|${a.stockName}|${String(a.sourceRow).padStart(6, '0')}`.localeCompare(
+            `${dateB}|${b.stockName}|${String(b.sourceRow).padStart(6, '0')}`
+          );
+        });
+
+      items.forEach((item) => {
+        const postingDate = buildAccountingDate(item.date, fiscalYear);
+        if (!postingDate) {
+          rowIssues.push(`[${item.sourceSheetName}] ${item.sourceRow}행의 매도일자 '${item.date}'를 업로드 날짜로 바꾸지 못했습니다.`);
+          return;
+        }
+
+        const counterparty = extractCounterpartyInfo(item.rawStockCellText);
+        if (!counterparty.code) {
+          rowIssues.push(`[${item.sourceSheetName}] ${counterparty.issue}`);
+          return;
+        }
+        if (!counterparty.name) {
+          rowIssues.push(`[${item.sourceSheetName}] ${counterparty.issue}`);
+          return;
+        }
+
+        const memo = `(매매차익) ${item.desc}`;
+
+        if (item.gainLoss > 0) {
+          rows.push(createSemuRow({
+            date: postingDate,
+            division: '4',
+            code: gainCode,
+            accountName: gainName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount: item.gainLoss
+          }));
+
+          rows.push(createSemuRow({
+            date: postingDate,
+            division: '4',
+            code: stockCode,
+            accountName: stockName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount: item.gainLoss * -1
+          }));
+          return;
+        }
+
+        const lossAmount = item.gainLoss * -1;
+        rows.push(createSemuRow({
+          date: postingDate,
+          division: '3',
+          code: lossCode,
+          accountName: lossName,
+          counterpartyCode: counterparty.code,
+          counterpartyName: counterparty.name,
+          memo,
+          amount: lossAmount
+        }));
+
+        rows.push(createSemuRow({
+          date: postingDate,
+          division: '4',
+          code: stockCode,
+          accountName: stockName,
+          counterpartyCode: counterparty.code,
+          counterpartyName: counterparty.name,
+          memo,
+          amount: lossAmount
+        }));
+      });
+
+      return {
+        rows,
+        issues: rowIssues,
+        companyName,
+        businessNo,
+        fiscalYear
+      };
+    }
+
+    function buildWihagoRows() {
+      if (!state.latestBuild) {
+        return { rows: [], issues: ['먼저 손익 계산 엑셀을 생성해주세요.'] };
+      }
+
+      const stockCode = stockAccountCodeInput.value.trim();
+      const stockName = stockAccountNameInput.value.trim();
+      const gainCode = gainAccountCodeInput.value.trim();
+      const gainName = gainAccountNameInput.value.trim();
+      const lossCode = lossAccountCodeInput.value.trim();
+      const lossName = lossAccountNameInput.value.trim();
+      const rows = [];
+      const issues = [];
+
+      const items = state.latestBuild.dailyItems
+        .filter((item) => Number(item.gainLoss) !== 0)
+        .sort((a, b) => `${a.date}|${a.stockName}|${String(a.sourceRow).padStart(6, '0')}`.localeCompare(
+          `${b.date}|${b.stockName}|${String(b.sourceRow).padStart(6, '0')}`
+        ));
+
+      items.forEach((item) => {
+        const dateParts = extractMonthDay(item.date);
+        if (!dateParts.month || !dateParts.day) {
+          issues.push(`[${item.sourceSheetName}] ${item.sourceRow}행의 매도일자 '${item.date}'를 월/일로 분리하지 못했습니다.`);
+          return;
+        }
+
+        const counterparty = extractCounterpartyInfo(item.rawStockCellText);
+        if (!counterparty.code) {
+          issues.push(`[${item.sourceSheetName}] ${counterparty.issue}`);
+          return;
+        }
+        if (!counterparty.name) {
+          issues.push(`[${item.sourceSheetName}] ${counterparty.issue}`);
+          return;
+        }
+
+        const memo = `(매매차익) ${item.desc}`;
+
+        if (item.gainLoss > 0) {
+          rows.push(createWihagoRow({
+            month: dateParts.month,
+            day: dateParts.day,
+            division: '4',
+            code: gainCode,
+            accountName: gainName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount: item.gainLoss
+          }));
+
+          rows.push(createWihagoRow({
+            month: dateParts.month,
+            day: dateParts.day,
+            division: '4',
+            code: stockCode,
+            accountName: stockName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount: item.gainLoss * -1
+          }));
+          return;
+        }
+
+        const lossAmount = item.gainLoss * -1;
+        rows.push(createWihagoRow({
+          month: dateParts.month,
+          day: dateParts.day,
+          division: '3',
+          code: lossCode,
+          accountName: lossName,
+          counterpartyCode: counterparty.code,
+          counterpartyName: counterparty.name,
+          memo,
+          amount: lossAmount
+        }));
+
+        rows.push(createWihagoRow({
+          month: dateParts.month,
+          day: dateParts.day,
+          division: '4',
+          code: stockCode,
+          accountName: stockName,
+          counterpartyCode: counterparty.code,
+          counterpartyName: counterparty.name,
+          memo,
+          amount: lossAmount
+        }));
+      });
+
+      return { rows, issues };
+    }
+
+    async function generateSemuWorkbook() {
+      if (!checkExcelJS()) return;
+      if (!validateAccountingBaseFields()) return;
+
+      const { rows, issues, companyName, businessNo, fiscalYear } = buildSemuRows();
+      if (issues.length) {
+        renderSemuMessages(['입력값 또는 원본 데이터 확인이 필요합니다.', ...issues.slice(0, 12)], 'warn');
+        return;
+      }
+      if (!rows.length) {
+        renderSemuMessages(['처분손익이 있는 매도 데이터가 없어 세무사랑 업로드 행을 만들지 못했습니다.'], 'warn');
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Sheet1');
+      sheet.columns = [
+        { width: 13 }, { width: 8 }, { width: 14 }, { width: 20 }, { width: 14 },
+        { width: 20 }, { width: 6 }, { width: 36 }, { width: 14 }, { width: 6 },
+        { width: 6 }, { width: 18 }, { width: 6 }, { width: 6 }, { width: 8 }
+      ];
+
+      sheet.getCell('L3').value = companyName;
+      sheet.getCell('O3').value = businessNo;
+      sheet.getCell('M4').value = 'v1.2';
+      sheet.getCell('L3').font = { name: 'SUIT', bold: true };
+      sheet.getCell('M4').font = { name: 'SUIT', bold: true };
+      sheet.getCell('O3').font = { name: 'SUIT', bold: true };
+
+      rows.forEach((rowData, index) => {
+        const rowNumber = 11 + index;
+        rowData.forEach((value, columnIndex) => {
+          const cell = sheet.getCell(rowNumber, columnIndex + 1);
+          cell.value = value;
+          if (columnIndex === 0 || columnIndex === 2 || columnIndex === 4 || columnIndex === 14) {
+            cell.numFmt = '@';
+          }
+          if (columnIndex === 8) {
+            cell.numFmt = '#,##0';
+          }
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (downloadSemuBtn.href && downloadSemuBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadSemuBtn.href);
+      }
+      downloadSemuBtn.href = URL.createObjectURL(blob);
+      downloadSemuBtn.download = `${(state.selectedFileName || '주식매매차손익').replace(/\.[^.]+$/, '')}_매매차익_세무사랑업로드_${fiscalYear}.xlsx`;
+      downloadSemuBtn.classList.remove('hidden');
+
+      renderSemuMessages([
+        '세무사랑 업로드용 엑셀을 생성했습니다.',
+        `전표행 ${formatDisplayNumber(rows.length)}개가 생성되었습니다.`
+      ], 'success');
+
+      downloadSemuBtn.click();
+    }
+
+    async function generateWihagoWorkbook() {
+      if (!checkExcelJS()) return;
+      if (!validateAccountingBaseFields()) return;
+
+      const { rows, issues } = buildWihagoRows();
+      if (issues.length) {
+        renderWihagoMessages(['입력값 또는 원본 데이터 확인이 필요합니다.', ...issues.slice(0, 12)], 'warn');
+        return;
+      }
+      if (!rows.length) {
+        renderWihagoMessages(['처분손익이 있는 매도 데이터가 없어 위하고 업로드 행을 만들지 못했습니다.'], 'warn');
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Sheet1');
+      sheet.columns = [
+        { width: 8 }, { width: 8 }, { width: 8 }, { width: 14 }, { width: 20 },
+        { width: 14 }, { width: 20 }, { width: 36 }, { width: 14 }, { width: 14 },
+        { width: 12 }, { width: 18 }, { width: 12 }, { width: 18 }, { width: 12 },
+        { width: 18 }, { width: 14 }, { width: 18 }, { width: 10 }, { width: 18 }
+      ];
+
+      const headers = ['월', '일', '구분', '계정과목코드', '계정과목명', '거래처코드', '거래처명', '적요명', '차변', '대변', '부서코드', '부서명', '사원코드', '사원명', '현장코드', '현장명', '프로젝트코드', '프로젝트명', '카드여부', '카드여부명세서'];
+      const headerRow = sheet.addRow(headers);
+      headerRow.eachCell((cell) => {
+        cell.font = { name: 'SUIT', bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      rows.forEach((rowData) => {
+        const row = sheet.addRow(rowData);
+        row.eachCell((cell, colNumber) => {
+          if ([1, 2, 3, 4, 6].includes(colNumber)) {
+            cell.numFmt = '@';
+          }
+          if (colNumber === 9 || colNumber === 10) {
+            cell.numFmt = '#,##0';
+          }
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (downloadWihagoBtn.href && downloadWihagoBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadWihagoBtn.href);
+      }
+      downloadWihagoBtn.href = URL.createObjectURL(blob);
+      downloadWihagoBtn.download = `${(state.selectedFileName || '주식매매차손익').replace(/\.[^.]+$/, '')}_매매차익_위하고업로드.xlsx`;
+      downloadWihagoBtn.classList.remove('hidden');
+
+      renderWihagoMessages([
+        '위하고 업로드용 엑셀을 생성했습니다.',
+        `전표행 ${formatDisplayNumber(rows.length)}개가 생성되었습니다.`
+      ], 'success');
+
+      downloadWihagoBtn.click();
+    }
+
+    function renderValuationSetupMessages(messages, tone = 'warn') {
+      clearElementChildren(valuationSetupMessages);
+      const box = document.createElement('div');
+      box.className = tone === 'success'
+        ? 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900'
+        : 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+
+      messages.forEach((message, index) => {
+        const line = document.createElement('p');
+        line.className = index === 0 ? 'font-semibold' : 'mt-2';
+        line.textContent = message;
+        box.appendChild(line);
+      });
+
+      valuationSetupMessages.appendChild(box);
+    }
+
+    function renderValuationSemuMessages(messages, tone = 'warn') {
+      clearElementChildren(valuationSemuMessages);
+      const box = document.createElement('div');
+      box.className = tone === 'success'
+        ? 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900'
+        : 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+
+      messages.forEach((message, index) => {
+        const line = document.createElement('p');
+        line.className = index === 0 ? 'font-semibold' : 'mt-2';
+        line.textContent = message;
+        box.appendChild(line);
+      });
+
+      valuationSemuMessages.appendChild(box);
+    }
+
+    function renderValuationWihagoMessages(messages, tone = 'warn') {
+      clearElementChildren(valuationWihagoMessages);
+      const box = document.createElement('div');
+      box.className = tone === 'success'
+        ? 'rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900'
+        : 'rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900';
+
+      messages.forEach((message, index) => {
+        const line = document.createElement('p');
+        line.className = index === 0 ? 'font-semibold' : 'mt-2';
+        line.textContent = message;
+        box.appendChild(line);
+      });
+
+      valuationWihagoMessages.appendChild(box);
+    }
+
+    function getValuationBaseFields() {
+      const evaluationDate = valuationDateInput.value.trim();
+      const fields = {
+        evaluationDate,
+        stockCode: valuationStockAccountCodeInput.value.trim(),
+        stockName: valuationStockAccountNameInput.value.trim(),
+        gainCode: valuationGainAccountCodeInput.value.trim(),
+        gainName: valuationGainAccountNameInput.value.trim(),
+        lossCode: valuationLossAccountCodeInput.value.trim(),
+        lossName: valuationLossAccountNameInput.value.trim()
+      };
+      const issues = [];
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(evaluationDate)) issues.push('평가연월일은 yyyy-mm-dd 형식으로 입력해주세요.');
+      if (!fields.stockCode) issues.push('주식 계정과목코드를 입력해주세요.');
+      if (!fields.stockName) issues.push('주식 계정과목명을 입력해주세요.');
+      if (!fields.gainCode) issues.push('평가이익 코드를 입력해주세요.');
+      if (!fields.gainName) issues.push('평가이익 계정과목명을 입력해주세요.');
+      if (!fields.lossCode) issues.push('평가손실 코드를 입력해주세요.');
+      if (!fields.lossName) issues.push('평가손실 계정과목명을 입력해주세요.');
+
+      return {
+        ...fields,
+        issues,
+        postingDate: evaluationDate.replace(/-/g, ''),
+        dateParts: extractMonthDay(evaluationDate)
+      };
+    }
+
+    function getValuationUploadItems() {
+      if (!state.latestBuild) {
+        return { items: [], issues: ['먼저 손익 계산 엑셀을 생성해주세요.'] };
+      }
+      if (!state.latestBuild.hasEvaluationInput) {
+        return { items: [], issues: ['평가차액 작업을 예로 선택하고 손익엑셀만들기를 다시 실행해주세요.'] };
+      }
+
+      const items = (state.latestBuild.evaluationItems || []).filter((item) => Number.isFinite(Number(item.valuationDiff)) && Number(item.valuationDiff) !== 0);
+      if (!items.length) {
+        return { items: [], issues: ['평가차액이 0원인 종목만 있어 업로드 파일을 만들 수 없습니다.'] };
+      }
+
+      return { items, issues: [] };
+    }
+
+    function syncValuationSemuIdentity() {
+      if (!valuationSemuCompanyNameInput.value.trim() && semuCompanyNameInput.value.trim()) {
+        valuationSemuCompanyNameInput.value = semuCompanyNameInput.value.trim();
+      }
+      if (!valuationSemuBusinessNoInput.value.trim() && semuBusinessNoInput.value.trim()) {
+        valuationSemuBusinessNoInput.value = digitsOnly(semuBusinessNoInput.value).slice(0, 10);
+      }
+    }
+
+    function confirmValuationExtraSetup() {
+      const baseFields = getValuationBaseFields();
+      if (baseFields.issues.length) {
+        valuationActionsPanel.classList.add('hidden');
+        renderValuationSetupMessages(['평가차익 공통 입력을 확인해주세요.', ...baseFields.issues], 'warn');
+        return false;
+      }
+
+      const { items, issues } = getValuationUploadItems();
+      if (issues.length) {
+        valuationActionsPanel.classList.add('hidden');
+        renderValuationSetupMessages(['평가차익 업로드를 진행할 수 없습니다.', ...issues], 'warn');
+        return false;
+      }
+
+      valuationActionsPanel.classList.remove('hidden');
+      valuationSemuFormPanel.classList.add('hidden');
+      valuationWihagoFormPanel.classList.add('hidden');
+      clearElementChildren(valuationSemuMessages);
+      clearElementChildren(valuationWihagoMessages);
+      syncValuationSemuIdentity();
+      renderValuationSetupMessages([
+        '평가차익 업로드 준비가 완료되었습니다.',
+        `대상 종목 ${formatDisplayNumber(items.length)}개를 기준으로 파일을 생성할 수 있습니다.`
+      ], 'success');
+      return true;
+    }
+
+    function buildValuationSemuRows() {
+      const baseFields = getValuationBaseFields();
+      const { items, issues } = getValuationUploadItems();
+      const companyName = valuationSemuCompanyNameInput.value.trim();
+      const businessNo = digitsOnly(valuationSemuBusinessNoInput.value);
+      const rowIssues = [...baseFields.issues, ...issues];
+
+      if (!companyName) rowIssues.push('회사명을 입력해주세요.');
+      if (!/^\d{10}$/.test(businessNo)) rowIssues.push('사업자등록번호는 숫자 10자리로 입력해주세요.');
+      if (rowIssues.length) {
+        return { rows: [], issues: rowIssues, companyName, businessNo, evaluationDate: baseFields.evaluationDate };
+      }
+
+      const rows = [];
+      items
+        .slice()
+        .sort((a, b) => `${a.stockName}|${a.sourceSheetName}`.localeCompare(`${b.stockName}|${b.sourceSheetName}`))
+        .forEach((item) => {
+          const counterparty = extractCounterpartyInfo(item.rawStockCellText);
+          if (!counterparty.code || !counterparty.name) {
+            rowIssues.push(`[${item.sourceSheetName}] ${counterparty.issue}`);
+            return;
+          }
+
+          const amount = Math.abs(Number(item.valuationDiff));
+          const memo = '평가';
+
+          if (Number(item.valuationDiff) > 0) {
+            rows.push(createSemuRow({
+              date: baseFields.postingDate,
+              division: '4',
+              code: baseFields.gainCode,
+              accountName: baseFields.gainName,
+              counterpartyCode: counterparty.code,
+              counterpartyName: counterparty.name,
+              memo,
+              amount
+            }));
+
+            rows.push(createSemuRow({
+              date: baseFields.postingDate,
+              division: '3',
+              code: baseFields.stockCode,
+              accountName: baseFields.stockName,
+              counterpartyCode: counterparty.code,
+              counterpartyName: counterparty.name,
+              memo,
+              amount
+            }));
+            return;
+          }
+
+          rows.push(createSemuRow({
+            date: baseFields.postingDate,
+            division: '3',
+            code: baseFields.lossCode,
+            accountName: baseFields.lossName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount
+          }));
+
+          rows.push(createSemuRow({
+            date: baseFields.postingDate,
+            division: '4',
+            code: baseFields.stockCode,
+            accountName: baseFields.stockName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount
+          }));
+        });
+
+      return { rows, issues: rowIssues, companyName, businessNo, evaluationDate: baseFields.evaluationDate };
+    }
+
+    function buildValuationWihagoRows() {
+      const baseFields = getValuationBaseFields();
+      const { items, issues } = getValuationUploadItems();
+      const rowIssues = [...baseFields.issues, ...issues];
+
+      if (!baseFields.dateParts.month || !baseFields.dateParts.day) {
+        rowIssues.push('평가연월일에서 월/일을 분리하지 못했습니다.');
+      }
+      if (rowIssues.length) {
+        return { rows: [], issues: rowIssues, evaluationDate: baseFields.evaluationDate };
+      }
+
+      const rows = [];
+      items
+        .slice()
+        .sort((a, b) => `${a.stockName}|${a.sourceSheetName}`.localeCompare(`${b.stockName}|${b.sourceSheetName}`))
+        .forEach((item) => {
+          const counterparty = extractCounterpartyInfo(item.rawStockCellText);
+          if (!counterparty.code || !counterparty.name) {
+            rowIssues.push(`[${item.sourceSheetName}] ${counterparty.issue}`);
+            return;
+          }
+
+          const amount = Math.abs(Number(item.valuationDiff));
+          const memo = '평가';
+
+          if (Number(item.valuationDiff) > 0) {
+            rows.push(createWihagoRow({
+              month: baseFields.dateParts.month,
+              day: baseFields.dateParts.day,
+              division: '4',
+              code: baseFields.gainCode,
+              accountName: baseFields.gainName,
+              counterpartyCode: counterparty.code,
+              counterpartyName: counterparty.name,
+              memo,
+              amount
+            }));
+
+            rows.push(createWihagoRow({
+              month: baseFields.dateParts.month,
+              day: baseFields.dateParts.day,
+              division: '3',
+              code: baseFields.stockCode,
+              accountName: baseFields.stockName,
+              counterpartyCode: counterparty.code,
+              counterpartyName: counterparty.name,
+              memo,
+              amount
+            }));
+            return;
+          }
+
+          rows.push(createWihagoRow({
+            month: baseFields.dateParts.month,
+            day: baseFields.dateParts.day,
+            division: '3',
+            code: baseFields.lossCode,
+            accountName: baseFields.lossName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount
+          }));
+
+          rows.push(createWihagoRow({
+            month: baseFields.dateParts.month,
+            day: baseFields.dateParts.day,
+            division: '4',
+            code: baseFields.stockCode,
+            accountName: baseFields.stockName,
+            counterpartyCode: counterparty.code,
+            counterpartyName: counterparty.name,
+            memo,
+            amount
+          }));
+        });
+
+      return { rows, issues: rowIssues, evaluationDate: baseFields.evaluationDate };
+    }
+
+    async function generateValuationSemuWorkbook() {
+      if (!checkExcelJS()) return;
+
+      const { rows, issues, companyName, businessNo, evaluationDate } = buildValuationSemuRows();
+      if (issues.length) {
+        renderValuationSemuMessages(['입력값 또는 평가차액 데이터를 확인해주세요.', ...issues.slice(0, 12)], 'warn');
+        return;
+      }
+      if (!rows.length) {
+        renderValuationSemuMessages(['평가차액 업로드 행을 만들지 못했습니다.'], 'warn');
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Sheet1');
+      sheet.columns = [
+        { width: 13 }, { width: 8 }, { width: 14 }, { width: 20 }, { width: 14 },
+        { width: 20 }, { width: 6 }, { width: 36 }, { width: 14 }, { width: 6 },
+        { width: 6 }, { width: 18 }, { width: 6 }, { width: 6 }, { width: 8 }
+      ];
+
+      sheet.getCell('L3').value = companyName;
+      sheet.getCell('O3').value = businessNo;
+      sheet.getCell('M4').value = 'v1.2';
+      sheet.getCell('L3').font = { name: 'SUIT', bold: true };
+      sheet.getCell('M4').font = { name: 'SUIT', bold: true };
+      sheet.getCell('O3').font = { name: 'SUIT', bold: true };
+
+      rows.forEach((rowData, index) => {
+        const rowNumber = 11 + index;
+        rowData.forEach((value, columnIndex) => {
+          const cell = sheet.getCell(rowNumber, columnIndex + 1);
+          cell.value = value;
+          if (columnIndex === 0 || columnIndex === 2 || columnIndex === 4 || columnIndex === 14) {
+            cell.numFmt = '@';
+          }
+          if (columnIndex === 8) {
+            cell.numFmt = '#,##0';
+          }
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (downloadValuationSemuBtn.href && downloadValuationSemuBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadValuationSemuBtn.href);
+      }
+      downloadValuationSemuBtn.href = URL.createObjectURL(blob);
+      downloadValuationSemuBtn.download = `${(state.selectedFileName || '주식매매차손익').replace(/\.[^.]+$/, '')}_평가차익_세무사랑업로드_${evaluationDate.replace(/-/g, '')}.xlsx`;
+      downloadValuationSemuBtn.classList.remove('hidden');
+
+      renderValuationSemuMessages([
+        '평가차익 세무사랑 업로드용 엑셀을 생성했습니다.',
+        `전표행 ${formatDisplayNumber(rows.length)}개가 생성되었습니다.`
+      ], 'success');
+
+      downloadValuationSemuBtn.click();
+    }
+
+    async function generateValuationWihagoWorkbook() {
+      if (!checkExcelJS()) return;
+
+      const { rows, issues, evaluationDate } = buildValuationWihagoRows();
+      if (issues.length) {
+        renderValuationWihagoMessages(['입력값 또는 평가차액 데이터를 확인해주세요.', ...issues.slice(0, 12)], 'warn');
+        return;
+      }
+      if (!rows.length) {
+        renderValuationWihagoMessages(['평가차액 업로드 행을 만들지 못했습니다.'], 'warn');
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Sheet1');
+      sheet.columns = [
+        { width: 8 }, { width: 8 }, { width: 8 }, { width: 14 }, { width: 20 },
+        { width: 14 }, { width: 20 }, { width: 36 }, { width: 14 }, { width: 14 },
+        { width: 12 }, { width: 18 }, { width: 12 }, { width: 18 }, { width: 12 },
+        { width: 18 }, { width: 14 }, { width: 18 }, { width: 10 }, { width: 18 }
+      ];
+
+      const headers = ['월', '일', '구분', '계정과목코드', '계정과목명', '거래처코드', '거래처명', '적요명', '차변', '대변', '부서코드', '부서명', '사원코드', '사원명', '현장코드', '현장명', '프로젝트코드', '프로젝트명', '카드여부', '카드여부명세서'];
+      const headerRow = sheet.addRow(headers);
+      headerRow.eachCell((cell) => {
+        cell.font = { name: 'SUIT', bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      rows.forEach((rowData) => {
+        const row = sheet.addRow(rowData);
+        row.eachCell((cell, colNumber) => {
+          if ([1, 2, 3, 4, 6].includes(colNumber)) {
+            cell.numFmt = '@';
+          }
+          if (colNumber === 9 || colNumber === 10) {
+            cell.numFmt = '#,##0';
+          }
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (downloadValuationWihagoBtn.href && downloadValuationWihagoBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadValuationWihagoBtn.href);
+      }
+      downloadValuationWihagoBtn.href = URL.createObjectURL(blob);
+      downloadValuationWihagoBtn.download = `${(state.selectedFileName || '주식매매차손익').replace(/\.[^.]+$/, '')}_평가차익_위하고업로드_${evaluationDate.replace(/-/g, '')}.xlsx`;
+      downloadValuationWihagoBtn.classList.remove('hidden');
+
+      renderValuationWihagoMessages([
+        '평가차익 위하고 업로드용 엑셀을 생성했습니다.',
+        `전표행 ${formatDisplayNumber(rows.length)}개가 생성되었습니다.`
+      ], 'success');
+
+      downloadValuationWihagoBtn.click();
+    }
+
+    async function buildWorkbook() {
+      if (!checkXLSX() || !checkExcelJS()) return;
+      if (!state.stockConfigs.length) {
+        alert('처리할 시트가 없습니다.\n최종잔액 0인 시트 제외 옵션 때문에 모든 시트가 제외되었는지 확인해주세요.');
+        showStatus('처리할 시트가 없습니다.', 'warn');
+        return;
+      }
+      const configIssues = validateConfigs();
+      if (configIssues.length) {
+        alert(`입력 확인이 필요합니다.\n\n${configIssues.slice(0, 10).join('\n')}`);
+        return;
+      }
+
+      showStatus('엑셀 생성 중입니다...', 'active');
+      const workbook = new ExcelJS.Workbook();
+      const usedNames = new Set();
+      const results = state.stockConfigs.map((config) => buildStockLedger(config));
+      const allWarnings = [];
+      const allDailyItems = [];
+      const endingItems = [];
+      const evaluationSummaryMap = new Map((state.evaluationSummary || []).map((item) => [item.id, item]));
+
+      const fills = {
+        buy: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE2E2' } },
+        sell: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } },
+        gain: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } },
+        balance: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } },
+        evaluation: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } },
+        header: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } },
+        totalLabel: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
+      };
+
+      const border = {
+        top: { style: 'thin', color: { argb: 'FFD7E2F0' } },
+        left: { style: 'thin', color: { argb: 'FFD7E2F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFD7E2F0' } },
+        right: { style: 'thin', color: { argb: 'FFD7E2F0' } }
+      };
+
+      results.forEach((result) => {
+        allWarnings.push(...result.warnings);
+        allDailyItems.push(...result.dailyItems);
+        const endingQty = parseNumeric(result.totals.endingQty);
+        const endingCost = parseNumeric(result.totals.endingCost);
+        const evaluationItem = evaluationSummaryMap.get(result.config.id);
+        if (endingQty > 0) {
+          endingItems.push({
+            id: result.config.id,
+            stockName: result.config.stockName,
+            rawStockCellText: result.config.rawStockCellText,
+            sourceSheetName: result.config.sourceSheetName,
+            endingQty,
+            endingCost,
+            unitCost: endingQty > 0 ? Math.round(endingCost / endingQty) : 0,
+            totalEvaluation: evaluationItem ? evaluationItem.totalEvaluation : null,
+            valuationDiff: evaluationItem ? evaluationItem.valuationDiff : null
+          });
+        }
+
+        const ws = workbook.addWorksheet(sanitizeSheetName(result.config.stockName, usedNames));
+        ws.columns = [
+          { width: 14 }, { width: 11 }, { width: 13 }, { width: 14 }, { width: 16 },
+          { width: 14 }, { width: 12 }, { width: 16 }, { width: 14 }, { width: 12 }, { width: 11 }
+        ];
+
+        const titleRow = ws.addRow([`${result.config.stockName} 거래내역`]);
+        ws.mergeCells(titleRow.number, 1, titleRow.number, 11);
+        titleRow.getCell(1).font = { name: 'SUIT', size: 14, bold: true, color: { argb: 'FF0F172A' } };
+
+        const metaRow = ws.addRow(['원본 시트', result.config.sourceSheetName, '기초주식수', result.config.initialQty, '기초취득원가', result.config.initialCost]);
+        metaRow.eachCell((cell, colNumber) => {
+          cell.border = border;
+          cell.font = { name: 'SUIT', size: 10, bold: colNumber % 2 === 1 };
+        });
+        metaRow.getCell(6).numFmt = '#,##0';
+
+        const headerRow = ws.addRow(['취득일자', '주식수', '누적주식수', '취득가액', '누적취득가액', '매도일자', '처분주식수', '이동평균법원가', '매도가액', '처분손익', '주식잔고']);
+        headerRow.eachCell((cell) => {
+          cell.fill = fills.header;
+          cell.font = { name: 'SUIT', color: { argb: 'FFFFFFFF' }, bold: true };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border = border;
+        });
+
+        result.ledgerRows.forEach((rowData) => {
+          const row = ws.addRow([
+            rowData.acquisitionDate,
+            rowData.acquisitionQty,
+            rowData.cumulativeQty,
+            rowData.acquisitionAmount,
+            rowData.cumulativeCost,
+            rowData.saleDate,
+            rowData.disposalQty,
+            rowData.movingAverageCost,
+            rowData.saleAmount,
+            rowData.gainLoss,
+            rowData.stockBalance
+          ]);
+
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            cell.border = border;
+            cell.font = { name: 'SUIT', size: 10.5 };
+            cell.alignment = { horizontal: colNumber <= 1 || colNumber === 6 ? 'center' : 'right', vertical: 'middle' };
+            if (colNumber >= 2) cell.numFmt = '#,##0';
+          });
+
+          [1, 2, 3, 4, 5].forEach((col) => { row.getCell(col).fill = fills.buy; });
+          [6, 7, 8, 9].forEach((col) => { row.getCell(col).fill = fills.sell; });
+          row.getCell(10).fill = fills.gain;
+          row.getCell(11).fill = fills.balance;
+        });
+
+        ws.addRow([]);
+        const acquisitionTotalRow = ws.addRow(['', '', '총 취득가액:', result.totals.totalAcquisition]);
+        const saleTotalRow = ws.addRow(['', '', '총 매도가액:', result.totals.totalSale]);
+        const gainTotalRow = ws.addRow(['', '', '총 처분손익:', result.totals.totalGain]);
+
+        [acquisitionTotalRow, saleTotalRow, gainTotalRow].forEach((row) => {
+          row.getCell(3).font = { name: 'SUIT', bold: true };
+          row.getCell(4).font = { name: 'SUIT', bold: true };
+          row.getCell(3).fill = fills.totalLabel;
+          row.getCell(4).fill = fills.totalLabel;
+          row.getCell(3).border = border;
+          row.getCell(4).border = border;
+          row.getCell(4).numFmt = '#,##0';
+        });
+
+        ws.views = [{ state: 'frozen', ySplit: 3 }];
+      });
+
+      const summarySheet = workbook.addWorksheet(sanitizeSheetName('일자별손익집계', usedNames));
+      summarySheet.columns = [
+        { width: 14 }, { width: 18 }, { width: 18 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 12 }
+      ];
+
+      const summaryTitle = summarySheet.addRow(['일자별 주식 처분손익 집계']);
+      summarySheet.mergeCells(summaryTitle.number, 1, summaryTitle.number, 7);
+      summaryTitle.getCell(1).font = { name: 'SUIT', size: 14, bold: true };
+
+      const summaryHeader = summarySheet.addRow(['일자', '주식명', '원본 시트', '처분주식수', '이동평균법원가', '매도가액', '처분손익']);
+      summaryHeader.eachCell((cell) => {
+        cell.fill = fills.header;
+        cell.font = { name: 'SUIT', color: { argb: 'FFFFFFFF' }, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = border;
+      });
+
+      allDailyItems.sort((a, b) => `${a.date}|${a.stockName}`.localeCompare(`${b.date}|${b.stockName}`)).forEach((item) => {
+        const row = summarySheet.addRow([item.date, item.stockName, item.sourceSheetName, item.disposalQty, item.disposalCost, item.saleAmount, item.gainLoss]);
+        row.eachCell((cell, colNumber) => {
+          cell.border = border;
+          cell.font = { name: 'SUIT', size: 10.5 };
+          cell.alignment = { horizontal: colNumber <= 3 ? 'center' : 'right', vertical: 'middle' };
+          if (colNumber >= 4) cell.numFmt = '#,##0';
+        });
+        row.getCell(5).fill = fills.sell;
+        row.getCell(6).fill = fills.sell;
+        row.getCell(7).fill = fills.gain;
+      });
+
+      const dailyTotals = {};
+      allDailyItems.forEach((item) => {
+        const key = item.date || '일자없음';
+        if (!dailyTotals[key]) dailyTotals[key] = { qty: 0, disposalCost: 0, saleAmount: 0, gainLoss: 0 };
+        dailyTotals[key].qty += item.disposalQty;
+        dailyTotals[key].disposalCost += item.disposalCost;
+        dailyTotals[key].saleAmount += item.saleAmount;
+        dailyTotals[key].gainLoss += item.gainLoss;
+      });
+
+      if (Object.keys(dailyTotals).length) {
+        summarySheet.addRow([]);
+        const subtotalHeader = summarySheet.addRow(['일자별 합계']);
+        summarySheet.mergeCells(subtotalHeader.number, 1, subtotalHeader.number, 7);
+        subtotalHeader.getCell(1).font = { name: 'SUIT', bold: true };
+
+        const dailyHeader = summarySheet.addRow(['일자', '총 처분주식수', '총 이동평균법원가', '총 매도가액', '총 처분손익']);
+        dailyHeader.eachCell((cell) => {
+          cell.fill = fills.totalLabel;
+          cell.font = { name: 'SUIT', bold: true };
+          cell.border = border;
+        });
+
+        Object.entries(dailyTotals).sort(([a], [b]) => a.localeCompare(b)).forEach(([date, total]) => {
+          const row = summarySheet.addRow([date, total.qty, total.disposalCost, total.saleAmount, total.gainLoss]);
+          row.eachCell((cell, colNumber) => {
+            cell.border = border;
+            cell.font = { name: 'SUIT', size: 10.5 };
+            cell.alignment = { horizontal: colNumber === 1 ? 'center' : 'right', vertical: 'middle' };
+            if (colNumber >= 2) cell.numFmt = '#,##0';
+          });
+        });
+      }
+
+      const stockSummarySheet = workbook.addWorksheet(sanitizeSheetName('종목별요약', usedNames));
+      stockSummarySheet.columns = [
+        { width: 24 }, { width: 12 }, { width: 12 }, { width: 16 },
+        { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 },
+        { width: 14 }, { width: 12 }, { width: 18 }, { width: 16 }, { width: 14 }
+      ];
+
+      const stockSummaryTitle = stockSummarySheet.addRow(['종목별 요약']);
+      stockSummarySheet.mergeCells(stockSummaryTitle.number, 1, stockSummaryTitle.number, 13);
+      stockSummaryTitle.getCell(1).font = { name: 'SUIT', size: 14, bold: true };
+      const stockSummaryGroupRow = stockSummarySheet.addRow(['종목', '기초', '', '', '매수', '', '매도', '', '기말', '', '', '기말평가', '']);
+      stockSummarySheet.mergeCells(stockSummaryGroupRow.number, 2, stockSummaryGroupRow.number, 4);
+      stockSummarySheet.mergeCells(stockSummaryGroupRow.number, 5, stockSummaryGroupRow.number, 6);
+      stockSummarySheet.mergeCells(stockSummaryGroupRow.number, 7, stockSummaryGroupRow.number, 8);
+      stockSummarySheet.mergeCells(stockSummaryGroupRow.number, 9, stockSummaryGroupRow.number, 11);
+      stockSummarySheet.mergeCells(stockSummaryGroupRow.number, 12, stockSummaryGroupRow.number, 13);
+      [1, 2, 5, 7, 9, 12].forEach((colNumber) => {
+        const cell = stockSummaryGroupRow.getCell(colNumber);
+        cell.font = { name: 'SUIT', bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = border;
+      });
+      stockSummaryGroupRow.getCell(1).fill = fills.totalLabel;
+      stockSummaryGroupRow.getCell(2).fill = fills.totalLabel;
+      stockSummaryGroupRow.getCell(5).fill = fills.buy;
+      stockSummaryGroupRow.getCell(7).fill = fills.sell;
+      stockSummaryGroupRow.getCell(9).fill = fills.balance;
+      stockSummaryGroupRow.getCell(12).fill = fills.evaluation;
+
+      const stockSummaryHeader = stockSummarySheet.addRow([
+        '주식명', '기초주식수', '단가', '총 금액',
+        '총매수주식수', '누적매수총금액', '매도주식수', '누적매도총금액',
+        '기말주식수', '단가', '총금액(누적취득금액)', '총평가금액', '평가차액'
+      ]);
+      stockSummaryHeader.eachCell((cell, colNumber) => {
+        cell.font = { name: 'SUIT', bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = border;
+        if (colNumber >= 1 && colNumber <= 4) cell.fill = fills.totalLabel;
+        if (colNumber >= 5 && colNumber <= 6) cell.fill = fills.buy;
+        if (colNumber >= 7 && colNumber <= 8) cell.fill = fills.sell;
+        if (colNumber >= 9 && colNumber <= 11) cell.fill = fills.balance;
+        if (colNumber >= 12 && colNumber <= 13) cell.fill = fills.evaluation;
+      });
+
+      results.forEach((result) => {
+        const initialQty = parseNumeric(result.config.initialQty);
+        const initialCost = parseNumeric(result.config.initialCost);
+        const initialUnitCost = initialQty > 0 ? Math.round(initialCost / initialQty) : 0;
+        const endingItem = endingItems.find((item) => item.id === result.config.id);
+
+        const row = stockSummarySheet.addRow([
+          result.config.stockName,
+          initialQty,
+          initialUnitCost,
+          initialCost,
+          result.totals.totalBuyQty,
+          result.totals.totalBuyAmount,
+          result.totals.totalSellQty,
+          result.totals.totalSale,
+          endingItem ? endingItem.endingQty : 0,
+          endingItem ? endingItem.unitCost : 0,
+          endingItem ? endingItem.endingCost : 0,
+          endingItem ? (endingItem.totalEvaluation ?? '') : '',
+          endingItem ? (endingItem.valuationDiff ?? '') : ''
+        ]);
+        row.eachCell((cell, colNumber) => {
+          cell.border = border;
+          cell.font = { name: 'SUIT', size: 10.5 };
+          cell.alignment = { horizontal: colNumber === 1 ? 'left' : 'right', vertical: 'middle' };
+          if (colNumber >= 2) cell.numFmt = '#,##0';
+          if (colNumber >= 2 && colNumber <= 4) cell.fill = fills.totalLabel;
+          if (colNumber >= 5 && colNumber <= 6) cell.fill = fills.buy;
+          if (colNumber >= 7 && colNumber <= 8) cell.fill = fills.sell;
+          if (colNumber >= 9 && colNumber <= 11) cell.fill = fills.balance;
+          if (colNumber >= 12 && colNumber <= 13) cell.fill = fills.evaluation;
+        });
+      });
+
+      const stockSummaryNote = stockSummarySheet.addRow([
+        '총평가금액과 평가차액은 평가차액 작업을 예로 선택하고 입력을 완료한 경우에만 반영됩니다.'
+      ]);
+      stockSummarySheet.mergeCells(stockSummaryNote.number, 1, stockSummaryNote.number, 13);
+      stockSummaryNote.getCell(1).font = { name: 'SUIT', size: 10, italic: true, color: { argb: 'FF475569' } };
+
+      if (endingItems.length) {
+        const endingSheet = workbook.addWorksheet(sanitizeSheetName('기말보유내역', usedNames));
+        endingSheet.columns = [
+          { width: 24 }, { width: 12 }, { width: 12 }, { width: 18 }
+        ];
+
+        const endingTitle = endingSheet.addRow(['기말 주식 누적취득원가']);
+        endingSheet.mergeCells(endingTitle.number, 1, endingTitle.number, 4);
+        endingTitle.getCell(1).font = { name: 'SUIT', size: 14, bold: true };
+
+        const endingHeader = endingSheet.addRow(['주식명', '주식수', '단가', '누적취득원가']);
+        endingHeader.eachCell((cell) => {
+          cell.fill = fills.balance;
+          cell.font = { name: 'SUIT', bold: true };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border = border;
+        });
+
+        endingItems.forEach((item) => {
+          const row = endingSheet.addRow([item.stockName, item.endingQty, item.unitCost, item.endingCost]);
+          row.eachCell((cell, colNumber) => {
+            cell.border = border;
+            cell.font = { name: 'SUIT', size: 10.5 };
+            cell.alignment = { horizontal: colNumber === 1 ? 'left' : 'right', vertical: 'middle' };
+            if (colNumber >= 2) cell.numFmt = '#,##0';
+          });
+          row.getCell(2).fill = fills.balance;
+          row.getCell(3).fill = fills.balance;
+          row.getCell(4).fill = fills.balance;
+        });
+      }
+
+      if (allWarnings.length) {
+        const warningSheet = workbook.addWorksheet(sanitizeSheetName('검토필요', usedNames));
+        warningSheet.columns = [{ width: 120 }];
+        const title = warningSheet.addRow(['검토가 필요한 항목']);
+        title.getCell(1).font = { name: 'SUIT', size: 14, bold: true };
+        allWarnings.forEach((warning) => {
+          const row = warningSheet.addRow([warning]);
+          row.getCell(1).alignment = { wrapText: true };
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (downloadBtn.href && downloadBtn.href.startsWith('blob:')) URL.revokeObjectURL(downloadBtn.href);
+      downloadBtn.href = URL.createObjectURL(blob);
+      downloadBtn.download = `${(state.selectedFileName || '주식매매차손익').replace(/\.[^.]+$/, '')}_손익계산.xlsx`;
+
+      state.outputMeta = {
+        stockCount: results.length,
+        saleRowCount: allDailyItems.length,
+        totalGain: results.reduce((sum, item) => sum + item.totals.totalGain, 0)
+      };
+      state.latestBuild = {
+        results,
+        dailyItems: allDailyItems,
+        warnings: allWarnings,
+        evaluationItems: endingItems,
+        hasEvaluationInput: state.evaluationChoice === 'yes'
+      };
+
+      renderResultSummary(allWarnings);
+      resultSection.classList.remove('hidden');
+      extraWorkSection.classList.remove('hidden');
+      showStatus('엑셀 생성이 완료되었습니다.', 'success');
+    }
+
+    fileInput.addEventListener('change', (event) => {
+      if (!checkXLSX()) return;
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        try {
+          const bytes = new Uint8Array(loadEvent.target.result);
+          state.workbook = XLSX.read(bytes, { type: 'array' });
+          state.selectedFileName = file.name;
+          state.activeSheetName = state.workbook.SheetNames[0];
+          state.wizardActive = false;
+          state.wizardStep = 0;
+          state.selections = {};
+          state.stockConfigs = [];
+          state.outputMeta = null;
+          state.latestBuild = null;
+
+          fileNameEl.textContent = `선택된 파일: ${file.name}`;
+          mappingSection.classList.remove('hidden');
+          configSection.classList.add('hidden');
+          resultSection.classList.add('hidden');
+          resetAdditionalOutputs();
+          mappingGuide.classList.add('hidden');
+          renderSheetTabs();
+          renderMappingSummary();
+          renderPreview();
+          showStatus('파일을 불러왔습니다. 기준 위치를 선택해주세요.', 'ready');
+        } catch (error) {
+          alert(`엑셀을 읽는 중 오류가 발생했습니다.\n${error.message}`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    startMappingBtn.addEventListener('click', startMapping);
+    resetMappingBtn.addEventListener('click', resetMapping);
+    evaluationChoiceInputs.forEach((input) => {
+      input.addEventListener('change', () => {
+        handleEvaluationChoiceChange(input.value);
+      });
+    });
+    buildWorkbookBtn.addEventListener('click', () => {
+      if (!ensureEvaluationReadyForBuild()) return;
+      runBusyAction('buildWorkbook', buildWorkbookBtn, '생성 중...', async () => {
+        await buildWorkbook();
+      }).catch((error) => {
+        console.error(error);
+        alert(`엑셀 생성 중 오류가 발생했습니다.\n${error.message}`);
+        showStatus('생성 중 오류가 발생했습니다.', 'warn');
+      });
+    });
+
+    extraWorkInputs.forEach((input) => {
+      input.addEventListener('change', () => {
+        const enabled = document.querySelector('input[name="extra-work-yn"]:checked')?.value === 'yes';
+        extraWorkPanel.classList.toggle('hidden', !enabled);
+        if (!enabled) {
+          semuFormPanel.classList.add('hidden');
+          wihagoFormPanel.classList.add('hidden');
+          clearElementChildren(semuMessages);
+          clearElementChildren(wihagoMessages);
+        }
+      });
+    });
+
+    valuationExtraInputs.forEach((input) => {
+      input.addEventListener('change', () => {
+        const enabled = document.querySelector('input[name="valuation-extra-yn"]:checked')?.value === 'yes';
+        valuationExtraPanel.classList.toggle('hidden', !enabled);
+        if (!enabled) {
+          valuationActionsPanel.classList.add('hidden');
+          valuationSemuFormPanel.classList.add('hidden');
+          valuationWihagoFormPanel.classList.add('hidden');
+          clearElementChildren(valuationSetupMessages);
+          clearElementChildren(valuationSemuMessages);
+          clearElementChildren(valuationWihagoMessages);
+        }
+      });
+    });
+
+    semuBusinessNoInput.addEventListener('input', () => {
+      semuBusinessNoInput.value = digitsOnly(semuBusinessNoInput.value).slice(0, 10);
+    });
+
+    semuFiscalYearInput.addEventListener('input', () => {
+      semuFiscalYearInput.value = digitsOnly(semuFiscalYearInput.value).slice(0, 4);
+    });
+
+    valuationSemuBusinessNoInput.addEventListener('input', () => {
+      valuationSemuBusinessNoInput.value = digitsOnly(valuationSemuBusinessNoInput.value).slice(0, 10);
+    });
+
+    openSemuFormBtn.addEventListener('click', () => {
+      if (!validateAccountingBaseFields()) return;
+      semuFormPanel.classList.remove('hidden');
+      wihagoFormPanel.classList.add('hidden');
+      clearElementChildren(semuMessages);
+      semuCompanyNameInput.focus();
+    });
+
+    openWihagoFormBtn.addEventListener('click', () => {
+      if (!validateAccountingBaseFields()) return;
+      wihagoFormPanel.classList.remove('hidden');
+      semuFormPanel.classList.add('hidden');
+      clearElementChildren(wihagoMessages);
+    });
+
+    valuationConfirmBtn.addEventListener('click', () => {
+      confirmValuationExtraSetup();
+    });
+
+    openValuationSemuFormBtn.addEventListener('click', () => {
+      if (!confirmValuationExtraSetup()) return;
+      valuationSemuFormPanel.classList.remove('hidden');
+      valuationWihagoFormPanel.classList.add('hidden');
+      clearElementChildren(valuationSemuMessages);
+      valuationSemuCompanyNameInput.focus();
+    });
+
+    openValuationWihagoFormBtn.addEventListener('click', () => {
+      if (!confirmValuationExtraSetup()) return;
+      valuationWihagoFormPanel.classList.remove('hidden');
+      valuationSemuFormPanel.classList.add('hidden');
+      clearElementChildren(valuationWihagoMessages);
+    });
+
+    generateSemuBtn.addEventListener('click', () => {
+      runBusyAction('generateSemu', generateSemuBtn, '생성 중...', async () => {
+        await generateSemuWorkbook();
+      }).catch((error) => {
+        console.error(error);
+        renderSemuMessages([`세무사랑 업로드 엑셀 생성 중 오류가 발생했습니다: ${error.message}`], 'warn');
+      });
+    });
+
+    generateWihagoBtn.addEventListener('click', () => {
+      runBusyAction('generateWihago', generateWihagoBtn, '생성 중...', async () => {
+        await generateWihagoWorkbook();
+      }).catch((error) => {
+        console.error(error);
+        renderWihagoMessages([`위하고 업로드 엑셀 생성 중 오류가 발생했습니다: ${error.message}`], 'warn');
+      });
+    });
+
+    generateValuationSemuBtn.addEventListener('click', () => {
+      runBusyAction('generateValuationSemu', generateValuationSemuBtn, '생성 중...', async () => {
+        await generateValuationSemuWorkbook();
+      }).catch((error) => {
+        console.error(error);
+        renderValuationSemuMessages([`평가차익 세무사랑 업로드 엑셀 생성 중 오류가 발생했습니다: ${error.message}`], 'warn');
+      });
+    });
+
+    generateValuationWihagoBtn.addEventListener('click', () => {
+      runBusyAction('generateValuationWihago', generateValuationWihagoBtn, '생성 중...', async () => {
+        await generateValuationWihagoWorkbook();
+      }).catch((error) => {
+        console.error(error);
+        renderValuationWihagoMessages([`평가차익 위하고 업로드 엑셀 생성 중 오류가 발생했습니다: ${error.message}`], 'warn');
+      });
+    });
+  </script>
+</body>
+</html>
