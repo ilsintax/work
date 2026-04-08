@@ -233,6 +233,14 @@
 
     // --- 2. UI 렌더링 (Renderer) ---
     const UIRenderer = {
+        escapeHTML(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        },
         init() {
             this.topNavEl = document.getElementById('top-nav');
             this.mainContentEl = document.getElementById('main-content');
@@ -313,54 +321,107 @@
         },
         renderWelcomeView() {
             return `
-            <header class="text-center mb-12">
+            <header class="text-center mb-6">
                 <h1 class="text-4xl font-bold text-slate-900">지능형 매출 정리 도구</h1>
                 <p class="text-slate-600 mt-2">복잡한 매출 정산을 몇 번의 클릭으로 자동화하세요.</p>
             </header>
 <!-- 작업 가이드라인 섹션 시작 -->
-<div class="mt-8 mb-4 p-6 bg-amber-50 border-l-4 border-amber-400 text-amber-900 rounded-r-lg shadow-sm">
-    <h2 class="text-xl font-bold mb-4 text-amber-900">🚀 작업 절차 가이드</h2>
+        <main class="max-w-7xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+            
+            <!-- Section 1: Core Logic -->
+            <div class="p-8 md:p-10 border-b border-slate-200 bg-slate-50/50">
+                <h2 class="flex items-center text-xl font-bold text-slate-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>핵심 원리 이해하기</span>
+                </h2>
+                <div class="mt-4 pl-9 text-slate-600 space-y-2">
+                    <p>매출 총액은 POS 기기(신용카드) 매출을 제외하고, <strong class="font-semibold text-indigo-600">업체가 실제로 제공한 자료를 기준</strong>으로 확정합니다.</p>
+                    <p class="text-sm text-slate-500">(이유: 일부 PG사 집계에는 현금영수증 발행 내역이 누락될 수 있기 때문입니다.)</p>
+                </div>
+            </div>
 
-    <div class="space-y-4 text-sm">
-        <div>
-            <h3 class="font-semibold text-base mb-2">1. 선행 작업 절차</h3>
-            <ul class="list-decimal list-inside space-y-2 pl-2">
-                <li><strong class="font-medium">POS매출 업로드:</strong> 업체명의 신용카드(POS) 매출 내역을 세무프로그램에서 먼저 선작업합니다.</li>
-                <li><strong class="font-medium">현금영수증 업로드:</strong> 국세청 집계 내역과 동일하게 현금영수증을 세무프로그램에서 먼저 선작업합니다.</li>
-                <li><strong class="font-medium">현금영수증 차감 처리:</strong> 이후 현금영수증 금액을 카과 / 건별에서 동일 금액만큼 차감합니다.
-                    <p class="text-xs text-amber-800 pl-4 mt-1">방법: 동일 날짜 전표를 복사 → 과세유형을 변경 → 마이너스 금액 입력.</p>
-                    <p class="text-xs text-red-600 pl-4 mt-1">⚠️ 환경설정에 따라 금액 변동이 있을 수 있으니 주의해야 합니다.</p>
-                <li><strong class="font-medium">신용카드 매출자료조회 엑셀 업로드:</strong> 이 작업은 국세청 신용카드 매출자료조회 엑셀로 다운로드 받아 업로드 함으로써 시작됩니다.</li>
-                </li>
-            </ul>
-        </div>
+            <!-- Section 2: Step-by-step Guide -->
+            <div class="p-8 md:p-10">
+                <h2 class="text-2xl font-bold text-slate-800 mb-8 sr-only">단계별 작업 가이드</h2>
+                
+                <!-- Grid container for the new layout -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
 
-        <div>
-            <h3 class="font-semibold text-base mb-2">2. 기본 로직 설명</h3>
-            <ul class="list-disc list-inside space-y-2 pl-2">
-                <li>
-                    <strong class="font-medium">매출 총액 확정 기준:</strong>
-                    <p class="pl-4">업체 신용카드(POS 매출)을 제외한, 업체가 제공한 매출자료를 기준으로 총 매출액을 확정합니다. <br/> (이유: 일부 PG사의 집계에서는 현금영수증 발행 내역을 확인할 수 없기 때문입니다.)</p>
-                </li>
-                <li>
-                    <strong class="font-medium">처리 방법 예시:</strong>
-                    <p class="pl-4 mb-1">국세청 집계: A PG사 100 + 현금영수증 100 / 업체 제공: A PG사 150 + 오프라인 현금 150</p>
-                    <ul class="list-['→'] list-inside space-y-1 pl-6 text-xs">
-                        <li>"현금영수증" 가상 거래처를 설정하고, 현과(+100)/건별(-100)으로 분개하여 최종 0원으로 처리합니다.</li>
-                        <li>이후 업체 매출(A PG사 150, 오프라인현금 150)을 카과 또는 건별로 반영합니다.</li>
-                        <li><strong>최종 결과:</strong> 부가세 신고서상 매출은 <code class="bg-amber-200 px-1 rounded">현금영수증 100</code> + <code class="bg-amber-200 px-1 rounded">건별 매출 200</code> (300 - 100) 이 됩니다.</li>
-                    </ul>
-                </li>
-                 <li>
-                    <strong class="font-medium">장점:</strong>
-                     <p class="pl-4">현금영수증 발행 거래처를 일일이 추적할 필요가 없으며, 온라인 PG사와 오프라인 매출, 계좌이체 등이 혼재된 복잡한 상황에서도 단순하고 일관된 처리가 가능합니다.</p>
-                </li>
-            </ul>
-        </div>
-    </div>
-</div>
+                    <!-- Left Column: Step 1 -->
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0 w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg mr-5 shadow-md">1</div>
+                        <div class="w-full">
+                            <h3 class="font-bold text-xl text-slate-800 mb-3">선행 작업 준비</h3>
+                            <p class="text-slate-500 mb-5">본격적인 작업을 시작하기 전에, 아래 준비 작업을 순서대로 진행해주세요.</p>
+                            <ul class="space-y-3 text-sm">
+                                <li class="p-4 bg-slate-50 rounded-lg border border-slate-200 transition-all hover:border-indigo-300 hover:shadow-sm">
+                                    <strong class="font-semibold text-slate-700">POS 매출 업로드:</strong> 세무프로그램에서 업체명의 신용카드(POS) 매출 내역을 먼저 업로드합니다.
+                                </li>
+                                <li class="p-4 bg-slate-50 rounded-lg border border-slate-200 transition-all hover:border-indigo-300 hover:shadow-sm">
+                                    <strong class="font-semibold text-slate-700">현금영수증 업로드:</strong> 국세청 집계와 동일하게 현금영수증 내역을 선작업합니다.
+                                </li>
+                                <li class="p-4 bg-slate-50 rounded-lg border border-slate-200 transition-all hover:border-indigo-300 hover:shadow-sm">
+                                    <strong class="font-semibold text-slate-700">현금영수증 차감 처리:</strong> 현금영수증 금액만큼 '카과/건별'에서 차감합니다.
+                                    <p class="text-xs text-indigo-700 pl-2 mt-2">→ 방법: 동일 날짜 전표 복사 → 과세유형 변경 → 마이너스 금액 입력</p>
+                                    <p class="text-xs text-red-600 pl-2 mt-1">⚠️ 환경설정에 따라 금액이 달라질 수 있으니 꼭 확인하세요!</p>
+                                </li>
+                                <li class="p-4 bg-slate-50 rounded-lg border border-slate-200 transition-all hover:border-indigo-300 hover:shadow-sm">
+                                    <strong class="font-semibold text-slate-700">엑셀 업로드:</strong> 국세청 '신용카드 매출자료조회' 엑셀을 업로드하며 작업을 시작합니다.
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Step 2 & 3 -->
+                    <div class="flex flex-col space-y-10">
+                        <!-- Step 2 -->
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg mr-5 shadow-md">2</div>
+                            <div class="w-full">
+                                <h3 class="font-bold text-xl text-slate-800 mb-3">처리 방법 예시</h3>
+                                <div class="space-y-4 text-sm">
+                                    <div class="p-4 border-l-4 border-slate-300 bg-slate-100 rounded-r-lg">
+                                        <p class="font-bold text-slate-600">📊 예시 상황</p>
+                                        <ul class="list-disc list-inside text-slate-500 mt-2 space-y-1">
+                                            <li><strong class="font-medium text-slate-600">국세청 집계:</strong> A PG사 100 + 현금영수증 100</li>
+                                            <li><strong class="font-medium text-slate-600">업체 제공:</strong> A PG사 150 + 오프라인 현금 150</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-slate-600 mb-2">📝 처리 방식</p>
+                                        <ul class="list-['→'] list-inside space-y-1.5 pl-2 text-slate-600">
+                                            <li>'현금영수증' 가상 거래처를 생성합니다.</li>
+                                            <li>현과(+100) / 건별(-100)으로 분개하여 합계를 0으로 만듭니다.</li>
+                                            <li>이후 업체 매출(PG사 150, 오프라인 150)을 카과 또는 건별로 반영합니다.</li>
+                                        </ul>
+                                    </div>
+                                    <div class="mt-2 p-4 bg-green-100 text-green-800 rounded-lg">
+                                        <p class="font-bold">✅ 최종 결과</p>
+                                        <p class="mt-1">부가세 신고서상 매출 = <code class="bg-green-200 px-1.5 py-0.5 rounded font-semibold">현금영수증 100</code> + <code class="bg-green-200 px-1.5 py-0.5 rounded font-semibold">건별 매출 200</code> (300 - 100)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg mr-5 shadow-md">3</div>
+                            <div>
+                                <h3 class="font-bold text-xl text-slate-800 mb-3">핵심 장점</h3>
+                                <p class="text-slate-600 leading-relaxed">
+                                    이 방법을 사용하면 현금영수증 거래처를 일일이 추적할 필요가 없습니다. 온라인, 오프라인, 계좌이체 등 복잡한 매출 내역도 <strong class="font-semibold text-indigo-600">단순하고 일관된 방식</strong>으로 처리할 수 있어 업무 효율이 크게 향상됩니다.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </main>
 <!-- 작업 가이드라인 섹션 끝 -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
                 <div class="flex flex-col">
                     <h2 class="text-2xl font-semibold mb-4 text-slate-800">새로운 작업 시작하기</h2>
                     <button id="start-new-work-btn" class="w-full h-full flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition">
@@ -377,7 +438,7 @@
             </div>`;
         },
         renderUploadView() {
-            return `<header class="text-center mb-8"><h1 class="text-4xl font-bold text-slate-900">새 작업 시작</h1><p class="text-slate-600 mt-2">정리할 온라인 매출 엑셀 파일을 업로드해주세요.</p></header><label for="file-input" class="flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition"><svg class="w-12 h-12 mb-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg><span class="text-slate-600 font-medium text-lg">클릭하여 XLSX/XLS 파일 업로드</span><input id="file-input" type="file" accept=".xlsx,.xls" class="hidden"/></label>`;
+            return `<div class="space-y-6"><header class="text-center mb-8"><h1 class="text-4xl font-bold text-slate-900">새 작업 시작</h1><p class="text-slate-600 mt-2">엑셀에서 필요한 범위를 복사한 뒤 아래 칸에 붙여넣어 주세요.</p></header><div class="bg-white border rounded-2xl shadow-sm p-6 space-y-4"><div class="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-5"><p class="text-sm text-slate-700 font-medium">사용 방법</p><p class="text-sm text-slate-500 mt-2">1. 엑셀에서 표 범위를 선택합니다.</p><p class="text-sm text-slate-500">2. Ctrl + C 로 복사합니다.</p><p class="text-sm text-slate-500">3. 아래 입력창에 Ctrl + V 로 붙여넣습니다.</p></div><textarea id="paste-input" class="w-full h-80 border border-slate-300 rounded-xl p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="여기에 엑셀 데이터를 붙여넣으세요."></textarea><div class="flex justify-end"><button id="paste-submit-btn" class="px-5 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700">붙여넣은 데이터로 시작</button></div></div></div>`;
         },
         renderPhaseView(state) {
             switch(state.currentPhase) {
@@ -459,8 +520,8 @@
             const { uniqueClients } = state.phases.phase2;
             const { deleted, merged, added } = state.phases.phase2.config.cleansing;
             const currentClients = uniqueClients.filter(c => !deleted.includes(c) && !merged.flatMap(g => g.values).includes(c)).concat(added.map(a => a.name));
-            const sourceItemsHTML = currentClients.map(val => `<div class="draggable-item" draggable="true" data-value="${val}">${val}</div>`).join('');
-            const mergedGroupsHTML = merged.map((group, index) => `<div class="p-3 rounded-lg bg-white border"><input type="text" value="${group.name}" data-group-index="${index}" class="group-name-input font-semibold mb-2 border-b-2 w-full p-1" placeholder="통합 후 이름"><div id="merge-zone-${index}" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-type="merge" data-zone-id="${index}">${group.values.map(val => `<div class="draggable-item bg-blue-100" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div>`).join('');
+            const sourceItemsHTML = currentClients.map(val => `<div class="draggable-item" draggable="true" data-value="${this.escapeHTML(val)}">${this.escapeHTML(val)}</div>`).join('');
+            const mergedGroupsHTML = merged.map((group, index) => `<div class="p-3 rounded-lg bg-white border"><input type="text" value="${this.escapeHTML(group.name)}" data-group-index="${index}" class="group-name-input font-semibold mb-2 border-b-2 w-full p-1" placeholder="통합 후 이름"><div id="merge-zone-${index}" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-type="merge" data-zone-id="${index}">${group.values.map(val => `<div class="draggable-item bg-blue-100" draggable="true" data-value="${this.escapeHTML(val)}">${this.escapeHTML(val)}</div>`).join('')}</div></div>`).join('');
             return `<div class="space-y-6"><header><h1 class="text-3xl font-bold text-slate-900">2단계: 거래처 정제</h1><p class="text-slate-600 mt-2">거래처를 정리하세요. 목록의 거래처를 드래그하여 아래 영역으로 이동시킬 수 있습니다.</p></header><div class="p-4 bg-amber-50 border-l-4 border-amber-400 text-amber-800 text-sm space-y-1 rounded-r-lg"><h3 class="font-bold">💡 작업 가이드</h3><p>1. <strong>신용카드</strong>는 거래처 목록에서 <strong>삭제할 거래처</strong>로 옮겨 제외해주세요.</p><p>2. 동일거래처는 <strong>통합할 거래처</strong>로 옮기시고 통합그룹의 이름을 입력해주세요.<br> &nbsp;&nbsp;&nbsp;&nbsp;(예: '엔에이치엔페이코'와 '엔에이치엔케이씨피'는 동일거래처입니다)</p><p>3. 국세청에 표시되지 않은 거래처는 하단 <strong>추가할 거래처</strong>에 직접 입력해주세요.(오프라인, 계좌이체 등 포함)</p></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-1 p-4 rounded-lg bg-slate-100 border"><h3 class="font-semibold mb-2">거래처 목록 (드래그)</h3><div id="source-items" class="drop-zone p-2 rounded flex flex-wrap gap-2" data-zone-type="source">${sourceItemsHTML}</div><div class="mt-4"><h3 class="font-semibold mb-2">추가할 거래처</h3><div class="flex gap-2"><input type="text" id="add-client-input" class="flex-grow border rounded-md px-2 py-1" placeholder="새 거래처 이름"><button id="add-client-btn" class="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm">추가</button></div></div></div><div class="lg:col-span-2 p-4 rounded-lg bg-white border grid grid-cols-1 md:grid-cols-2 gap-4"><div><h3 class="font-semibold mb-2 text-red-600">삭제할 거래처</h3><div id="delete-zone" class="drop-zone p-2 rounded" data-zone-type="delete">${deleted.map(val => `<div class="draggable-item bg-red-100" draggable="true" data-value="${val}">${val}</div>`).join('')}</div></div><div class="space-y-4"><h3 class="font-semibold mb-2 text-blue-600">통합할 거래처</h3>${mergedGroupsHTML}<button id="add-merge-group-btn" class="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 text-sm">+ 통합 그룹 추가</button></div></div></div><div class="flex items-center space-x-3 pt-4 border-t"><button id="process-phase2-cleansing-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">거래처 분류 완료</button></div></div>`;
         },
         renderPhase2PreviewView(state) {
@@ -499,8 +560,8 @@
                 const clientInfo = clientData[client];
                 const isVerified = clientInfo?.isVerified;
                 const verificationClass = isVerified ? (clientInfo.verificationStatus === 'forced' ? 'forced' : 'verified') : '';
-                return `<div class="client-list-item ${client === activeClient ? 'active' : ''} ${verificationClass}" data-client="${client}">
-                            <span>${client}</span>
+                return `<div class="client-list-item ${client === activeClient ? 'active' : ''} ${verificationClass}" data-client="${this.escapeHTML(client)}">
+                            <span>${this.escapeHTML(client)}</span>
                             <span class="status-icon"></span>
                         </div>`;
             }).join('');
@@ -804,7 +865,8 @@
                     document.querySelectorAll('.delete-work-btn').forEach(btn => btn.addEventListener('click', e => AppController.handleDeleteWork(Number(e.currentTarget.dataset.id))));
                     break;
                 case 'upload':
-                    document.getElementById('file-input')?.addEventListener('change', AppController.handleFile);
+                    document.getElementById('paste-submit-btn')?.addEventListener('click', AppController.handlePasteSubmit);
+                    document.getElementById('paste-input')?.addEventListener('paste', AppController.handlePasteEvent);
                     break;
                 case 'phase1':
                     document.querySelectorAll('#main-content .selectable-row').forEach(row => row.addEventListener('click', e => AppController.handlePhase1RowSelect(parseInt(e.currentTarget.dataset.rowIndex, 10))));
@@ -988,7 +1050,48 @@
         navigate(targetPhase) {
              AppState.setState(s => ({ ...s, currentPhase: targetPhase }));
         },
-        handleFile(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const data = new Uint8Array(event.target.result); const workbook = XLSX.read(data, { type: 'array' }); const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null }); AppState.setState(state => ({ ...state, fileName: file.name, currentPhase: 'phase1', phases: { ...state.phases, upload: { isComplete: true, rawData: rawData } } })); } catch (error) { alert("엑셀 파일을 읽는 중 오류가 발생했습니다: " + error.message); } }; reader.readAsArrayBuffer(file); },
+        parsePastedText(text) {
+            return text
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n')
+                .split('\n')
+                .filter(row => row.trim() !== '')
+                .map(row => row.split('\t').map(cell => {
+                    const trimmed = cell.trim();
+                    return trimmed === '' ? null : trimmed;
+                }));
+        },
+        loadRawData(rawData, sourceLabel = '붙여넣기 데이터') {
+            if (!rawData.length || !rawData.some(row => row && row.some(cell => cell !== null && String(cell).trim() !== ''))) {
+                alert('붙여넣은 데이터가 없습니다. 엑셀 표를 복사해서 다시 붙여넣어 주세요.');
+                return;
+            }
+            AppState.setState(state => ({
+                ...state,
+                fileName: sourceLabel,
+                currentPhase: 'phase1',
+                phases: {
+                    ...state.phases,
+                    upload: { isComplete: true, rawData }
+                }
+            }));
+        },
+        handlePasteSubmit() {
+            const textarea = document.getElementById('paste-input');
+            const pastedText = textarea?.value || '';
+            const rawData = AppController.parsePastedText(pastedText);
+            AppController.loadRawData(rawData);
+        },
+        handlePasteEvent(e) {
+            const pastedText = e.clipboardData?.getData('text/plain') || '';
+            if (!pastedText) return;
+            const textarea = e.currentTarget;
+            setTimeout(() => {
+                if (!textarea.value.trim()) {
+                    textarea.value = pastedText;
+                }
+            }, 0);
+        },
         resetAll() {
             UIRenderer.showModal('모든 작업 초기화', '현재 진행중인 작업을 포함하여 모든 내용을 초기화하시겠습니까? 저장된 작업은 삭제되지 않습니다.', [
                 { text: '취소', className: 'bg-slate-300', onClick: () => UIRenderer.hideModal() },
