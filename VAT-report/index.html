@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>손익보고서 생성기</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="./report-builder.js" defer></script>
+  <style>
+    :root {
+      --bg: #e4e9ee;
+      --panel: #f8fafc;
+      --line: rgba(39, 62, 89, 0.12);
+      --text: #22384b;
+      --muted: #647789;
+      --accent: #355c84;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #eef2f5 0%, var(--bg) 100%);
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 28px 18px 56px; }
+    .panel {
+      background: rgba(248, 250, 252, 0.96);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 14px 30px rgba(25, 45, 65, 0.08);
+      padding: 24px;
+      margin-top: 18px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+    }
+    h1 { margin: 10px 0 12px; font-size: 34px; line-height: 1.2; }
+    h2 { margin: 0 0 14px; font-size: 22px; }
+    .sub, .notice, .status { color: var(--muted); line-height: 1.8; }
+    .upload-box {
+      display: grid;
+      gap: 14px;
+      padding: 18px;
+      border: 1px dashed rgba(53, 92, 132, 0.34);
+      border-radius: 14px;
+      background: #fbfdff;
+    }
+    input[type="file"] {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+      color: var(--text);
+    }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    button, .download-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: #284968;
+      color: white;
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.secondary, .download-link.secondary {
+      background: white;
+      color: var(--text);
+      border-color: var(--line);
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hidden { display: none !important; }
+    .error {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #f0c7c7;
+      background: #fff4f4;
+      color: #9a3b3b;
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .result-card {
+      background: #fbfdff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .meta-item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+      padding: 12px;
+    }
+    .meta-label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .meta-value {
+      margin-top: 8px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    @media (max-width: 760px) {
+      .result-grid, .meta { grid-template-columns: 1fr; }
+      h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <div class="eyebrow">GitHub Pages Ready</div>
+      <h1>손익보고서 생성기</h1>
+      <div class="sub">
+        엑셀 손익보고서 파일을 업로드한 뒤 `손익보고서 생성`을 누르면, 데스크탑용/모바일용 HTML 보고서를 바로 다운로드할 수 있습니다.
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>파일 업로드</h2>
+      <div class="upload-box">
+        <input id="fileInput" type="file" accept=".xlsx,.xlsm,.xlsb,.xls">
+        <div class="actions">
+          <button id="generateBtn" type="button" disabled>손익보고서 생성</button>
+          <button id="resetBtn" class="secondary" type="button">초기화</button>
+        </div>
+        <div id="status" class="status">업로드할 파일을 선택해 주세요.</div>
+        <div class="notice">
+          GitHub Pages 배포를 가정한 정적 HTML 시험판입니다. 업로드한 파일은 브라우저 안에서만 처리됩니다.
+        </div>
+      </div>
+      <div id="errorBox" class="error hidden"></div>
+    </section>
+
+    <section id="resultPanel" class="panel hidden">
+      <h2>생성 결과</h2>
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="meta">
+            <div class="meta-item"><div class="meta-label">업체명</div><div id="companyName" class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">최신 연도</div><div id="latestYear" class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">신고유형</div><div id="filingPattern" class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">이번 신고 대상</div><div id="currentFiling" class="meta-value">-</div></div>
+          </div>
+        </div>
+        <div class="result-card">
+          <div class="meta">
+            <div class="meta-item"><div class="meta-label">이번 납부세액</div><div id="vatDue" class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">총매출</div><div id="salesTotal" class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">매출 대비 매입 비율</div><div id="purchaseRatio" class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">매출 대비 인건비 비율</div><div id="laborRatio" class="meta-value">-</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:16px;">
+        <a id="desktopDownload" class="download-link hidden" download>데스크탑용 HTML 다운로드</a>
+        <a id="mobileDownload" class="download-link secondary hidden" download>모바일용 HTML 다운로드</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
