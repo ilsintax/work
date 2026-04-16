@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="매입매출장을 엑셀로 다운로드 받아 업로드 해주세요.">
+    <title>학습형 공통매입세액 안분작성기 v3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: "IBM Plex Sans KR", sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 999px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        .table-container { max-height: calc(100vh - 430px); }
+        th { position: sticky; top: 0; z-index: 5; }
+        .cell-clickable { cursor: pointer; transition: background-color 0.12s ease; }
+        .cell-clickable:hover { background: #dbeafe; }
+        .glass { background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="min-h-screen overflow-hidden bg-slate-100 text-slate-800" style="background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 20%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 20%),
+    linear-gradient(180deg, #f8fafc 0%, #eaf0f7 100%);">
+    <header class="glass border-b border-white/70 shadow-sm shrink-0">
+        <div class="max-w-[1600px] mx-auto px-5 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shadow-sm">
+                    <i class="ph-fill ph-calculator text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-slate-900">학습형 공통매입세액 안분작성기</h1>
+                    <p class="text-xs text-slate-500">매입매출장을 엑셀로 다운로드 받아 업로드 해주세요.</p>
+                </div>
+            </div>
+            <button onclick="clearRules()" class="text-sm text-slate-500 hover:text-red-600 flex items-center gap-1 transition-colors">
+                <i class="ph ph-trash"></i> 학습 데이터 초기화
+            </button>
+        </div>
+    </header>
+
+    <main class="h-[calc(100vh-64px)] flex overflow-hidden">
+        <aside class="w-80 glass border-r border-white/70 flex flex-col shrink-0 overflow-y-auto">
+            <div class="p-5 border-b border-slate-200/80">
+                <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <span class="bg-sky-100 text-sky-700 w-5 h-5 rounded-full flex items-center justify-center text-xs">1</span> 기간 설정
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">작업 연도</label>
+                        <input type="number" id="targetYear" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">작업 기수</label>
+                        <select id="targetPeriod" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all">
+                            <option value="1기예정">1기 예정 (1~3월)</option>
+                            <option value="1기확정">1기 확정 (4~6월)</option>
+                            <option value="1기예정+확정">1기 예정+확정 (1~6월)</option>
+                            <option value="2기예정">2기 예정 (7~9월)</option>
+                            <option value="2기확정">2기 확정 (10~12월)</option>
+                            <option value="2기예정+확정">2기 예정+확정 (7~12월)</option>
+                            <option value="전체">전체 (1~12월)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-5 border-b border-slate-200/80">
+                <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <span class="bg-sky-100 text-sky-700 w-5 h-5 rounded-full flex items-center justify-center text-xs">2</span> 데이터 업로드
+                </h2>
+                <label id="dropZone" class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-2xl cursor-pointer bg-white hover:bg-slate-50 transition-colors">
+                    <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                        <i class="ph ph-microsoft-excel-logo text-emerald-600 text-3xl mb-2"></i>
+                        <p class="mb-1 text-sm text-slate-600 font-semibold">엑셀 파일 선택 또는 드래그</p>
+                        <p class="text-xs text-slate-400">(.xlsx, .xls, .csv)</p>
+                    </div>
+                    <input id="fileInput" type="file" class="hidden" accept=".xlsx, .xls, .csv">
+                </label>
+            </div>
+
+            <div class="p-5 border-b border-slate-200/80 bg-slate-50/90">
+                <h2 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <i class="ph-fill ph-floppy-disk text-sky-600"></i> 학습분류기준 관리
+                </h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="saveLearningDataFile()" class="rounded-xl bg-slate-900 text-white text-sm font-semibold py-2.5 hover:bg-slate-800 transition-colors">저장하기</button>
+                    <button onclick="openLearningDataFile()" class="rounded-xl border border-slate-300 bg-white text-sm font-semibold py-2.5 hover:bg-slate-50 transition-colors">불러오기</button>
+                </div>
+                <input id="learningFileInput" type="file" class="hidden" accept=".json">
+                <p class="text-xs text-slate-500 mt-3">현재 학습된 분류기준만 JSON 파일로 저장하거나 다시 불러옵니다.</p>
+            </div>
+
+            <div class="p-5 flex-1 bg-slate-50/90 flex flex-col">
+                <h2 class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <i class="ph-fill ph-brain text-violet-500"></i> 학습된 분류 기준 (<span id="ruleCount">0</span>)
+                </h2>
+                <p class="text-xs text-slate-500 mb-3">셀을 클릭해서 과세분 또는 공통분 기준을 학습시키면 다음 업로드에도 바로 적용됩니다.</p>
+                <div class="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                    <span class="font-bold">안내:</span> 조건이 겹치면 <span class="font-bold">조건 수가 많은 규칙이 먼저 적용</span>되고,
+                    조건 수가 같으면 <span class="font-bold">가장 나중에 저장한 규칙이 우선 적용</span>됩니다.
+                </div>
+                <div id="rulesList" class="flex-1 overflow-y-auto space-y-2 text-sm pr-2 custom-scrollbar"></div>
+            </div>
+        </aside>
+
+        <section class="flex-1 flex flex-col overflow-hidden">
+            <div id="emptyState" class="absolute inset-[64px_0_0_320px] flex flex-col items-center justify-center text-slate-400 z-10">
+                <div class="glass rounded-[32px] border border-white/80 shadow-xl px-12 py-14 text-center">
+                    <i class="ph-fill ph-file-dashed text-6xl mb-4 text-slate-300"></i>
+                    <p class="text-xl font-semibold text-slate-700">엑셀 파일을 업로드해주세요.</p>
+                    <p class="text-sm mt-3 text-slate-500">구분이 매입인 데이터 중 과세기간과 유형 조건에 맞는 항목만 분류 대상으로 불러옵니다.</p>
+                </div>
+            </div>
+
+            <div id="headerSelectionMode" class="hidden flex-1 flex-col overflow-hidden">
+                <div class="mx-5 mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4">
+                    <h3 class="text-amber-900 font-bold flex items-center gap-2"><i class="ph-fill ph-warning-circle"></i> 제목 행을 선택해주세요.</h3>
+                    <p class="text-sm text-amber-800 mt-1">예: 유형, 구분, 일자, 품목, 공급가액, 부가세, 합계, 코드, 거래처, 전자, 분개유형, 계정코드, 계정과목명</p>
+                </div>
+                <div class="mx-5 my-5 flex-1 overflow-auto custom-scrollbar rounded-3xl border border-slate-200 bg-white shadow-sm">
+                    <table class="w-full text-sm text-left border-collapse">
+                        <tbody id="previewRawTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="workspace" class="hidden flex-1 flex-col overflow-hidden">
+                <div class="mx-5 mt-5 rounded-3xl glass border border-white/80 shadow-sm overflow-hidden">
+                    <div class="px-5 py-4 border-b border-slate-200/80 flex flex-wrap gap-4 items-center justify-between">
+                        <div class="flex flex-wrap items-center gap-4 text-sm">
+                            <span class="inline-flex items-center gap-2 rounded-full bg-sky-50 border border-sky-200 px-3 py-1.5 text-sky-900 font-semibold">분류 대상 <span id="totalRowsCount">0</span>건</span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-amber-50 border border-amber-200 px-3 py-1.5 text-amber-900 font-semibold">미분류 <span id="unclassifiedCount">0</span>건</span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-emerald-900 font-semibold">현재 표시 <span id="visibleRowsCount">0</span>건</span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-violet-50 border border-violet-200 px-3 py-1.5 text-violet-900 font-semibold">선택 <span id="selectedRowsCount">0</span>건</span>
+                        </div>
+                        <button onclick="exportExcel()" class="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-sm font-semibold flex items-center gap-2 shadow-sm transition-colors">
+                            <i class="ph-bold ph-download-simple"></i> 결과 엑셀 다운로드
+                        </button>
+                    </div>
+
+                    <div class="px-5 py-4 border-b border-slate-200/80 bg-slate-50/70">
+                        <div class="grid gap-3 xl:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_auto]">
+                            <input id="resultSearchInput" type="text" placeholder="품목, 거래처, 코드, 계정과목명 등 전체 검색" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all">
+                            <select id="resultFilterColumn" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all"></select>
+                            <select id="resultFilterValue" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all"></select>
+                            <select id="resultSortColumn" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all"></select>
+                            <select id="resultSortDirection" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all">
+                                <option value="asc">오름차순</option>
+                                <option value="desc">내림차순</option>
+                            </select>
+                            <button onclick="clearGridFilters()" class="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 transition-colors">필터 초기화</button>
+                        </div>
+                        <div class="mt-3 flex flex-wrap items-center gap-2">
+                            <button id="viewAllBtn" onclick="setViewMode('all')" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition-colors">전체 보기</button>
+                            <button id="viewUnclassifiedBtn" onclick="setViewMode('unclassified')" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition-colors">미분류만 보기</button>
+                            <button id="viewClassifiedBtn" onclick="setViewMode('classified')" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition-colors">분류된 내용 보기</button>
+                            <span class="text-slate-300">|</span>
+                            <button onclick="selectVisibleRows()" class="rounded-xl border border-sky-300 bg-sky-50 text-sky-900 px-3 py-2 text-sm font-semibold hover:bg-sky-100 transition-colors">보이는 행 전체 선택</button>
+                            <button onclick="clearSelectedRows()" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition-colors">선택 해제</button>
+                            <span class="text-slate-300">|</span>
+                            <button onclick="applyBulkSubject('과세분')" class="rounded-xl border border-blue-300 bg-blue-50 text-blue-800 px-3 py-2 text-sm font-bold hover:bg-blue-100 transition-colors">선택 행 과세분</button>
+                            <button onclick="applyBulkSubject('공통분')" class="rounded-xl border border-rose-300 bg-rose-50 text-rose-800 px-3 py-2 text-sm font-bold hover:bg-rose-100 transition-colors">선택 행 공통분</button>
+                        </div>
+                    </div>
+
+                    <div id="ruleBuilderPanel" class="hidden px-5 py-4 bg-sky-50 border-b border-sky-200">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="flex-1">
+                                <div class="text-sm font-bold text-slate-800">학습 규칙 만들기</div>
+                                <p class="text-xs text-slate-600 mt-1">클릭한 값 전체 대신 일부만 남겨 저장할 수 있고, 필요하면 두 번째 조건까지 함께 만족하도록 만들 수 있습니다.</p>
+                            </div>
+                            <button onclick="closeRuleBuilder()" class="text-slate-400 hover:text-slate-600 p-1"><i class="ph ph-x"></i></button>
+                        </div>
+
+                        <div class="mt-4 grid gap-3 lg:grid-cols-2">
+                            <div class="rounded-2xl border border-sky-200 bg-white p-3">
+                                <div class="text-xs font-semibold text-slate-500 mb-2">조건 1</div>
+                                <div class="text-xs text-slate-500 mb-1">열</div>
+                                <input id="rbColumn1" type="text" readonly class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-slate-50">
+                                <div class="text-xs text-slate-500 mt-3 mb-1">포함값</div>
+                                <input id="rbKeyword1" type="text" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none">
+                            </div>
+
+                            <div class="rounded-2xl border border-slate-200 bg-white p-3">
+                                <label class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <input id="rbUseSecondCondition" type="checkbox" onchange="toggleSecondCondition()">
+                                    조건 2도 함께 만족
+                                </label>
+                                <div id="rbSecondConditionWrap" class="mt-3 opacity-50 pointer-events-none">
+                                    <div class="text-xs text-slate-500 mb-1">열</div>
+                                    <select id="rbColumn2" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"></select>
+                                    <div class="text-xs text-slate-500 mt-3 mb-1">포함값</div>
+                                    <input id="rbKeyword2" type="text" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" placeholder="예: 특정 품목명 일부">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button onclick="trimRuleKeyword(1)" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition-colors">조건1 앞뒤 공백 정리</button>
+                            <button onclick="addRule('과세분')" class="rounded-xl bg-white hover:bg-blue-600 hover:text-white border border-blue-300 text-blue-700 px-4 py-2 text-sm font-bold transition-colors">과세분 지정</button>
+                            <button onclick="addRule('공통분')" class="rounded-xl bg-white hover:bg-rose-600 hover:text-white border border-rose-300 text-rose-700 px-4 py-2 text-sm font-bold transition-colors">공통분 지정</button>
+                        </div>
+                    </div>
+
+                    <div class="table-container overflow-auto custom-scrollbar bg-white">
+                        <table class="w-full text-sm text-left border-collapse whitespace-nowrap">
+                            <thead class="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+                                <tr id="gridHeader"></tr>
+                            </thead>
+                            <tbody id="gridBody" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const STORAGE_KEY = "taxApportionRules";
+        const TARGET_COLUMNS = ["유형", "구분", "일자", "품목", "공급가액", "부가세", "합계", "코드", "거래처", "전자", "분개유형", "계정코드", "계정과목명"];
+        const NUMERIC_COLUMNS = ["공급가액", "부가세", "합계"];
+        const TYPE_KEYWORDS = ["과세", "카과", "현과"];
+        const MONTH_RANGES = {
+            "1기예정": [1, 2, 3],
+            "1기확정": [4, 5, 6],
+            "1기예정+확정": [1, 2, 3, 4, 5, 6],
+            "2기예정": [7, 8, 9],
+            "2기확정": [10, 11, 12],
+            "2기예정+확정": [7, 8, 9, 10, 11, 12],
+            "전체": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        };
+        const HEADER_ALIASES = {
+            "유형": ["유형"],
+            "구분": ["구분"],
+            "일자": ["일자", "작성일자", "거래일자", "증빙일자", "일시"],
+            "품목": ["품목", "품명", "적요", "내역"],
+            "공급가액": ["공급가액", "공급가", "금액"],
+            "부가세": ["부가세", "세액"],
+            "합계": ["합계", "총액"],
+            "코드": ["코드", "거래처코드"],
+            "거래처": ["거래처", "거래처명"],
+            "전자": ["전자", "전자여부"],
+            "분개유형": ["분개유형", "분개 유형"],
+            "계정코드": ["계정코드", "계정 코드"],
+            "계정과목명": ["계정과목명", "계정과목", "계정명"]
+        };
+
+        let state = {
+            rawExcelData: [],
+            headerIndex: -1,
+            columnMap: {},
+            processedData: [],
+            excludedData: [],
+            rules: [],
+            activeCellForRule: null,
+            resultSearch: "",
+            resultFilterColumn: "",
+            resultFilterValue: "",
+            resultSortColumn: "",
+            resultSortDirection: "asc",
+            viewMode: "all",
+            selectedRowIds: []
+        };
+
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById("targetYear").value = new Date().getFullYear();
+            const savedRules = localStorage.getItem(STORAGE_KEY);
+            if (savedRules) state.rules = JSON.parse(savedRules);
+            renderRulesList();
+            syncFilterControls();
+            updateViewButtons();
+
+            const dropZone = document.getElementById("dropZone");
+            const fileInput = document.getElementById("fileInput");
+            const learningFileInput = document.getElementById("learningFileInput");
+
+            dropZone.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                dropZone.classList.add("border-sky-500", "bg-sky-50");
+            });
+            dropZone.addEventListener("dragleave", () => {
+                dropZone.classList.remove("border-sky-500", "bg-sky-50");
+            });
+            dropZone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dropZone.classList.remove("border-sky-500", "bg-sky-50");
+                if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+            });
+            fileInput.addEventListener("change", (e) => {
+                if (e.target.files.length) handleFile(e.target.files[0]);
+            });
+            learningFileInput.addEventListener("change", importLearningDataFile);
+
+            document.getElementById("resultSearchInput").addEventListener("input", (e) => {
+                state.resultSearch = normalizeText(e.target.value);
+                renderGrid();
+            });
+            document.getElementById("resultFilterColumn").addEventListener("change", (e) => {
+                state.resultFilterColumn = e.target.value;
+                state.resultFilterValue = "";
+                syncFilterControls();
+                renderGrid();
+            });
+            document.getElementById("resultFilterValue").addEventListener("change", (e) => {
+                state.resultFilterValue = e.target.value;
+                renderGrid();
+            });
+            document.getElementById("resultSortColumn").addEventListener("change", (e) => {
+                state.resultSortColumn = e.target.value;
+                renderGrid();
+            });
+            document.getElementById("resultSortDirection").addEventListener("change", (e) => {
+                state.resultSortDirection = e.target.value;
+                renderGrid();
+            });
+        });
+
+        function normalizeText(value) {
+            return String(value || "").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\s+/g, "").trim();
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function toNumber(value) {
+            if (value === null || value === undefined || value === "") return null;
+            if (typeof value === "number" && Number.isFinite(value)) return value;
+            const raw = String(value).replace(/,/g, "").trim();
+            if (!raw) return null;
+            const num = Number(raw);
+            return Number.isFinite(num) ? num : null;
+        }
+
+        function formatNumber(value) {
+            const num = toNumber(value);
+            return num === null ? String(value || "") : num.toLocaleString("ko-KR");
+        }
+
+        function cleanExcelText(value) {
+            return String(value ?? "").trim();
+        }
+
+        function cleanExcelNumber(value) {
+            return toNumber(value) ?? 0;
+        }
+
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: "array", cellDates: true });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                state.rawExcelData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "", dateNF: "yyyy-mm-dd" });
+
+                document.getElementById("emptyState").classList.add("hidden");
+                document.getElementById("workspace").classList.add("hidden");
+                document.getElementById("headerSelectionMode").classList.remove("hidden");
+                showHeaderSelection();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function showHeaderSelection() {
+            const tbody = document.getElementById("previewRawTableBody");
+            tbody.innerHTML = "";
+            state.rawExcelData.slice(0, 20).forEach((row, rowIndex) => {
+                const tr = document.createElement("tr");
+                tr.className = "hover:bg-sky-50 cursor-pointer border-b border-slate-100";
+                tr.onclick = () => selectHeaderRow(rowIndex);
+
+                const actionCell = document.createElement("td");
+                actionCell.className = "p-2 w-24 text-center";
+                actionCell.innerHTML = `<button class="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg w-full font-bold hover:bg-sky-500 hover:text-white transition-colors">행 ${rowIndex + 1}</button>`;
+                tr.appendChild(actionCell);
+
+                for (let i = 0; i < Math.max(14, row.length); i++) {
+                    const td = document.createElement("td");
+                    td.className = "p-2 border-r border-slate-100 max-w-xs truncate";
+                    td.textContent = row[i] || "";
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            });
+        }
+
+        function selectHeaderRow(index) {
+            state.headerIndex = index;
+            state.columnMap = {};
+            const headerRow = state.rawExcelData[index] || [];
+
+            headerRow.forEach((colName, colIdx) => {
+                const normalizedHeader = normalizeText(colName);
+                if (!normalizedHeader) return;
+                TARGET_COLUMNS.forEach((target) => {
+                    const aliases = HEADER_ALIASES[target] || [target];
+                    if (aliases.some((alias) => normalizedHeader.includes(normalizeText(alias))) && state.columnMap[target] === undefined) {
+                        state.columnMap[target] = colIdx;
+                    }
+                });
+            });
+
+            if (state.columnMap["구분"] === undefined) {
+                alert("선택한 행에서 필수 열인 '구분'을 찾을 수 없습니다.");
+                return;
+            }
+            processData();
+        }
+
+        function parseExcelDate(value) {
+            if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+            if (typeof value === "number" && Number.isFinite(value)) {
+                const parsed = XLSX.SSF.parse_date_code(value);
+                if (parsed && parsed.y && parsed.m && parsed.d) return new Date(parsed.y, parsed.m - 1, parsed.d);
+            }
+            const raw = String(value || "").trim();
+            if (!raw) return null;
+            const nativeDate = new Date(raw);
+            if (!Number.isNaN(nativeDate.getTime())) return nativeDate;
+            const digits = raw.replace(/[^0-9]/g, "");
+            if (digits.length >= 8) return new Date(Number(digits.slice(0, 4)), Number(digits.slice(4, 6)) - 1, Number(digits.slice(6, 8)));
+            if (digits.length >= 6) return new Date(Number(digits.slice(0, 4)), Number(digits.slice(4, 6)) - 1, 1);
+            return null;
+        }
+
+        function isDateInPeriod(dateValue, targetYear, periodMode) {
+            const parsed = parseExcelDate(dateValue);
+            return parsed && parsed.getFullYear() === Number(targetYear) && MONTH_RANGES[periodMode].includes(parsed.getMonth() + 1);
+        }
+
+        function processData() {
+            const year = document.getElementById("targetYear").value;
+            const period = document.getElementById("targetPeriod").value;
+            const gubunIdx = state.columnMap["구분"];
+            const typeIdx = state.columnMap["유형"];
+            const dateIdx = state.columnMap["일자"];
+
+            state.processedData = [];
+            state.excludedData = [];
+            state.selectedRowIds = [];
+            state.viewMode = "all";
+
+            for (let i = state.headerIndex + 1; i < state.rawExcelData.length; i++) {
+                const row = state.rawExcelData[i];
+                if (!row || row.every((cell) => String(cell || "").trim() === "")) continue;
+
+                const gubunVal = normalizeText(row[gubunIdx]);
+                if (!gubunVal.includes("매입")) continue;
+
+                const typeVal = typeIdx !== undefined ? normalizeText(row[typeIdx]) : "";
+                const dateVal = dateIdx !== undefined ? row[dateIdx] : "";
+                let excludedReason = "";
+
+                if (!typeVal) excludedReason = "유형 없음";
+                else if (!TYPE_KEYWORDS.some((keyword) => typeVal.includes(keyword))) excludedReason = "유형 제외";
+                else if (dateIdx === undefined) excludedReason = "일자 열 없음";
+                else if (!parseExcelDate(dateVal)) excludedReason = "일자 형식 아님";
+                else if (!isDateInPeriod(dateVal, year, period)) excludedReason = "기간 제외";
+
+                const item = { __id: `${i}`, originalIndex: i, rowData: row, subject: "" };
+                if (excludedReason) state.excludedData.push({ ...item, excludedReason });
+                else state.processedData.push(item);
+            }
+
+            applyRulesAndRender();
+            document.getElementById("headerSelectionMode").classList.add("hidden");
+            document.getElementById("workspace").classList.remove("hidden");
+        }
+
+        function applyRulesAndRender() {
+            const prioritizedRules = [...state.rules].sort((a, b) => {
+                const aConditions = normalizeRuleConditions(a).length;
+                const bConditions = normalizeRuleConditions(b).length;
+                if (bConditions !== aConditions) return bConditions - aConditions;
+
+                const aTime = Number(a.updatedAt || a.createdAt || a.id || 0);
+                const bTime = Number(b.updatedAt || b.createdAt || b.id || 0);
+                return bTime - aTime;
+            });
+
+            state.processedData.forEach((item) => {
+                item.subject = "";
+                for (const rule of prioritizedRules) {
+                    const conditions = normalizeRuleConditions(rule);
+                    if (conditions.length === 0) continue;
+                    const matched = conditions.every((condition) => {
+                        const colIdx = state.columnMap[condition.column];
+                        if (colIdx === undefined) return false;
+                        return String(item.rowData[colIdx] || "").includes(condition.keyword);
+                    });
+                    if (matched) {
+                        item.subject = rule.subject;
+                        break;
+                    }
+                }
+            });
+            pruneInvalidSelections();
+            syncFilterControls();
+            updateCounters();
+            updateViewButtons();
+            renderGrid();
+        }
+
+        function updateCounters() {
+            document.getElementById("totalRowsCount").textContent = state.processedData.length.toLocaleString("ko-KR");
+            document.getElementById("unclassifiedCount").textContent = state.processedData.filter((item) => !item.subject).length.toLocaleString("ko-KR");
+            document.getElementById("selectedRowsCount").textContent = state.selectedRowIds.length.toLocaleString("ko-KR");
+        }
+
+        function getVisibleData() {
+            const filtered = state.processedData.filter((item) => {
+                if (state.viewMode === "unclassified" && item.subject) return false;
+                if (state.viewMode === "classified" && !item.subject) return false;
+                if (state.resultSearch) {
+                    const joined = TARGET_COLUMNS.filter((col) => state.columnMap[col] !== undefined)
+                        .map((col) => item.rowData[state.columnMap[col]] || "")
+                        .join(" ");
+                    if (!normalizeText(`${joined} ${item.subject || "미분류"}`).includes(state.resultSearch)) return false;
+                }
+                if (state.resultFilterColumn && state.resultFilterValue) {
+                    const colIdx = state.columnMap[state.resultFilterColumn];
+                    if (String(item.rowData[colIdx] || "") !== state.resultFilterValue) return false;
+                }
+                return true;
+            });
+
+            if (!state.resultSortColumn) return filtered;
+
+            const sortIdx = state.columnMap[state.resultSortColumn];
+            if (sortIdx === undefined) return filtered;
+
+            return [...filtered].sort((a, b) => {
+                const aRaw = a.rowData[sortIdx];
+                const bRaw = b.rowData[sortIdx];
+                const aNum = toNumber(aRaw);
+                const bNum = toNumber(bRaw);
+                let compare = 0;
+
+                if (aNum !== null && bNum !== null) compare = aNum - bNum;
+                else compare = String(aRaw || "").localeCompare(String(bRaw || ""), "ko", { numeric: true, sensitivity: "base" });
+
+                return state.resultSortDirection === "desc" ? compare * -1 : compare;
+            });
+        }
+
+        function renderGrid() {
+            const visibleData = getVisibleData();
+            document.getElementById("visibleRowsCount").textContent = visibleData.length.toLocaleString("ko-KR");
+
+            const thead = document.getElementById("gridHeader");
+            const tbody = document.getElementById("gridBody");
+            thead.innerHTML = `<th class="p-3 border-r border-slate-200 text-center w-14"><input type="checkbox" onclick="toggleVisibleSelection(this.checked)"></th><th class="p-3 border-r border-slate-200 text-center w-24 bg-slate-100">분류결과</th>`;
+            TARGET_COLUMNS.forEach((col) => {
+                if (state.columnMap[col] !== undefined) thead.innerHTML += `<th class="p-3 border-r border-slate-200 bg-slate-100">${col}</th>`;
+            });
+
+            tbody.innerHTML = "";
+            visibleData.forEach((item) => {
+                const tr = document.createElement("tr");
+                tr.className = "hover:bg-slate-50";
+                tr.innerHTML = `<td class="p-2 text-center border-r border-slate-200"><input type="checkbox" ${state.selectedRowIds.includes(item.__id) ? "checked" : ""} onclick="toggleRowSelection('${item.__id}', this.checked)"></td>`;
+
+                let badge = `<span class="px-2 py-1 rounded-full text-xs font-bold text-slate-500 bg-slate-100">미분류</span>`;
+                if (item.subject === "과세분") badge = `<span class="px-2 py-1 rounded-full text-xs font-bold text-white bg-blue-500">과세분</span>`;
+                if (item.subject === "공통분") badge = `<span class="px-2 py-1 rounded-full text-xs font-bold text-white bg-rose-500">공통분</span>`;
+                tr.innerHTML += `<td class="p-2 text-center border-r border-slate-200">${badge}</td>`;
+
+                TARGET_COLUMNS.forEach((col) => {
+                    if (state.columnMap[col] === undefined) return;
+                    const cellValue = item.rowData[state.columnMap[col]] || "";
+                    const displayValue = NUMERIC_COLUMNS.includes(col) ? formatNumber(cellValue) : cellValue;
+                    const td = document.createElement("td");
+                    td.className = "p-2 border-r border-slate-200 max-w-xs truncate cell-clickable";
+                    td.textContent = displayValue;
+                    td.title = String(cellValue || "");
+                    td.onclick = () => openRuleBuilder(col, cellValue);
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        function syncFilterControls() {
+            const columnSelect = document.getElementById("resultFilterColumn");
+            const valueSelect = document.getElementById("resultFilterValue");
+            const sortSelect = document.getElementById("resultSortColumn");
+            const columns = TARGET_COLUMNS.filter((col) => state.columnMap[col] !== undefined);
+            columnSelect.innerHTML = ['<option value="">목록 검색 열 선택</option>'].concat(columns.map((col) => `<option value="${escapeHtml(col)}" ${state.resultFilterColumn === col ? "selected" : ""}>${escapeHtml(col)}</option>`)).join("");
+            sortSelect.innerHTML = ['<option value="">정렬 열 선택</option>'].concat(columns.map((col) => `<option value="${escapeHtml(col)}" ${state.resultSortColumn === col ? "selected" : ""}>${escapeHtml(col)}</option>`)).join("");
+
+            const values = state.resultFilterColumn ? Array.from(new Set(state.processedData.map((item) => String(item.rowData[state.columnMap[state.resultFilterColumn]] || "")).filter(Boolean))).slice(0, 200) : [];
+            if (state.resultFilterValue && !values.includes(state.resultFilterValue)) state.resultFilterValue = "";
+            valueSelect.innerHTML = ['<option value="">목록 검색 값 선택</option>'].concat(values.map((value) => `<option value="${escapeHtml(value)}" ${state.resultFilterValue === value ? "selected" : ""}>${escapeHtml(value)}</option>`)).join("");
+        }
+
+        function updateViewButtons() {
+            [["all", "viewAllBtn"], ["unclassified", "viewUnclassifiedBtn"], ["classified", "viewClassifiedBtn"]].forEach(([mode, id]) => {
+                const button = document.getElementById(id);
+                if (!button) return;
+                button.className = mode === state.viewMode
+                    ? "rounded-xl border border-slate-900 bg-slate-900 text-white px-3 py-2 text-sm font-semibold transition-colors"
+                    : "rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition-colors";
+            });
+        }
+
+        function pruneInvalidSelections() {
+            const validIds = new Set(state.processedData.map((item) => item.__id));
+            state.selectedRowIds = state.selectedRowIds.filter((id) => validIds.has(id));
+        }
+
+        function clearGridFilters() {
+            state.resultSearch = "";
+            state.resultFilterColumn = "";
+            state.resultFilterValue = "";
+            state.resultSortColumn = "";
+            state.resultSortDirection = "asc";
+            state.viewMode = "all";
+            document.getElementById("resultSearchInput").value = "";
+            document.getElementById("resultSortDirection").value = "asc";
+            syncFilterControls();
+            updateViewButtons();
+            renderGrid();
+        }
+
+        function setViewMode(mode) {
+            state.viewMode = mode;
+            updateViewButtons();
+            renderGrid();
+        }
+
+        function toggleRowSelection(rowId, checked) {
+            if (checked && !state.selectedRowIds.includes(rowId)) state.selectedRowIds.push(rowId);
+            if (!checked) state.selectedRowIds = state.selectedRowIds.filter((id) => id !== rowId);
+            updateCounters();
+        }
+
+        function toggleVisibleSelection(checked) {
+            const visibleIds = getVisibleData().map((item) => item.__id);
+            if (checked) state.selectedRowIds = Array.from(new Set([...state.selectedRowIds, ...visibleIds]));
+            else state.selectedRowIds = state.selectedRowIds.filter((id) => !visibleIds.includes(id));
+            updateCounters();
+            renderGrid();
+        }
+
+        function selectVisibleRows() {
+            state.selectedRowIds = Array.from(new Set([...state.selectedRowIds, ...getVisibleData().map((item) => item.__id)]));
+            updateCounters();
+            renderGrid();
+        }
+
+        function clearSelectedRows() {
+            state.selectedRowIds = [];
+            updateCounters();
+            renderGrid();
+        }
+
+        function applyBulkSubject(subject) {
+            if (state.selectedRowIds.length === 0) {
+                alert("선택된 행이 없습니다.");
+                return;
+            }
+            const selected = new Set(state.selectedRowIds);
+            state.processedData.forEach((item) => {
+                if (selected.has(item.__id)) item.subject = subject;
+            });
+            updateCounters();
+            renderGrid();
+        }
+
+        function openRuleBuilder(column, value) {
+            if (!String(value || "").trim()) return;
+            state.activeCellForRule = { column, value: String(value).trim() };
+            document.getElementById("rbColumn1").value = column;
+            document.getElementById("rbKeyword1").value = String(value).trim();
+            document.getElementById("rbUseSecondCondition").checked = false;
+            document.getElementById("rbKeyword2").value = "";
+            populateRuleColumnOptions(column);
+            toggleSecondCondition();
+            document.getElementById("ruleBuilderPanel").classList.remove("hidden");
+        }
+
+        function closeRuleBuilder() {
+            state.activeCellForRule = null;
+            document.getElementById("ruleBuilderPanel").classList.add("hidden");
+        }
+
+        function populateRuleColumnOptions(defaultColumn) {
+            const select = document.getElementById("rbColumn2");
+            const columns = TARGET_COLUMNS.filter((col) => state.columnMap[col] !== undefined);
+            select.innerHTML = columns.map((col) => `<option value="${escapeHtml(col)}" ${col === defaultColumn ? "selected" : ""}>${escapeHtml(col)}</option>`).join("");
+        }
+
+        function toggleSecondCondition() {
+            const enabled = document.getElementById("rbUseSecondCondition").checked;
+            const wrap = document.getElementById("rbSecondConditionWrap");
+            wrap.classList.toggle("opacity-50", !enabled);
+            wrap.classList.toggle("pointer-events-none", !enabled);
+        }
+
+        function trimRuleKeyword(index) {
+            const input = document.getElementById(index === 1 ? "rbKeyword1" : "rbKeyword2");
+            input.value = String(input.value || "").trim();
+        }
+
+        function normalizeRuleConditions(rule) {
+            if (Array.isArray(rule.conditions)) {
+                return rule.conditions
+                    .map((condition) => ({
+                        column: condition.column,
+                        keyword: String(condition.keyword || "").trim()
+                    }))
+                    .filter((condition) => condition.column && condition.keyword);
+            }
+            if (rule.column && rule.keyword) {
+                return [{ column: rule.column, keyword: String(rule.keyword).trim() }];
+            }
+            return [];
+        }
+
+        function conditionSignature(conditions) {
+            return JSON.stringify(
+                [...conditions]
+                    .map((condition) => ({ column: condition.column, keyword: String(condition.keyword || "").trim() }))
+                    .sort((a, b) => `${a.column}:${a.keyword}`.localeCompare(`${b.column}:${b.keyword}`, "ko"))
+            );
+        }
+
+        function addRule(subject) {
+            if (!state.activeCellForRule) return;
+            const conditions = [{
+                column: document.getElementById("rbColumn1").value,
+                keyword: String(document.getElementById("rbKeyword1").value || "").trim()
+            }];
+
+            if (document.getElementById("rbUseSecondCondition").checked) {
+                conditions.push({
+                    column: document.getElementById("rbColumn2").value,
+                    keyword: String(document.getElementById("rbKeyword2").value || "").trim()
+                });
+            }
+
+            const normalizedConditions = conditions.filter((condition) => condition.column && condition.keyword);
+            if (normalizedConditions.length === 0) {
+                alert("최소 1개 조건의 포함값이 필요합니다.");
+                return;
+            }
+
+            const signature = conditionSignature(normalizedConditions);
+            const existing = state.rules.find((rule) => conditionSignature(normalizeRuleConditions(rule)) === signature);
+
+            const now = Date.now();
+
+            if (existing) {
+                existing.subject = subject;
+                existing.conditions = normalizedConditions;
+                existing.updatedAt = now;
+                existing.createdAt = existing.createdAt || Number(existing.id) || now;
+                state.rules = [existing, ...state.rules.filter((rule) => rule.id !== existing.id)];
+            } else {
+                state.rules.unshift({
+                    id: now.toString(),
+                    conditions: normalizedConditions,
+                    subject,
+                    createdAt: now,
+                    updatedAt: now
+                });
+            }
+            saveRules();
+            renderRulesList();
+            closeRuleBuilder();
+            applyRulesAndRender();
+        }
+
+        function deleteRule(id) {
+            state.rules = state.rules.filter((rule) => rule.id !== id);
+            saveRules();
+            renderRulesList();
+            applyRulesAndRender();
+        }
+
+        function clearRules() {
+            if (!confirm("학습된 모든 분류 기준을 삭제하시겠습니까?")) return;
+            state.rules = [];
+            saveRules();
+            renderRulesList();
+            applyRulesAndRender();
+        }
+
+        function saveRules() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rules));
+        }
+
+        function renderRulesList() {
+            const listEl = document.getElementById("rulesList");
+            document.getElementById("ruleCount").textContent = state.rules.length.toLocaleString("ko-KR");
+            if (state.rules.length === 0) {
+                listEl.innerHTML = `<div class="text-slate-400 italic text-center py-4">저장된 기준이 없습니다.</div>`;
+                return;
+            }
+            listEl.innerHTML = "";
+            state.rules.forEach((rule) => {
+                const colorClass = rule.subject === "과세분" ? "bg-blue-100 text-blue-800 border-blue-200" : "bg-rose-100 text-rose-800 border-rose-200";
+                const conditions = normalizeRuleConditions(rule);
+                const conditionText = conditions.map((condition) => `${condition.column} 포함: ${condition.keyword}`).join(" + ");
+                const el = document.createElement("div");
+                el.className = `p-3 rounded-2xl border flex justify-between items-center ${colorClass}`;
+                el.innerHTML = `
+                    <div class="truncate flex-1">
+                        <span class="text-xs opacity-70 block">${conditions.length === 2 ? "2개 조건 동시 만족" : "1개 조건 만족"}</span>
+                        <span class="font-bold block truncate" title="${escapeHtml(conditionText)}">${escapeHtml(conditionText)}</span>
+                    </div>
+                    <div class="flex flex-col items-end gap-1 ml-2 shrink-0">
+                        <span class="text-xs font-bold px-2 py-1 rounded-lg bg-white/70">${escapeHtml(rule.subject)}</span>
+                        <button onclick="deleteRule('${rule.id}')" class="text-slate-400 hover:text-red-600 p-1"><i class="ph-bold ph-x"></i></button>
+                    </div>
+                `;
+                listEl.appendChild(el);
+            });
+        }
+
+        function saveLearningDataFile() {
+            const payload = { version: 1, savedAt: new Date().toISOString(), rules: state.rules };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `학습분류기준_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function openLearningDataFile() {
+            document.getElementById("learningFileInput").click();
+        }
+
+        function importLearningDataFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const parsed = JSON.parse(reader.result);
+                    if (!Array.isArray(parsed.rules)) throw new Error("invalid");
+                    state.rules = parsed.rules;
+                    saveRules();
+                    renderRulesList();
+                    applyRulesAndRender();
+                    alert("학습분류기준을 불러왔습니다.");
+                } catch (error) {
+                    alert("올바른 학습분류기준 파일이 아닙니다.");
+                } finally {
+                    event.target.value = "";
+                }
+            };
+            reader.readAsText(file, "utf-8");
+        }
+
+        function hasExportDate(item) {
+            const dateIdx = state.columnMap["일자"];
+            if (dateIdx === undefined) return false;
+            return !!parseExcelDate(item.rowData[dateIdx]);
+        }
+
+        function buildExportRows(items, includeReason = false) {
+            const headers = ["분류결과"];
+            if (includeReason) headers.push("인식제외사유");
+            TARGET_COLUMNS.forEach((col) => {
+                if (state.columnMap[col] !== undefined) headers.push(col);
+            });
+            const rows = items.filter(hasExportDate).map((item) => {
+                const row = [cleanExcelText(item.subject) || "미분류"];
+                if (includeReason) row.push(cleanExcelText(item.excludedReason) || (item.subject ? "" : "미분류"));
+                TARGET_COLUMNS.forEach((col) => {
+                    if (state.columnMap[col] === undefined) return;
+                    const rawValue = item.rowData[state.columnMap[col]];
+                    row.push(NUMERIC_COLUMNS.includes(col) ? cleanExcelNumber(rawValue) : cleanExcelText(rawValue));
+                });
+                return row;
+            });
+            return { headers, rows };
+        }
+
+        function borderStyle() {
+            return {
+                top: { style: "thin", color: { rgb: "CBD5E1" } },
+                bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+                left: { style: "thin", color: { rgb: "CBD5E1" } },
+                right: { style: "thin", color: { rgb: "CBD5E1" } }
+            };
+        }
+
+        function createStyledSheet(headers, rows, options = {}) {
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+            const range = XLSX.utils.decode_range(ws["!ref"]);
+            ws["!cols"] = headers.map((header) => ({ wch: Math.max(String(header).length + 4, 14) }));
+            ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const headerCell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+                if (!headerCell) continue;
+                headerCell.s = {
+                    font: { bold: true, color: { rgb: "FFFFFF" } },
+                    fill: { fgColor: { rgb: "1D4ED8" } },
+                    alignment: { horizontal: "center", vertical: "center" },
+                    border: borderStyle()
+                };
+            }
+
+            for (let r = 1; r <= range.e.r; r++) {
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+                    if (!cell) continue;
+                    const header = headers[c];
+                    const totalRow = options.totalRowIndex === r || (Array.isArray(options.totalRowIndices) && options.totalRowIndices.includes(r));
+                    const sectionHeaderRow = Array.isArray(options.sectionHeaderRows) && options.sectionHeaderRows.includes(r);
+                    const blankRow = rows[r - 1] && rows[r - 1].every((value) => value === "");
+                    const isNumeric = NUMERIC_COLUMNS.includes(header);
+                    cell.s = {
+                        font: { bold: totalRow || sectionHeaderRow },
+                        fill: { fgColor: { rgb: sectionHeaderRow ? "DBEAFE" : (totalRow ? "E0F2FE" : (blankRow ? "FFFFFF" : (r % 2 === 0 ? "F8FAFC" : "FFFFFF"))) } },
+                        alignment: { horizontal: isNumeric ? "right" : "left", vertical: "center" },
+                        border: borderStyle()
+                    };
+                    if (sectionHeaderRow) {
+                        cell.s.font = { bold: true, color: { rgb: "1E3A8A" } };
+                        cell.s.alignment = { horizontal: "center", vertical: "center" };
+                    }
+                    if (typeof cell.v === "string") {
+                        cell.v = cleanExcelText(cell.v);
+                    }
+                    if (isNumeric) {
+                        const numberValue = toNumber(cell.v);
+                        if (numberValue !== null) {
+                            cell.v = numberValue;
+                            cell.t = "n";
+                        }
+                    }
+                    if (isNumeric && typeof cell.v === "number") {
+                        cell.z = "#,##0";
+                        cell.s.numFmt = "#,##0";
+                    }
+                }
+            }
+            return ws;
+        }
+
+        function summarizeTotals(items, headers) {
+            const totalRow = new Array(headers.length).fill("");
+            totalRow[0] = "합계";
+
+            const supplyIndex = headers.indexOf("공급가액");
+            const vatIndex = headers.indexOf("부가세");
+            const totalIndex = headers.indexOf("합계");
+
+            if (supplyIndex >= 0) totalRow[supplyIndex] = items.reduce((sum, item) => sum + (toNumber(item.rowData[state.columnMap["공급가액"]]) || 0), 0);
+            if (vatIndex >= 0) totalRow[vatIndex] = items.reduce((sum, item) => sum + (toNumber(item.rowData[state.columnMap["부가세"]]) || 0), 0);
+            if (totalIndex >= 0) totalRow[totalIndex] = items.reduce((sum, item) => sum + (toNumber(item.rowData[state.columnMap["합계"]]) || 0), 0);
+
+            return [totalRow];
+        }
+
+        function buildSheetRowsWithSummary(items, includeReason = false, summaryTitle = "시트요약") {
+            const pack = buildExportRows(items, includeReason);
+            const exportableItems = items.filter(hasExportDate);
+            const summaryRows = summarizeTotals(exportableItems, pack.headers);
+            const rows = [...pack.rows, new Array(pack.headers.length).fill("")];
+            const sectionHeaderRows = [];
+            const totalRowIndices = [];
+
+            summaryRows.forEach((summaryRow, index) => {
+                const fullRow = [...summaryRow];
+                while (fullRow.length < pack.headers.length) fullRow.push("");
+                rows.push(fullRow);
+                const actualRowIndex = rows.length;
+                if (index === 0) totalRowIndices.push(actualRowIndex);
+            });
+
+            return {
+                headers: pack.headers,
+                rows,
+                sectionHeaderRows,
+                totalRowIndices
+            };
+        }
+
+        function summarizeItems(items, labelGetter) {
+            const groups = new Map();
+            items.forEach((item) => {
+                const label = labelGetter(item);
+                if (!groups.has(label)) groups.set(label, { count: 0, supply: 0, vat: 0, total: 0 });
+                const current = groups.get(label);
+                current.count += 1;
+                current.supply += toNumber(item.rowData[state.columnMap["공급가액"]]) || 0;
+                current.vat += toNumber(item.rowData[state.columnMap["부가세"]]) || 0;
+                current.total += toNumber(item.rowData[state.columnMap["합계"]]) || 0;
+            });
+            const rows = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0], "ko")).map(([label, values]) => [
+                label,
+                values.count,
+                values.supply,
+                values.vat,
+                values.total
+            ]);
+            rows.push([
+                "합계",
+                rows.reduce((sum, row) => sum + row[1], 0),
+                rows.reduce((sum, row) => sum + row[2], 0),
+                rows.reduce((sum, row) => sum + row[3], 0),
+                rows.reduce((sum, row) => sum + row[4], 0)
+            ]);
+            return rows;
+        }
+
+        function buildSummaryRows() {
+            const typeIdx = state.columnMap["유형"];
+            const exportableProcessed = state.processedData.filter(hasExportDate);
+            const exportableExcluded = state.excludedData.filter(hasExportDate);
+
+            const typeLabel = (item) => typeIdx === undefined ? "기타" : (String(item.rowData[typeIdx] || "").trim() || "기타");
+            const subjectLabel = (item) => item.subject || "미분류";
+            const excludedLabel = (item) => item.excludedReason || "인식제외";
+
+            const rows = [];
+            const sectionHeaderRows = [];
+
+            function pushSection(title, sectionRows) {
+                rows.push([title, "", "", "", ""]);
+                sectionHeaderRows.push(rows.length);
+                rows.push(["구분", "건수", "공급가액", "부가세", "합계"]);
+                sectionHeaderRows.push(rows.length);
+                sectionRows.forEach((row) => rows.push(row));
+                rows.push(["", "", "", "", ""]);
+            }
+
+            pushSection("유형 집계 - 인식한 것", summarizeItems(exportableProcessed, typeLabel));
+            pushSection("유형 집계 - 인식제외", summarizeItems(exportableExcluded, typeLabel));
+            pushSection("분류총계 - 인식한 것", summarizeItems(exportableProcessed, subjectLabel));
+            pushSection("분류총계 - 인식제외", summarizeItems(exportableExcluded, excludedLabel));
+
+            return { rows, sectionHeaderRows };
+        }
+
+        function exportExcel() {
+            const allExcluded = [
+                ...state.excludedData,
+                ...state.processedData.filter((item) => !item.subject).map((item) => ({ ...item, excludedReason: "미분류" }))
+            ].filter(hasExportDate);
+            const taxed = state.processedData.filter((item) => item.subject === "과세분" && hasExportDate(item));
+            const common = state.processedData.filter((item) => item.subject === "공통분" && hasExportDate(item));
+
+            const wb = XLSX.utils.book_new();
+            const excludedPack = buildSheetRowsWithSummary(allExcluded, true, "인식제외 요약");
+            const taxedPack = buildSheetRowsWithSummary(taxed, false, "과세분 요약");
+            const commonPack = buildSheetRowsWithSummary(common, false, "공통분 요약");
+            const summary = buildSummaryRows();
+
+            XLSX.utils.book_append_sheet(wb, createStyledSheet(excludedPack.headers, excludedPack.rows, { sectionHeaderRows: excludedPack.sectionHeaderRows, totalRowIndices: excludedPack.totalRowIndices }), "인식제외");
+            XLSX.utils.book_append_sheet(wb, createStyledSheet(taxedPack.headers, taxedPack.rows, { sectionHeaderRows: taxedPack.sectionHeaderRows, totalRowIndices: taxedPack.totalRowIndices }), "과세분");
+            XLSX.utils.book_append_sheet(wb, createStyledSheet(commonPack.headers, commonPack.rows, { sectionHeaderRows: commonPack.sectionHeaderRows, totalRowIndices: commonPack.totalRowIndices }), "공통분");
+            XLSX.utils.book_append_sheet(wb, createStyledSheet(["구분", "건수", "공급가액", "부가세", "합계"], summary.rows, { sectionHeaderRows: summary.sectionHeaderRows }), "총괄요약");
+
+            const fileName = `매입분류결과_${document.getElementById("targetYear").value}_${document.getElementById("targetPeriod").value}_v3.xlsx`;
+            XLSX.writeFile(wb, fileName);
+        }
+    </script>
+</body>
+</html>
