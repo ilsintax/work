@@ -2418,24 +2418,19 @@
                     columns: { dateCol: ['거래일자'], tradeTypeCol: ['적요명'], amountCol: ['거래금액'], balanceCol: ['예수금잔고'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] },
                     depositTypes: ['개별상품대체입금'],
                     withdrawalTypes: ['개별상품대체출금'],
-                    removalTypes: ['공모주', '타사대체출고'],
-                    specialRules: {
-                        ignoreTradeTypeContains: ['일괄매수'],
-                        amountOverrideByTradeType: [{ match: '일괄매도', sourceHeaders: ['이자'] }]
-                    }
+                    removalTypes: ['공모주', '타사대체출고']
                 },
                 {
                     columns: { dateCol: ['거래일자'], tradeTypeCol: ['적요명'], amountCol: ['거래금액'], balanceCol: ['예수금잔액'], feeCol: ['세금/수수료'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['채권단가'], stockBalanceCol: ['잔고수량'] },
                     depositTypes: ['개별상품대체입금'],
                     withdrawalTypes: ['개별상품대체출금'],
-                    removalTypes: ['공모주', '타사대체출고'],
-                    specialRules: {
-                        ignoreTradeTypeContains: ['일괄매수'],
-                        amountOverrideByTradeType: [{ match: '일괄매도', sourceHeaders: ['이자'] }]
-                    }
+                    removalTypes: ['공모주', '타사대체출고']
                 }
             ] },
-            { id: 'db', name: 'DB금융투자', aliases: ['DB금융투자', '디비금융투자'], profiles: [{ columns: { dateCol: ['일자'], tradeTypeCol: ['거래구분'], amountCol: ['입출금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래좌수'], unitPriceCol: ['기준가'], stockBalanceCol: ['잔고좌수'] }, removalTypes: [] }] },
+            { id: 'db', name: 'DB금융투자', aliases: ['DB금융투자', '디비금융투자'], profiles: [
+                { columns: { dateCol: ['일자'], tradeTypeCol: ['거래구분'], amountCol: ['입출금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래좌수'], unitPriceCol: ['기준가'], stockBalanceCol: ['잔고좌수'] }, removalTypes: [] },
+                { columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래구분'], amountCol: ['거래금액'], balanceCol: ['예수금잔'], feeCol: ['수수료'], taxCol: ['세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가금잔'] }, removalTypes: [] }
+            ] },
             { id: 'ds', name: 'DS투자증권', aliases: ['DS투자증권', '디에스투자증권'], profiles: [] },
             { id: 'leading', name: '리딩투자증권', aliases: ['리딩투자증권'], profiles: [] },
             { id: 'meritz', name: '메리츠증권', aliases: ['메리츠증권'], profiles: [{ columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래적요'], amountCol: ['거래금액'], balanceCol: ['예수금잔고'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'], stockBalanceCol: ['유가증권잔고'] }, removalTypes: ['공모주입고', '타사대체출고'] }] },
@@ -2446,8 +2441,8 @@
             { id: 'sangsangin', name: '상상인증권', aliases: ['상상인증권'], profiles: [] },
             { id: 'shinyoung', name: '신영증권', aliases: ['신영증권'], profiles: [{ columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래적요'], amountCol: ['거래금액'], balanceCol: ['RP+예수금'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'], stockBalanceCol: ['잔량'] }, removalTypes: ['타사이체출고'] }] },
             { id: 'shinhan', name: '신한투자증권', aliases: ['신한투자증권'], profiles: [
-                { columns: { dateCol: ['일자'], tradeTypeCol: ['구분'], amountCol: ['거래대금'], balanceCol: ['최종금액'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['가격'] }, depositTypes: ['예탁금이용료', '장내_매도', '코스닥_매도'], withdrawalTypes: ['장내_매수', '코스닥_매수'], removalTypes: ['공모주입고'] },
-                { columns: { dateCol: ['일자'], tradeTypeCol: ['구분'], amountCol: ['거래대금'], balanceCol: ['최종금액'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명(상대처)'], stockQtyCol: ['수량'], unitPriceCol: ['가격'] }, depositTypes: ['예탁금이용료', '장내_매도', '코스닥_매도'], withdrawalTypes: ['장내_매수', '코스닥_매수'], removalTypes: ['공모주입고'] }
+                { columns: { dateCol: ['일자'], tradeTypeCol: ['구분'], amountCol: ['거래대금'], balanceCol: ['최종금액'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['가격'] }, depositTypes: ['예탁금이용료', '장내_매도', '코스닥_매도', '환전입금'], withdrawalTypes: ['장내_매수', '코스닥_매수'], removalTypes: ['공모주입고'] },
+                { columns: { dateCol: ['일자'], tradeTypeCol: ['구분'], amountCol: ['거래대금'], balanceCol: ['최종금액'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명(상대처)'], stockQtyCol: ['수량'], unitPriceCol: ['가격'] }, depositTypes: ['예탁금이용료', '장내_매도', '코스닥_매도', '환전입금'], withdrawalTypes: ['장내_매수', '코스닥_매수'], removalTypes: ['공모주입고'] }
             ] },
             { id: 'si', name: 'SI증권', aliases: ['SI증권', '에스아이증권'], profiles: [] },
             { id: 'sk', name: 'SK증권', aliases: ['SK증권', '에스케이증권'], profiles: [{ columns: { dateCol: ['거래일'], tradeTypeCol: ['거래종류'], amountCol: ['세전금액'], balanceCol: ['예수금잔고'], feeCol: ['수수료'], taxCol: ['거래세+농특세'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'], stockBalanceCol: ['유가증권잔고'] }, removalTypes: [] }] },
@@ -2456,28 +2451,19 @@
                 { columns: { dateCol: ['실거래일자'], tradeTypeCol: ['상세내용'], amountCol: ['거래금액'], balanceCol: ['잔고금액'], feeCol: ['수수료'], taxCol: ['세금'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'], stockBalanceCol: ['잔고'] }, depositTypes: ['은행이체입금'], withdrawalTypes: ['IPO청약수수료출금', '공모청약출금', '업무수수료출금'], removalTypes: ['공모주입고', '타사대체출고'] },
                 { columns: { dateCol: ['실거래일자'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['잔고금액'] }, depositTypes: ['은행이체입금'], withdrawalTypes: ['IPO청약수수료출금', '공모청약출금', '업무수수료출금'], removalTypes: ['공모주입고', '타사대체출고'], minMatchedKeys: 4 }
             ] },
-            { id: 'ls', name: 'LS증권', aliases: ['LS증권', '엘에스증권'], profiles: [{ columns: { dateCol: ['결제일자'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['예수금잔고'], feeCol: ['수수료'], taxCol: ['제세금합'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, removalTypes: [] }] },
-            { id: 'woori', name: '우리투자증권', aliases: ['우리투자증권'], profiles: [{ columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래구분'], amountCol: ['거래금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['펀드명'], stockQtyCol: ['거래좌수'], unitPriceCol: ['기준가'], stockBalanceCol: ['잔고좌수'] }, removalTypes: [] }] },
+            { id: 'ls', name: 'LS증권', aliases: ['LS증권', '엘에스증권', '이베스트투자증권'], profiles: [{ columns: { dateCol: ['결제일자'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['예수금잔고'], feeCol: ['수수료'], taxCol: ['제세금합'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, removalTypes: [] }] },
+            { id: 'woori', name: '우리투자증권', aliases: ['우리투자증권', '한국포스증권', '우리종합금융'], profiles: [{ columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래구분'], amountCol: ['거래금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['펀드명'], stockQtyCol: ['거래좌수'], unitPriceCol: ['기준가'], stockBalanceCol: ['잔고좌수'] }, removalTypes: [] }] },
             { id: 'yuanta', name: '유안타증권', aliases: ['유안타증권'], profiles: [{ columns: { dateCol: ['거래일'], tradeTypeCol: ['적요'], amountCol: ['거래금액'], balanceCol: ['예수금 잔액'], feeCol: ['수수료'], taxCol: ['제세금(거래세)'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['잔 고'] }, removalTypes: [] }] },
             { id: 'eugene', name: '유진투자증권', aliases: ['유진투자증권'], profiles: [{ columns: { dateCol: ['일자'], tradeTypeCol: ['거래구분'], amountCol: ['거래금액'], balanceCol: ['잔액'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['매매가격'], stockBalanceCol: ['잔고'] }, removalTypes: ['출고', '공모주'] }] },
             { id: 'yuhwa', name: '유화증권', aliases: ['유화증권'], profiles: [] },
-            { id: 'im', name: 'iM증권', aliases: ['iM증권', '아이엠증권'], profiles: [] },
+            { id: 'im', name: 'iM증권', aliases: ['iM증권', '아이엠증권', '하이투자증권'], profiles: [] },
             { id: 'ibk', name: 'IBK투자증권', aliases: ['IBK투자증권', '아이비케이투자증권'], profiles: [{ columns: { dateCol: ['결제일자'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['예수금잔고'], feeCol: ['거래수수료'], taxCol: ['제세금합'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, removalTypes: ['공모주입고', '타사대체출고'] }] },
             { id: 'kakaopay', name: '카카오페이증권', aliases: ['카카오페이증권'], profiles: [] },
             { id: 'kb', name: 'KB증권', aliases: ['KB증권', '케이비증권'], profiles: [
                 { columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['거래세 등'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'], stockBalanceCol: ['유가잔고'] }, removalTypes: ['공모주 입고'] },
                 {
-                    columns: { dateCol: ['거래일'], tradeTypeCol: ['내용'], balanceCol: ['예수금잔액(원)'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'], kbDepositAmountCol: ['입금/입고/매도', '입금 / 입고 / 매도'], kbWithdrawalAmountCol: ['출금/출고/매수', '출금 / 출고 / 매수'] },
-                    removalTypes: ['공모주 입고'],
-                    specialRules: {
-                        deriveAmountFromTradeTypeText: true,
-                        classificationKeywords: {
-                            deposit: ['입금', '입고', '매도'],
-                            withdrawal: ['출금', '출고', '매수']
-                        },
-                        unmatchedClassification: 'remove',
-                        notice: 'KB증권 간편 포맷으로 인식되었습니다. 거래금액 열이 없어도 진행되며, 입금/입고/매도 또는 출금/출고/매수 컬럼의 금액만 거래금액으로 사용합니다. 잔액 차이로 금액을 자동 추정하지 않습니다.'
-                    }
+                    columns: { dateCol: ['거래일'], tradeTypeCol: ['내용'], balanceCol: ['예수금잔액(원)'], stockNameCol: ['종목명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'] },
+                    removalTypes: ['공모주 입고']
                 }
             ] },
             { id: 'kr', name: 'KR투자증권', aliases: ['KR투자증권', '케이알투자증권'], profiles: [] },
@@ -2488,8 +2474,8 @@
             { id: 'hana', name: '하나증권', aliases: ['하나증권'], profiles: [{ columns: { dateCol: ['거래일자'], tradeTypeCol: ['거래구분'], amountCol: ['거래금액'], balanceCol: ['예수금잔액'], feeCol: ['수수료'], taxCol: ['거래/소득세'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가증권금잔'] }, removalTypes: ['타사대체출고', '공모주입고'] }] },
             { id: 'sc', name: '한국스탠다드차타드증권', aliases: ['한국스탠다드차타드증권'], profiles: [] },
             { id: 'koreainvest', name: '한국투자증권', aliases: ['한국투자증권'], profiles: [
-                { columns: { dateCol: ['거래일'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['거래세'], extraCostCol1: ['세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, depositTypes: ['HTS코스닥주식매도', '타사이체입금', '예탁금이용료'], withdrawalTypes: ['HTS타사이체출금', 'WTS추납대체청약', '기관일괄대체청약납입'], removalTypes: ['공모주입고'] },
-                { columns: { dateCol: ['거래일'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['잔액'], feeCol: ['수수료'], taxCol: ['거래세'], extraCostCol1: ['세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, depositTypes: ['HTS코스닥주식매도', '타사이체입금', '예탁금이용료'], withdrawalTypes: ['HTS타사이체출금', 'WTS추납대체청약', '기관일괄대체청약납입'], removalTypes: ['공모주입고'] }
+                { columns: { dateCol: ['거래일'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['거래세'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, depositTypes: ['HTS코스닥주식매도', '타사이체입금', '예탁금이용료'], withdrawalTypes: ['HTS타사이체출금', 'WTS추납대체청약', '기관일괄대체청약납입'], removalTypes: ['공모주입고'] },
+                { columns: { dateCol: ['거래일'], tradeTypeCol: ['거래종류'], amountCol: ['거래금액'], balanceCol: ['잔액'], feeCol: ['수수료'], taxCol: ['거래세'], stockNameCol: ['종목명'], stockQtyCol: ['거래수량'], unitPriceCol: ['거래단가'], stockBalanceCol: ['유가잔고'] }, depositTypes: ['HTS코스닥주식매도', '타사이체입금', '예탁금이용료'], withdrawalTypes: ['HTS타사이체출금', 'WTS추납대체청약', '기관일괄대체청약납입'], removalTypes: ['공모주입고'] }
             ] },
             { id: 'hanyang', name: '한양증권', aliases: ['한양증권'], profiles: [{ columns: { dateCol: ['일자'], tradeTypeCol: ['거래구분'], amountCol: ['입출구분'], balanceCol: ['예수금잔'], feeCol: ['수수료'], taxCol: ['제세금'], stockNameCol: ['종목명'], stockQtyCol: ['거래좌수'], stockBalanceCol: ['잔고좌수'] }, removalTypes: [] }] },
             { id: 'hanhwa', name: '한화투자증권', aliases: ['한화투자증권'], profiles: [{ columns: { dateCol: ['거래일'], tradeTypeCol: ['거래구분'], amountCol: ['거래금액'], balanceCol: ['예수금'], feeCol: ['수수료'], taxCol: ['제세금합'], stockNameCol: ['종목(상품)명'], stockQtyCol: ['수량'], unitPriceCol: ['단가'] }, removalTypes: [] }] },
