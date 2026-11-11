@@ -1,0 +1,28 @@
+{
+  "name": "bankbook-unified-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "통합 통장내역 편집기 - 테스트용 개발 의존성",
+  "scripts": {
+    "test": "node tests/run-samples.js",
+    "test:convert": "node tests/run-convert.js",
+    "test:dictionary": "node tests/run-dictionary.js",
+    "test:browser": "node tests/browser-check.js",
+    "test:all": "node tests/run-samples.js && node tests/run-convert.js && node tests/run-verification.js && node tests/run-structure.js && node tests/run-foreign.js && node tests/run-order.js && node tests/run-memo.js && node tests/run-picker.js && node tests/run-dictionary.js && node tools/check-dictionary.js && node tests/browser-check.js",
+    "check-publish": "node tools/check-publish.js",
+    "extract-presets": "node tools/extract-presets.js",
+    "extract-securities-engine": "node tools/extract-securities-engine.js",
+    "analyze": "node tools/analyze-account.js",
+    "test:verification": "node tests/run-verification.js",
+    "test:structure": "node tests/run-structure.js",
+    "check-dictionary": "node tools/check-dictionary.js",
+    "test:foreign": "node tests/run-foreign.js",
+    "test:order": "node tests/run-order.js",
+    "test:memo": "node tests/run-memo.js",
+    "test:picker": "node tests/run-picker.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.48.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}

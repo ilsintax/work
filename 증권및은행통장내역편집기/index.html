@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>통합 통장내역 편집기</title>
+<style>
+  :root {
+    --bg: #f1f5f9; --card: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --accent: #4f46e5;
+    --ready: #15803d; --ready-bg: #dcfce7; --review: #b45309; --review-bg: #fef3c7;
+    --mismatch: #dc2626; --mismatch-bg: #fee2e2; --nocash: #475569; --nocash-bg: #e2e8f0; --hl: #e0e7ff;
+    --dep: #1d4ed8; --dep-bg: #dbeafe; --wd: #b91c1c; --wd-bg: #fee2e2; --rm: #92400e; --rm-bg: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; font-size: 14px; }
+  .bb-wrap { max-width: 1360px; margin: 0 auto; padding: 24px 16px 48px; }
+  .bb-title { font-size: 26px; font-weight: 700; margin: 0 0 4px; }
+  .bb-sub { color: var(--muted); margin: 0 0 20px; }
+  .bb-card { background: var(--card); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 20px; margin-bottom: 16px; }
+  .bb-card h2 { font-size: 17px; margin: 0 0 12px; }
+  .bb-drop { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 26px; text-align: center; color: var(--muted); cursor: pointer; transition: .15s; }
+  .bb-drop.over, .bb-drop:hover { border-color: var(--accent); background: #eef2ff; color: var(--accent); }
+  .bb-drop strong { color: var(--ink); }
+  .bb-status-row { margin-top: 10px; min-height: 20px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bb-status { color: var(--muted); }
+  .bb-status.error { color: var(--mismatch); }
+  .bb-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .bb-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+  .bb-chip { padding: 7px 13px; border-radius: 999px; font-weight: 600; cursor: pointer; border: 2px solid transparent; font-size: 13px; }
+  .bb-chip.active { border-color: currentColor; }
+  .s-all { background: #e0e7ff; color: var(--accent); }
+  .s-ready { background: var(--ready-bg); color: var(--ready); }
+  .s-review { background: var(--review-bg); color: var(--review); }
+  .s-mismatch, .s-fail { background: var(--mismatch-bg); color: var(--mismatch); }
+  .s-nocash { background: var(--nocash-bg); color: var(--nocash); }
+  .s-confirmed { background: #e0f2fe; color: #0369a1; }
+  .bb-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; background: #f0f9ff; }
+  .bb-confirm .bb-input { flex: 1; min-width: 220px; }
+  .bb-base-hint { outline: 2px solid var(--review); }
+  .bb-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .bb-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; max-height: 480px; }
+  table.bb-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .bb-table th, .bb-table td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; white-space: nowrap; vertical-align: top; }
+  .bb-table thead th { background: #f8fafc; position: sticky; top: 0; z-index: 1; }
+  .bb-table tbody tr.clickable { cursor: pointer; }
+  .bb-table tbody tr.clickable:hover { background: #f8fafc; }
+  .bb-table tbody tr.selected { background: #eef2ff; }
+  #bb-list-section .bb-table th, #bb-list-section .bb-table td { padding: 6px 5px; }
+  .bb-table td.ttl { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+  .bb-table td.del { white-space: nowrap; text-align: center; }
+  .bb-x { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 6px; width: 24px; height: 22px; line-height: 18px; cursor: pointer; font: inherit; margin-left: 6px; }
+  .bb-x:hover { color: #b91c1c; border-color: #b91c1c; }
+  .bb-undo { margin-left: 8px; }
+  .bb-note.warn { color: #b45309; }
+  .bb-format { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; margin: 8px 0; }
+  .bb-format b { font-size: 14px; }
+  .bb-format .bb-input { width: 220px; padding: 4px 8px; }
+  .bb-table td.msg { min-width: 160px; max-width: 220px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .bb-table td.msg .more { color: var(--accent); font-weight: 600; margin-left: 4px; }
+  .bb-table td.num, .bb-table th.num { text-align: right; }
+  .bb-table tr.bad td { background: var(--mismatch-bg); }
+  .bb-table td.hl, .bb-table th.hl { background: var(--hl); }
+  .bb-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; }
+  .bb-btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 13px; }
+  .bb-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .bb-btn.secondary { background: #e2e8f0; color: var(--ink); }
+  .bb-btn.small { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+  .bb-input, .bb-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 8px; font: inherit; background: #fff; color: var(--ink); }
+  .bb-input.title { width: 100%; min-width: 220px; }
+  .bb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; margin-bottom: 14px; }
+  .bb-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .bb-field .bb-select, .bb-field .bb-input { width: 100%; }
+  .bb-section { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+  .bb-section h3 { font-size: 15px; margin: 0 0 10px; }
+  .bb-kv { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 10px; }
+  .bb-kv span.k { color: var(--muted); margin-right: 6px; }
+  .bb-msgs { margin: 0 0 12px; padding-left: 18px; color: var(--review); }
+  .bb-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 6px 14px; }
+  .bb-type { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); }
+  .bb-type.t-deposit { background: var(--dep-bg); } .bb-type.t-withdrawal { background: var(--wd-bg); }
+  .bb-type.t-remove { background: var(--rm-bg); } .bb-type.t-none { background: #fff; border-style: dashed; }
+  .bb-type .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .bb-type .info { display: block; font-size: 11.5px; color: var(--muted); white-space: normal; line-height: 1.35; }
+  .bb-type .txt { min-width: 0; flex: 1; }
+  .bb-type.conflict { border-color: var(--bad, #c0392b); box-shadow: inset 3px 0 0 var(--bad, #c0392b); }
+  .bb-type .tag { display: inline-block; white-space: nowrap; font-size: 11px; padding: 0 5px; border-radius: 4px; margin-left: 4px; border: 1px solid var(--line); background: #fff; }
+  .bb-type .tag.cand { border-color: var(--accent); color: var(--accent); }
+  .bb-cand { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; background: #f5f8ff; }
+  .bb-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .bb-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .bb-tab { padding: 7px 12px; cursor: pointer; border: 0; background: none; font: inherit; color: var(--muted); border-bottom: 2px solid transparent; }
+  .bb-memo-panel { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; }
+  .bb-memo-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+  .bb-memo-lists h4 { margin: 0 0 6px; font-size: 13px; }
+  .bb-mv-list { max-height: 220px; overflow: auto; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
+  .bb-mv { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; color: inherit; }
+  .bb-mv small { color: var(--muted); }
+  .bb-mv.off { text-decoration: line-through; opacity: .7; }
+  @media (max-width: 640px) { .bb-memo-lists { grid-template-columns: 1fr; } }
+  .bb-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .bb-note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .bb-empty { color: var(--muted); text-align: center; padding: 22px; }
+  textarea.bb-input { width: 100%; min-height: 64px; }
+  .bb-dict { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  .bb-dict b.dirty { color: var(--review); }
+  .bb-reflect { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 12px; }
+  .bb-reflect p { margin: 0; color: var(--muted); font-size: 12px; flex: 1; min-width: 240px; }
+  @media (max-width: 640px) { .bb-title { font-size: 21px; } .bb-card { padding: 14px; } }
+</style>
+</head>
+<body>
+<div class="bb-wrap">
+  <h1 class="bb-title">통합 통장내역 편집기</h1>
+  <p class="bb-sub">은행·증권 통장 엑셀을 한꺼번에 올리면 자동으로 판별·변환하고 잔액을 검증합니다. 잔액이 맞지 않거나 확인이 필요한 계좌만 열어 고치면 됩니다.</p>
+
+  <section class="bb-card">
+    <div class="bb-drop" id="bb-drop" tabindex="0">
+      <strong>엑셀 파일을 여기로 끌어 놓거나 클릭해서 선택</strong><br>여러 파일 가능 · .xlsx / .xls / .csv
+    </div>
+    <input type="file" id="bb-file-input" accept=".xlsx,.xls,.csv" multiple hidden>
+    <div class="bb-status-row"><span class="bb-status" id="bb-status"></span><button class="bb-btn secondary small bb-undo" id="bb-undo" hidden>되돌리기</button></div>
+    <div class="bb-dict" id="bb-dict">
+      <span id="bb-dict-info"></span>
+      <span class="bb-actions">
+        <button class="bb-btn secondary small" id="bb-dict-save">사전 파일 저장</button>
+        <button class="bb-btn secondary small" id="bb-dict-load">사전 불러오기</button>
+        <input type="file" id="bb-dict-input" accept=".js,.json" hidden>
+      </span>
+    </div>
+  </section>
+
+  <section class="bb-card" id="bb-list-section" hidden>
+    <div class="bb-bar">
+      <div class="bb-summary" id="bb-summary"></div>
+      <div class="bb-actions">
+        <label><input type="checkbox" id="bb-include-original"> 원본 시트 함께 저장</label>
+        <button class="bb-btn" id="bb-download-btn">엑셀 다운로드</button>
+        <button class="bb-btn secondary" id="bb-delete-picked" hidden>선택 삭제</button>
+        <button class="bb-btn secondary" id="bb-clear-btn">목록 비우기</button>
+      </div>
+    </div>
+    <div class="bb-table-wrap">
+      <table class="bb-table">
+        <thead><tr><th>저장</th><th>#</th><th>계좌명</th><th>상태</th><th>유형</th><th>기관</th><th class="num">결과 행</th><th class="num">기초잔액</th><th class="num">계산 기말</th><th class="num">원본 기말</th><th class="num">차이</th><th>확인할 내용</th><th class="del"><label title="보이는 계좌 전체 선택"><input type="checkbox" id="bb-pick-all"> 삭제</label></th></tr></thead>
+        <tbody id="bb-list-body"></tbody>
+      </table>
+    </div>
+    <p class="bb-note">행을 누르면 아래에서 편집합니다. 다운로드 파일: 요약 시트 + 입출금외내역 시트(주식 입고·출고 등) + 계좌별 시트(결제일/입금/출금/잔액/(참고용)잔액/의뢰인/수취인).</p>
+  </section>
+
+  <section class="bb-card" id="bb-editor" hidden></section>
+</div>
+
+<script src="lib/xlsx.full.min.js"></script>
+<script src="dictionary/institutions.js"></script>
+<script src="engine/engine.js"></script>
+<script src="engine/securities-legacy.js"></script>
+<script src="engine/convert.js"></script>
+<script src="engine/dictionary.js"></script>
+<script>
+(function () {
+  'use strict';
+  const STATUS = {
+    ready:    { label: '자동 완료', cls: 's-ready' },
+    review:   { label: '확인 필요', cls: 's-review' },
+    mismatch: { label: '잔액 불일치', cls: 's-mismatch' },
+    fail:     { label: '실패', cls: 's-fail' },
+    nocash:   { label: '현금거래 없음', cls: 's-nocash' },
+    confirmed:{ label: '사용자 확인', cls: 's-confirmed' }
+  };
+  const KIND = { bank: '은행', securities: '증권', unknown: '판별 불가' };
+  const BANK_FIELDS = [['dateCol', '결제일'], ['depositCol', '입금'], ['withdrawalCol', '출금'], ['balanceCol', '잔액'], ['signedAmountCol', '거래금액(±, 입출금 열이 없을 때)']];
+  const SEC_FIELDS = [['dateCol', '일자'], ['tradeTypeCol', '거래종류'], ['amountCol', '거래금액'], ['balanceCol', '잔액(예수금)'], ['feeCol', '수수료'], ['taxCol', '제세금'], ['extraCostCol1', '기타비용'], ['stockNameCol', '종목명'], ['stockQtyCol', '수량'], ['unitPriceCol', '단가'], ['stockBalanceCol', '유가잔고'], ['settlementCol', '정산금액(숨은 비용 계산)'], ['additionalCol1', '추가 적요 1'], ['additionalCol2', '추가 적요 2']];
+  const TYPE_BUCKETS = [['deposit', '입금'], ['withdrawal', '출금'], ['remove', '제거(입출금외)'], ['none', '미분류']];
+
+  const el = id => document.getElementById(id);
+  const ui = {
+    drop: el('bb-drop'), input: el('bb-file-input'), status: el('bb-status'), list: el('bb-list-section'),
+    summary: el('bb-summary'), body: el('bb-list-body'), editor: el('bb-editor'),
+    download: el('bb-download-btn'), clear: el('bb-clear-btn'), undo: el('bb-undo'), deletePicked: el('bb-delete-picked'), pickAll: el('bb-pick-all'), includeOriginal: el('bb-include-original'),
+    dictInfo: el('bb-dict-info'), dictSave: el('bb-dict-save'), dictLoad: el('bb-dict-load'), dictInput: el('bb-dict-input')
+  };
+  const state = { accounts: [], filter: 'all', selected: null, tab: 'result', dictChanges: [], dictSource: '배포된 사전', picked: new Set(), lastDeleted: null };
+  const D = () => window.BANKBOOK_DICTIONARY;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtNum = v => (typeof v === 'number' && Number.isFinite(v)) ? Math.round(v * 100) / 100 === Math.round(v) ? Math.round(v).toLocaleString('ko-KR') : v.toLocaleString('ko-KR') : (v ?? '');
+  const cellText = v => {
+    if (v instanceof Date) return BankbookEngine.parseDateCell(v) || (isNaN(v.getTime()) ? '' : v.toTimeString().slice(0, 8));
+    return typeof v === 'number' ? fmtNum(v) : (v ?? '');
+  };
+  function setStatus(msg, isError, undoable) { ui.status.textContent = msg; ui.status.classList.toggle('error', !!isError); if (ui.undo) ui.undo.hidden = !undoable; }
+  const current = () => state.accounts.find(a => a.id === state.selected);
+
+  function checkEnvironment() {
+    const need = { XLSX: 'lib/xlsx.full.min.js', BankbookEngine: 'engine/engine.js', LegacySecurities: 'engine/securities-legacy.js', BankbookConvert: 'engine/convert.js', BankbookDictionary: 'engine/dictionary.js' };
+    const missing = Object.entries(need).filter(([k]) => typeof window[k] === 'undefined').map(([, f]) => f);
+    if (missing.length) {
+      setStatus(`필수 파일을 불러오지 못했습니다: ${missing.join(', ')} — index.html과 같은 폴더 구조인지 확인하세요.`, true);
+      ui.drop.style.pointerEvents = 'none';
+      return false;
+    }
+    return prepareDeployedDictionary();
+  }
+
+  // 배포된 사전(dictionary/institutions.js)을 검사한다. 사전이 깨져 있어도 화면은 멈추지 않고,
+  // 빈 사전으로 동작하면서(자동 판별 없음, 열 직접 지정) 오류를 알린다.
+  function prepareDeployedDictionary() {
+    const raw = window.BANKBOOK_DICTIONARY;
+    try {
+      if (!raw) throw new Error('dictionary/institutions.js 를 읽지 못했습니다(파일 없음 또는 문법 오류).');
+      const info = BankbookDictionary.prepare(raw);
+      state.dictWarnings = info.warnings;
+      if (info.notes.length) console.info('[사전 구조 변환]', info.notes.join(' / '));
+    } catch (e) {
+      console.error('[배포 사전 오류]', e, e.errors || '');
+      window.BANKBOOK_DICTIONARY = BankbookDictionary.emptyDictionary();
+      state.dictSource = '빈 사전(배포 사전 오류)';
+      state.dictError = `배포된 사전에 오류가 있어 빈 사전으로 동작합니다(자동 판별 없음, 열 직접 지정 필요). ${e.message} — "사전 불러오기"로 정상 사전을 불러오거나 관리자에게 알리세요.`;
+      setStatus(state.dictError, true);
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------- 업로드
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const allowed = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name));
+    const rejected = files.filter(f => !allowed.includes(f));
+    let done = 0;
+    for (const file of allowed) {
+      setStatus(`${done + 1} / ${allowed.length} 처리 중: ${file.name}`);
+      await new Promise(r => setTimeout(r, 0)); // 화면 갱신
+      let results;
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (!bytes.length) throw new Error('빈 파일입니다.');
+        results = BankbookEngine.analyzeFile(XLSX, bytes, file.name, D());
+      } catch (e) {
+        console.error('[파일 읽기 실패]', file.name, e);
+        results = [{ fileName: file.name, sheetName: '', file: BankbookEngine.parseFileName(file.name), status: 'fail', kind: 'unknown', institution: '', account: '', messages: [`파일을 읽지 못했습니다: ${e.message}`] }];
+      }
+      const accounts = BankbookConvert.buildAccounts(results, D());
+      accounts.forEach(a => { a.id = `${a.fileName}|${a.sheetName}|${Math.random().toString(36).slice(2)}`; });
+      state.accounts = state.accounts.filter(a => a.fileName !== file.name).concat(accounts);
+      done++;
+    }
+    state.accounts.sort((a, b) => (a.file.seq ?? 1e9) - (b.file.seq ?? 1e9) || a.fileName.localeCompare(b.fileName, 'ko') || String(a.sheetName).localeCompare(String(b.sheetName), 'ko'));
+    let msg = `${allowed.length}개 파일 처리 완료.`;
+    if (rejected.length) msg += ` 지원하지 않는 형식이라 제외: ${rejected.map(f => f.name).join(', ')}`;
+    setStatus(msg, rejected.length > 0);
+    render();
+  }
+
+  // ---------------------------------------------------------------- 목록
+  function render() {
+    ui.list.hidden = state.accounts.length === 0;
+    state.picked = new Set([...state.picked].filter(id => state.accounts.some(a => a.id === id)));
+    ui.deletePicked.hidden = state.picked.size === 0;
+    ui.deletePicked.textContent = `선택 삭제(${state.picked.size})`;
+    const visibleIds = state.accounts.filter(a => state.filter === 'all' || a.status === state.filter).map(a => a.id);
+    ui.pickAll.checked = visibleIds.length > 0 && visibleIds.every(id => state.picked.has(id));
+    const counts = { all: state.accounts.length };
+    state.accounts.forEach(a => { counts[a.status] = (counts[a.status] || 0) + 1; });
+    const chips = [['all', '전체', 's-all']].concat(Object.entries(STATUS).filter(([k]) => counts[k]).map(([k, v]) => [k, v.label, v.cls]));
+    ui.summary.innerHTML = chips.map(([k, label, cls]) => `<span class="bb-chip ${cls} ${state.filter === k ? 'active' : ''}" data-filter="${k}">${esc(label)} ${counts[k] || 0}</span>`).join('');
+    const rows = state.accounts.filter(a => state.filter === 'all' || a.status === state.filter);
+    ui.body.innerHTML = rows.length ? rows.map((a, i) => {
+      const st = STATUS[a.status] || STATUS.fail;
+      const v = a.output && a.output.verification;
+      const nRows = a.output && a.output.sheet ? a.output.sheet.length - 1 : '-';
+      const allMsgs = collectMessages(a).filter(m => !/^참고: /.test(m)); // 목록에는 확인할 문제만(참고 안내는 편집 화면에서)
+      const msgs = allMsgs.slice(0, 1);
+      return `<tr class="clickable ${state.selected === a.id ? 'selected' : ''}" data-id="${esc(a.id)}">
+        <td><input type="checkbox" data-include="${esc(a.id)}" ${a.include ? 'checked' : ''} ${a.output && a.output.sheet ? '' : 'disabled'}></td>
+        <td>${a.file.seq ?? i + 1}</td>
+        <td class="ttl" title="${esc(a.title)}">${esc(a.title)}</td>
+        <td><span class="bb-badge ${st.cls}">${esc(st.label)}</span></td>
+        <td>${esc(KIND[a.kind] || '-')}</td>
+        <td>${esc(a.institution || '-')}</td>
+        <td class="num">${esc(nRows)}</td>
+        <td class="num">${v ? esc(fmtNum(v.baseBalance)) : '-'}</td>
+        <td class="num">${v ? esc(fmtNum(v.calculated)) : '-'}</td>
+        <td class="num">${v && v.original !== null ? esc(fmtNum(v.original)) : '-'}</td>
+        <td class="num">${v && Math.abs(v.diff || 0) > ((a.output && a.output.tolerance) || 1) * 0.999 ? `<b style="color:var(--mismatch)">${esc(fmtNum(v.diff))}</b>` : (v ? '0' : '-')}</td>
+        <td class="msg" title="${esc(allMsgs.join('\n'))}">${msgs.map(esc).join('')}${allMsgs.length > 1 ? `<span class="more">+${allMsgs.length - 1}</span>` : ''}</td>
+        <td class="del"><input type="checkbox" data-pick="${esc(a.id)}" ${state.picked.has(a.id) ? 'checked' : ''} title="선택 삭제에 포함"><button class="bb-x" data-delete="${esc(a.id)}" title="이 계좌를 목록에서 삭제">×</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="13" class="bb-empty">해당하는 항목이 없습니다.</td></tr>`;
+    ui.download.disabled = !state.accounts.some(a => a.include && a.output && a.output.sheet);
+    renderEditor();
+  }
+
+  function collectMessages(a) {
+    const out = [];
+    if (a.output && a.output.error) out.push(a.output.error);
+    if (a.output && a.output.verification && !a.output.verification.isCorrect) {
+      const fm = a.output.verification.firstMismatch;
+      out.push(`잔액 불일치 ${a.output.verification.mismatchCount}곳${fm && fm.date ? ` (처음: ${fm.date})` : ''}`);
+    }
+    (a.output && a.output.reviewReasons || []).forEach(m => out.push(m));
+    (a.output && a.output.issues || []).forEach(m => out.push(m));
+    (a.output && a.output.notes || []).forEach(m => out.push('참고: ' + m)); // 상태에 영향 없는 안내
+    if (a.confirmed) out.unshift(`사용자 확인${a.confirmed.note ? ': ' + a.confirmed.note : ''} (자동 판정: ${(STATUS[a.autoStatus] || {}).label || a.autoStatus})`);
+    const mapped = a.output && a.output.sheet; // 열 지정이 끝나 변환됐으면 "사전 형식과 맞지 않음" 안내는 숨긴다
+    (a.messages || []).filter(m => !/구형 \.xls|웹페이지\(HTML|현금 거래가 없습니다/.test(m))
+      .filter(m => !(mapped && /사전 형식과 맞지 않습니다|증권사를 확정하지 못했습니다/.test(m))).forEach(m => out.push(m));
+    return out;
+  }
+
+  // ---------------------------------------------------------------- 편집기
+  function columnOptions(header, selected, allowNone) {
+    const opts = allowNone ? [`<option value="">(없음)</option>`] : [];
+    header.forEach((h, i) => { if (h) opts.push(`<option value="${i}" ${selected === i ? 'selected' : ''}>${esc(h)}</option>`); });
+    return opts.join('');
+  }
+
+  function renderEditor() {
+    const a = current();
+    if (!a) { ui.editor.hidden = true; ui.editor.innerHTML = ''; return; }
+    ui.editor.hidden = false;
+    const st = STATUS[a.status] || STATUS.fail;
+    const L = a.layout && a.layout.ok ? a.layout : null;
+    const v = a.output && a.output.verification;
+    let html = `
+      <h2>계좌 편집 <span class="bb-badge ${st.cls}">${esc(st.label)}</span> <span style="float:right;display:flex;gap:6px"><button class="bb-btn secondary small" data-action="delete-one">이 계좌 삭제</button>${state.accounts.filter(x => x.fileName === a.fileName).length > 1 ? `<button class="bb-btn secondary small" data-action="delete-file" title="${esc(a.fileName)}에서 나온 계좌 모두">같은 파일 ${state.accounts.filter(x => x.fileName === a.fileName).length}개 모두 삭제</button>` : ''}<button class="bb-btn secondary small" data-action="to-list">↑ 목록으로</button></span></h2>
+      <div class="bb-grid">
+        <div class="bb-field" style="grid-column: span 2"><label>계좌명 (다운로드 시트 이름)</label><input class="bb-input title" id="ed-title" value="${esc(a.title)}"></div>
+        <div class="bb-field"><label title="글자를 치면 사전의 기관 목록이 나옵니다. 고르면 그 기관의 형식으로 다시 판별합니다.">기관 (목록에서 검색·선택)</label><input class="bb-input" id="ed-institution" list="bb-inst-list" autocomplete="off" placeholder="예: 키움, 국민" value="${esc(institutionValue(a))}">
+          ${institutionHint(a)}</div>
+        <div class="bb-field"><label>계좌번호 (선택)</label><input class="bb-input" id="ed-account" value="${esc(a.account || '')}"></div>
+      </div>
+      ${formatBoxHtml(a)}
+      <div class="bb-kv">
+        <div><span class="k">원본</span>${esc(a.fileName)}${a.sheetName ? ' / ' + esc(a.sheetName) : ''}</div>
+        <div><span class="k">유형</span>${esc(KIND[a.kind] || '-')}${a.kind === 'securities' ? ` · ${a.market === 'foreign' ? '해외(외화) 사전' : '국내 사전'}` : ''}</div>
+        <div><span class="k">판별 근거</span>${esc(a.basis || '-')}</div>
+        ${L ? `<div><span class="k">표 구조</span>제목 ${L.titleRows.length}줄 · 헤더 ${L.headerRows.length}줄 · 거래당 ${L.stride}줄 · 거래 ${L.records.length}건</div>` : ''}
+        ${v ? `<div><span class="k">잔액</span>기초 ${esc(fmtNum(v.baseBalance))} → 계산 ${esc(fmtNum(v.calculated))} / 원본 ${esc(fmtNum(v.original))}</div>` : ''}
+      </div>`;
+    html += confirmHtml(a);
+    const msgs = collectMessages(a);
+    if (msgs.length) html += `<ul class="bb-msgs">${msgs.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`;
+
+    if (a.config && L) {
+      html += a.kind === 'bank' ? bankEditorHtml(a, L) : securitiesEditorHtml(a, L);
+      html += `<div class="bb-reflect"><button class="bb-btn" data-action="reflect" ${a.output && a.output.sheet ? '' : 'disabled'}>이 설정을 사전에 반영</button>
+        <p>같은 기관·같은 파일 형식의 모든 계좌에 다음부터 자동 적용됩니다(열 이름, 거래종류 분류, 적요 열, 수수료 처리, 파일명 약칭). 계좌번호·고객명·금액은 저장하지 않습니다. 팀 전체에 적용하려면 "사전 파일 저장" 후 관리자가 저장소에 올리세요.</p></div>`;
+      html += previewHtml(a, L);
+    }
+    ui.editor.innerHTML = html;
+  }
+
+  // 기준점이 부족한 계좌: 기초잔액 입력을 권한다
+  function needsBase(a) {
+    const v = a.output && a.output.verification;
+    return !!(v && !v.baseManual && v.independentCheckpoints < 1 && a.autoStatus !== 'ready');
+  }
+
+  // 확인 완료: 잔액이 맞으면 바로, 맞지 않거나 변환 전이면 사유 필수. 다시 고치면 해제.
+  function confirmHtml(a) {
+    if (a.autoStatus === 'ready' || a.autoStatus === 'nocash') return '';
+    if (a.confirmed) {
+      return `<div class="bb-confirm"><b>사용자 확인 완료</b><span>${esc(a.confirmed.note || '')}</span><button class="bb-btn secondary small" data-action="unconfirm">확인 취소</button></div>`;
+    }
+    const v = a.output && a.output.verification;
+    const ok = !!(v && v.isCorrect && a.output.sheet);
+    return `<div class="bb-confirm"><input class="bb-input" id="ed-confirm-note" placeholder="${ok ? '확인 메모(선택)' : '확인 사유(필수) — 예: 원본에 입금 기록 누락, 차이 인정'}">
+      <button class="bb-btn small" data-action="confirm">확인 완료</button>
+      <span class="bb-note" style="margin:0">${ok ? '내용을 확인했으면 누르세요.' : '잔액이 맞지 않거나 변환 전입니다. 사유를 적어야 확인할 수 있습니다.'} 다시 고치면 확인이 풀립니다.</span></div>`;
+  }
+
+  function commonSettingsHtml(a, baseValue, manual) {
+    return `
+      <div class="bb-field"><label title="전월 말 잔액을 알면 입력하세요. 첫 거래부터 잔액을 검증합니다.">기초잔액 ${manual ? '(직접 입력)' : '(자동 계산)'}</label>
+        <div style="display:flex;gap:6px"><input class="bb-input ${needsBase(a) ? 'bb-base-hint' : ''}" title="전월 말 잔액을 넣으면 첫 거래부터 잔액을 검증하고, 증권은 그 값으로 자동 분류를 다시 합니다." type="number" step="any" id="ed-base" value="${esc(baseValue ?? '')}">
+        <button class="bb-btn secondary small" data-action="base-auto">자동</button></div></div>
+      <div class="bb-field"><label>날짜 순서</label><select class="bb-select" id="ed-order" title="자동: 날짜순으로 맞추고, 잔액이 안 맞으면 잔액이 이어지도록 섞인 순서를 복원합니다.">
+        <option value="original" ${!a.config.orderMode || a.config.orderMode === 'original' ? 'selected' : ''}>자동(순서 복원 포함)</option>
+        <option value="norepair" ${a.config.orderMode === 'norepair' ? 'selected' : ''}>날짜순만(복원 안 함)</option>
+        <option value="reverse" ${a.config.orderMode === 'reverse' ? 'selected' : ''}>반대로 뒤집기</option></select>
+        ${a.orderRepair ? `<p class="bb-note">순서 복원됨: 위치가 바뀐 행 ${a.orderRepair.moved}개(방향 바꾼 날 ${a.orderRepair.flippedDays}일, 행을 다시 이은 날 ${a.orderRepair.rechainedDays}일)</p>` : ''}</div>`;
+  }
+
+  // 적요 열마다 탭 → 그 열의 값(건수)을 "포함될 내용 / 제외될 내용"으로 보여 주고, 값을 누르면 옮긴다.
+  // 기관 선택 목록: 사전의 국내·해외 증권사, 은행 이름(bank.names + 은행 형식). value 는 화면에 쓰는 글자, name 은 사전 이름.
+  function institutionOptions() {
+    const d = D();
+    const out = [];
+    (d.securities.domestic || []).forEach(b => out.push({ value: b.name, name: b.name, kind: 'securities', market: 'domestic', group: `증권(국내)${b.profiles && b.profiles.length ? ` · 형식 ${b.profiles.length}개` : ' · 형식 없음'}` }));
+    (d.securities.foreign || []).forEach(b => out.push({ value: `${b.name} (해외)`, name: b.name, kind: 'securities', market: 'foreign', group: `증권(해외)${b.profiles && b.profiles.length ? ` · 형식 ${b.profiles.length}개` : ' · 형식 없음'}` }));
+    const banks = [...new Set([...((d.bank && d.bank.names) || []), ...((d.bank && d.bank.profiles) || []).map(p => p.name)])];
+    banks.forEach(n => out.push({ value: n, name: n, kind: 'bank', group: '은행' }));
+    return out;
+  }
+  function renderInstitutionList() {
+    let dl = document.getElementById('bb-inst-list');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'bb-inst-list'; document.body.appendChild(dl); }
+    dl.innerHTML = institutionOptions().map(o => `<option value="${esc(o.value)}" label="${esc(o.group)}"></option>`).join('');
+  }
+  const institutionValue = a => (a.institution ? `${a.institution}${a.kind === 'securities' && a.market === 'foreign' ? ' (해외)' : ''}` : '');
+  function institutionHint(a) {
+    if (!a.institution) return '<p class="bb-note warn">기관이 정해지지 않았습니다. 목록에서 고르면 그 기관 형식으로 다시 판별합니다.</p>';
+    const known = institutionOptions().some(o => o.name === a.institution && (o.kind === a.kind || a.kind === 'unknown'));
+    return known ? '' : '<p class="bb-note warn">사전에 없는 기관입니다. "사전에 반영"하면 새 기관으로 추가됩니다 — 오타가 아닌지 확인하세요.</p>';
+  }
+  // 고른 기관으로 다시 판별(같은 원본에서 나온 통화별 계좌도 함께 다시 만듦). 열 지정·분류는 새로 계산된다.
+  function applyInstitutionPick(a, opt) {
+    a.pick = { kind: opt.kind, name: opt.name, market: opt.market };
+    const src = x => `${x.fileName}|${x.sheetName}`;
+    const idx = state.accounts.findIndex(x => src(x) === src(a));
+    const sheetCount = new Set(state.accounts.filter(x => x.fileName === a.fileName).map(x => x.sheetName)).size;
+    const parts = BankbookConvert.rebuildAccounts(a, D(), sheetCount);
+    state.accounts = state.accounts.filter(x => src(x) !== src(a));
+    state.accounts.splice(Math.max(0, idx), 0, ...parts);
+    state.selected = parts[0].id;
+    const p = parts[0];
+    render();
+    setStatus(`기관을 "${institutionValue(p)}"(으)로 정하고 다시 판별했습니다 — ${p.basis || ''}. 열 지정·분류는 새로 계산했습니다(상태: ${(STATUS[p.status] || {}).label || p.status}).`);
+  }
+
+  // 어느 사전 형식으로 판별됐는지(증권). 형식에 이름을 붙이거나 바꿀 수 있다(사전 변경 → "사전 파일 저장" 필요).
+  function formatBoxHtml(a) {
+    if (a.kind !== 'securities') return '';
+    const b = a.broker || {};
+    if (b.exceptionRule) return `<div class="bb-format"><span class="k">사전 형식</span><b>${esc(a.institution)} 예외 규칙 · ${esc(b.exceptionRule.label || b.exceptionRule.id)}</b><span class="bb-note">사례 ${esc(b.exceptionRule.cases || 1)}건 · 열 이름이 모두 같을 때만 적용</span></div>`;
+    if (!b.detected) return `<div class="bb-format"><span class="k">사전 형식</span><b>맞는 형식 없음</b><span class="bb-note">${esc(b.nearest ? `가장 가까운 형식: ${b.nearest}` : '')} — 열을 지정하고 "사전에 반영"하면 새 형식으로 추가됩니다.</span></div>`;
+    const p = b.profile || {};
+    const market = b.market === 'foreign' ? '해외' : '국내';
+    return `<div class="bb-format"><span class="k">사전 형식</span><b>${esc(b.name)}(${market}) 형식${(b.profileIndex || 0) + 1}${p.label ? ` · ${esc(p.label)}` : ''}</b>
+      ${b.partial ? '<span class="bb-note warn">일부 열이 다름</span>' : ''}
+      <label class="bb-note">형식 이름 <input class="bb-input" id="ed-format-label" placeholder="예: HTS 거래내역" value="${esc(p.label || '')}"></label></div>`;
+  }
+
+  // 사전 후보로 내도 되는 거래종류인지: 괄호 안 글이 길거나(거래처·계좌명 등) 전체가 긴 경우는 제외
+  function isSafeCandidate(t) {
+    const s = String(t || '');
+    if (s.length > 24) return false;
+    const inner = (s.match(/\(([^)]*)\)/g) || []).map(x => x.slice(1, -1));
+    return !inner.some(x => x.length > 6);
+  }
+
+  function memoValuePanel(L, cols, excludedMap, title) {
+    if (!cols.length) return '';
+    const active = cols.includes(state.memoTab) ? state.memoTab : cols[0];
+    const tabs = cols.map(ci => `<button class="bb-tab ${ci === active ? 'active' : ''}" data-action="memo-tab" data-col="${ci}">${esc(L.header[ci])}</button>`).join('');
+    const counts = new Map();
+    L.records.forEach(rec => { const v = BankbookEngine.text(rec[active]).trim(); if (v) counts.set(v, (counts.get(v) || 0) + 1); });
+    const ex = new Set(excludedMap[active] || []);
+    const q = (state.memoFilter || '').trim();
+    const items = [...counts.entries()].filter(([v]) => !q || v.includes(q)).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'ko'));
+    const chip = ([v, n]) => `<button class="bb-mv ${ex.has(v) ? 'off' : ''}" data-action="memo-toggle" data-col="${active}" data-val="${esc(v)}" title="누르면 ${ex.has(v) ? '다시 포함' : '적요에서 제외'}">${esc(v)} <small>${n}</small></button>`;
+    const inc = items.filter(([v]) => !ex.has(v)), exc = items.filter(([v]) => ex.has(v));
+    return `<div class="bb-memo-panel"><b>${esc(title)}</b> <span class="bb-note">값을 누르면 포함 ↔ 제외가 바뀝니다(그 열에서만).</span>
+      <div class="bb-tabs">${tabs}</div>
+      <input class="bb-input" id="ed-memo-filter" placeholder="값 찾기(입력 후 Enter)" value="${esc(q)}">
+      <div class="bb-memo-lists">
+        <div><h4>포함될 내용 (${inc.length}종)</h4><div class="bb-mv-list">${inc.slice(0, 400).map(chip).join('')}${inc.length > 400 ? '<span class="bb-note">… 값 찾기로 좁히세요</span>' : ''}</div></div>
+        <div><h4>제외될 내용 (${exc.length}종)</h4><div class="bb-mv-list">${exc.map(chip).join('') || '<span class="bb-note">아직 없음</span>'}</div></div>
+      </div></div>`;
+  }
+
+  function bankEditorHtml(a, L) {
+    const c = a.config;
+    const fields = BANK_FIELDS.map(([k, label]) => `<div class="bb-field"><label>${esc(label)}</label><select class="bb-select" data-bank-col="${k}">${columnOptions(L.header, c[k], k !== 'dateCol')}</select></div>`).join('');
+    const memoChecks = L.header.map((h, i) => h ? `<label><input type="checkbox" data-memo-col="${i}" ${c.memoCols.includes(i) ? 'checked' : ''}> ${esc(h)}</label>` : '').join('');
+    const excluded = c.memoCols.map(ci => `${L.header[ci]}: ${(c.excludedMemoValues[ci] || []).join(', ')}`).filter(s => !/: $/.test(s));
+    return `
+      <div class="bb-section"><h3>열 지정 · 설정</h3>
+        <div class="bb-grid">${fields}${commonSettingsHtml(a, c.baseBalance, c.baseBalanceManual)}</div></div>
+      <div class="bb-section"><h3>적요(의뢰인/수취인)로 쓸 열 — 여러 개 선택 시 " / "로 합침, 같은 값은 한 번만</h3>
+        <div class="bb-checks">${memoChecks}</div>
+        ${memoValuePanel(L, c.memoCols, c.excludedMemoValues, '적요에서 뺄 값')}
+        ${excluded.length ? `<p class="bb-note">현재 제외: ${esc(excluded.join(' · '))}</p>` : ''}
+      </div>`;
+  }
+
+  function securitiesEditorHtml(a, L) {
+    const c = a.config;
+    const out = a.output || {};
+    const mapping = out.mapping || {};
+    const fields = SEC_FIELDS.map(([k, label]) => {
+      const sel = c.columnOverrides[k] !== undefined ? c.columnOverrides[k] : mapping[k];
+      return `<div class="bb-field"><label>${esc(label)}</label><select class="bb-select" data-sec-col="${k}">${columnOptions(L.header, sel, true)}</select></div>`;
+    }).join('');
+    const cls = c.classification || { depositTypes: [], withdrawalTypes: [], valuesToRemove: [], inferredFeeMode: 'separate' };
+    const bucketOf = t => cls.depositTypes.includes(t) ? 'deposit' : cls.withdrawalTypes.includes(t) ? 'withdrawal' : cls.valuesToRemove.includes(t) ? 'remove' : 'none';
+    // 거래종류별 근거: 사전 분류, 잔액 근거(입금/출금 행 수). 잔액 근거와 반대로 분류됐으면 빨간 표시.
+    const info = new Map((out.typeInfo || []).map(x => [x.type, x]));
+    const BL = { deposit: '입금', withdrawal: '출금', remove: '제거', none: '미분류' };
+    const evText = x => {
+      if (!x) return '';
+      const e = x.evidence || {};
+      const ev = e.deposit || e.withdrawal ? `잔액 확인 ${[e.deposit ? `입금 ${e.deposit}` : '', e.withdrawal ? `출금 ${e.withdrawal}` : ''].filter(Boolean).join('·')}건` : '잔액 근거 없음';
+      const dict = x.dict ? `사전 ${BL[x.dict]}` : '사전에 없음';
+      return `${x.rows}건 · ${dict} · ${ev}`;
+    };
+    const candidates = (out.typeInfo || []).filter(x => x.candidate && isSafeCandidate(x.type));
+    const types = (out.tradeTypes || []).map(t => {
+      const b = bucketOf(t);
+      const x = info.get(t);
+      const cand = candidates.includes(x);
+      return `<div class="bb-type t-${b} ${x && x.conflict ? 'conflict' : ''}" title="${esc(t)}${x && x.conflict ? ' — 잔액 변화와 반대 방향으로 분류됨' : ''}"><span class="txt"><span class="name">${esc(t)}</span>${cand ? '<span class="tag cand">사전 후보</span>' : ''}<span class="info">${esc(evText(x))}</span></span>
+        <select class="bb-select" data-type="${esc(t)}">${TYPE_BUCKETS.map(([k, label]) => `<option value="${k}" ${b === k ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></div>`;
+    }).join('');
+    const hiddenCand = (out.typeInfo || []).filter(x => x.candidate && !isSafeCandidate(x.type)).length;
+    const candBox = candidates.length ? `<div class="bb-cand"><b>사전 반영 후보 ${candidates.length}개</b> — 사전에 없지만 잔액으로 방향이 확인된 분류입니다: ${esc(candidates.map(x => `${x.type}(${BL[x.bucket]})`).join(', '))}.
+      맞으면 아래 "이 설정을 사전에 반영"을 누르세요.${hiddenCand ? ` <span class="bb-note">거래처·이름이 들어 있을 수 있는 거래종류 ${hiddenCand}개는 후보에서 뺐습니다(사전은 팀 공유 파일).</span>` : ''}</div>` : '';
+    return `
+      <div class="bb-section"><h3>열 지정 · 설정 ${mapping.detectedBrokerName ? `<small style="color:var(--muted)">(사전: ${esc(mapping.detectedBrokerName)})</small>` : ''}</h3>
+        <div class="bb-grid">${fields}${commonSettingsHtml(a, c.baseAmount, c.baseAmountManual)}
+          <div class="bb-field"><label>수수료·제세금</label><select class="bb-select" id="ed-fee-mode">
+            <option value="separate" ${cls.inferredFeeMode !== 'included' ? 'selected' : ''}>별도 출금 행으로 분리</option>
+            <option value="included" ${cls.inferredFeeMode === 'included' ? 'selected' : ''}>거래금액에 포함(분리 안 함)</option></select></div>
+          <div class="bb-field"><label>잔액 차이 처리</label><label style="display:flex;gap:6px;align-items:center;font-weight:normal"><input type="checkbox" id="ed-balance-adjust" ${c.balanceAdjustment ? 'checked' : ''} title="원본에 빠진 거래가 확실할 때만 쓰세요. 넣으면 확인 필요로 표시됩니다."> 차이를 (잔액보정) 행으로 맞춤</label></div>
+        </div>
+        ${a.currency ? `<p class="bb-note">통화: ${esc(a.currency)}${a.splitCount > 1 ? ' — 한 파일의 원화·외화를 통화별 계좌로 나눈 것입니다' : ''} · 잔액 허용오차 ${esc(out.tolerance === 0.01 ? '0.01' : '1원')}</p>` : ''}
+        <p class="bb-note">열을 바꾸면 거래종류 분류를 잔액 기준으로 다시 자동 계산합니다. 추가 적요 1·2를 고르면 적요 끝에 " / "로 붙습니다.</p>
+        ${memoValuePanel(L, ['additionalCol1', 'additionalCol2'].map(k => (c.columnOverrides[k] !== undefined ? c.columnOverrides[k] : mapping[k])).filter(x => x !== undefined && x !== null && x !== ''), c.excludedMemoValues || {}, '추가 적요에서 뺄 값')}</div>
+      ${types ? `<div class="bb-section"><h3>거래종류 분류 <button class="bb-btn secondary small" data-action="reclassify">잔액 기준 자동 분류 다시</button></h3>
+        ${candBox}<div class="bb-types">${types}</div>
+        <p class="bb-note">제거(입출금외)·미분류 거래는 결과 시트에서 빠지고 "입출금외 내역"에 수량×단가 금액과 함께 보관됩니다.</p></div>` : ''}`;
+  }
+
+  function previewHtml(a, L) {
+    const out = a.output || {};
+    const tabs = [['result', '결과'], ['noncash', `입출금외 내역 ${(out.nonCash || []).length}`], ['source', '원본']];
+    let body = '';
+    if (state.tab === 'result') {
+      if (out.sheet && out.sheet.length > 1) {
+        const bad = new Set((out.verification && out.verification.mismatchRows) || []);
+        body = `<div class="bb-table-wrap"><table class="bb-table"><thead><tr>${out.sheet[0].map((h, i) => `<th class="${i >= 1 && i <= 4 ? 'num' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>${
+          out.sheet.slice(1).map((r, k) => `<tr class="${bad.has(k + 1) ? 'bad' : ''}">${r.map((v, i) => `<td class="${i >= 1 && i <= 4 ? 'num' : ''}">${esc(cellText(v))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+          <p class="bb-note">빨간 줄 = 계산 잔액과 원본 잔액이 다른 곳.</p>`;
+      } else body = `<p class="bb-empty">${esc(out.error || '결과 행이 없습니다.')}</p>`;
+    } else if (state.tab === 'noncash') {
+      const rows = out.nonCash || [];
+      body = rows.length ? `<div class="bb-table-wrap"><table class="bb-table"><thead><tr><th>결제일</th><th>거래종류</th><th>종목명</th><th class="num">수량</th><th class="num">단가</th><th class="num">수량×단가</th><th class="num">거래금액</th><th>적요</th><th>사유</th></tr></thead><tbody>${
+        rows.map(n => `<tr><td>${esc(n.date)}</td><td>${esc(n.tradeType)}</td><td>${esc(n.stockName)}</td><td class="num">${esc(cellText(n.qty))}</td><td class="num">${esc(cellText(n.price))}</td><td class="num">${esc(fmtNum(n.valueAmount))}</td><td class="num">${esc(cellText(n.amount))}</td><td>${esc(n.memo)}</td><td>${esc(n.reason)}</td></tr>`).join('')}</tbody></table></div>`
+        : `<p class="bb-empty">입출금외 내역이 없습니다.</p>`;
+    } else {
+      const used = L.header.map((h, i) => i).filter(i => L.header[i] || L.records.some(rec => rec[i] !== null && rec[i] !== ''));
+      body = `<div class="bb-table-wrap"><table class="bb-table"><thead><tr><th>원본 행</th>${used.map(i => `<th>${esc(L.header[i])}</th>`).join('')}</tr></thead><tbody>${
+        L.records.slice(0, 300).map((rec, k) => `<tr><td>${L.sourceRows[k] + 1}</td>${used.map(i => `<td>${esc(cellText(rec[i]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <p class="bb-note">여러 줄로 된 거래는 한 줄로 합쳐 표시. 앞 300건까지.${L.skippedRows.length ? ` 거래로 묶이지 않은 원본 행: ${L.skippedRows.slice(0, 10).map(x => x + 1).join(', ')}` : ''}</p>`;
+    }
+    return `<div class="bb-section"><div class="bb-tabs">${tabs.map(([k, label]) => `<button class="bb-tab ${state.tab === k ? 'active' : ''}" data-tab="${k}">${esc(label)}</button>`).join('')}</div>${body}</div>`;
+  }
+
+  // ---------------------------------------------------------------- 편집 반영
+  function reconvert(a) {
+    BankbookConvert.convertAccount(a, D());
+    render();
+  }
+
+  function onEditorChange(e) {
+    const a = current();
+    if (!a) return;
+    const t = e.target;
+    if (t.id === 'ed-title') { a.title = t.value.trim() || a.title; render(); return; }
+    if (t.id === 'ed-institution') {
+      const v = t.value.trim();
+      const opt = institutionOptions().find(o => o.value === v) || institutionOptions().find(o => o.name === v);
+      if (opt) {
+        if (opt.name === a.institution && (opt.kind !== 'securities' || (opt.market || 'domestic') === (a.market || 'domestic')) && a.pick) return;
+        applyInstitutionPick(a, opt); return;
+      }
+      a.institution = v; render();
+      if (v) setStatus(`"${v}"은(는) 사전 목록에 없는 기관입니다. 목록에서 고르거나, 새 기관이면 그대로 두고 "사전에 반영"하세요.`, true);
+      return;
+    }
+    if (t.id === 'ed-account') { a.account = t.value.trim(); render(); return; }
+    if (!a.config) return;
+    const c = a.config;
+    if (t.id === 'ed-confirm-note') return;
+    if (t.id === 'ed-format-label') {
+      const b = a.broker || {};
+      try {
+        const changes = BankbookDictionary.setProfileLabel(D(), b.market || 'domestic', b.brokerId, b.profileIndex, t.value);
+        if (changes.length) {
+          state.dictChanges.push(...changes);
+          if (b.profile) { if (t.value.trim()) b.profile.label = t.value.trim().slice(0, 40); else delete b.profile.label; }
+          setStatus(`사전 형식 이름 변경: ${changes.join(' / ')} — 팀에 공유하려면 "사전 파일 저장"을 누르세요.`);
+          renderDictInfo(); render();
+        }
+      } catch (err) { setStatus(`형식 이름 변경 실패: ${err.message}`, true); }
+      return;
+    }
+    if (t.id === 'ed-memo-filter') { state.memoFilter = t.value; renderEditor(); return; } // 값 찾기: 화면만 다시 그림(편집 아님)
+    a.edited = true; // 직접 고친 계좌는 사전이 바뀌어도 다시 판별하지 않음
+    a.confirmed = null; // 고치면 확인 해제
+    if (t.id === 'ed-base') {
+      const num = t.value === '' ? null : Number(t.value);
+      if (a.kind === 'bank') { c.baseBalance = num; c.baseBalanceManual = num !== null; }
+      else {
+        c.baseAmount = num; c.baseAmountManual = num !== null;
+        if (!c.classificationEdited) c.classification = null; // 아는 기초잔액으로 자동 분류 다시
+      }
+    } else if (t.id === 'ed-order') {
+      c.orderMode = t.value;
+      a.orderRepair = null; // 순서 방식을 바꾸면 복원도 처음부터 다시 판단
+    } else if (t.dataset.bankCol) {
+      c[t.dataset.bankCol] = t.value === '' ? undefined : Number(t.value);
+    } else if (t.dataset.memoCol !== undefined) {
+      const i = Number(t.dataset.memoCol);
+      c.memoCols = t.checked ? [...c.memoCols, i] : c.memoCols.filter(x => x !== i);
+    } else if (t.dataset.secCol) {
+      if (t.value === '') c.columnOverrides[t.dataset.secCol] = undefined;
+      else c.columnOverrides[t.dataset.secCol] = Number(t.value);
+      c.classification = null;
+    } else if (t.id === 'ed-balance-adjust') {
+      c.balanceAdjustment = t.checked; // 원본에 빠진 거래가 확실할 때만 — 넣으면 "확인 필요"로 표시
+    } else if (t.id === 'ed-fee-mode') {
+      c.classificationEdited = true;
+      c.classification = { ...(c.classification || {}), inferredFeeMode: t.value };
+    } else if (t.dataset.type !== undefined) {
+      c.classificationEdited = true;
+      const type = t.dataset.type;
+      const cls = c.classification;
+      ['depositTypes', 'withdrawalTypes', 'valuesToRemove'].forEach(k => { cls[k] = (cls[k] || []).filter(x => x !== type); });
+      const key = { deposit: 'depositTypes', withdrawal: 'withdrawalTypes', remove: 'valuesToRemove' }[t.value];
+      if (key) cls[key] = [...cls[key], type].sort();
+    } else return;
+    reconvert(a);
+  }
+
+  function onEditorClick(e) {
+    const a = current();
+    const btn = e.target.closest('[data-action],[data-tab]');
+    if (!a || !btn) return;
+    if (btn.dataset.tab) { state.tab = btn.dataset.tab; renderEditor(); return; }
+    if (btn.dataset.action === 'reflect') { reflectAccount(a); return; }
+    if (btn.dataset.action === 'confirm') {
+      const note = (ui.editor.querySelector('#ed-confirm-note') || {}).value || '';
+      const v = a.output && a.output.verification;
+      const ok = !!(v && v.isCorrect && a.output.sheet);
+      if (!ok && !note.trim()) { setStatus('잔액이 맞지 않거나 변환 전인 계좌는 확인 사유를 적어야 합니다.', true); return; }
+      a.confirmed = { note: note.trim(), at: new Date().toISOString() };
+      a.status = 'confirmed';
+      setStatus(`"${a.title}" 사용자 확인 완료.`);
+      render(); return;
+    }
+    if (btn.dataset.action === 'delete-one') { deleteAccounts([a.id], '계좌'); return; }
+    if (btn.dataset.action === 'delete-file') { deleteAccounts(state.accounts.filter(x => x.fileName === a.fileName).map(x => x.id), `"${a.fileName}"의 계좌`); return; }
+    if (btn.dataset.action === 'to-list') { ui.list.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+    if (btn.dataset.action === 'unconfirm') { a.confirmed = null; a.status = a.autoStatus; render(); return; }
+    if (btn.dataset.action === 'memo-tab') { state.memoTab = Number(btn.dataset.col); state.memoFilter = ''; renderEditor(); return; }
+    if (btn.dataset.action === 'memo-toggle') {
+      const ci = Number(btn.dataset.col), v = btn.dataset.val;
+      const m = a.config.excludedMemoValues = a.config.excludedMemoValues || {};
+      const list = m[ci] || [];
+      m[ci] = list.includes(v) ? list.filter(x => x !== v) : [...list, v];
+      state.memoTab = ci;
+      a.edited = true; a.confirmed = null;
+      reconvert(a); return;
+    }
+    a.edited = true;
+    a.confirmed = null;
+    if (btn.dataset.action === 'base-auto') {
+      if (a.kind === 'bank') { a.config.baseBalance = null; a.config.baseBalanceManual = false; }
+      else { a.config.baseAmount = null; a.config.baseAmountManual = false; }
+      reconvert(a);
+    } else if (btn.dataset.action === 'reclassify') {
+      a.config.classification = null;
+      a.config.classificationEdited = false;
+      reconvert(a);
+    }
+  }
+
+  // ---------------------------------------------------------------- 계좌 삭제 / 되돌리기(마지막 삭제 1회)
+  function deleteAccounts(ids, label) {
+    const set = new Set(ids);
+    const targets = state.accounts.filter(a => set.has(a.id));
+    if (!targets.length) return;
+    const touched = targets.filter(a => a.edited || a.confirmed);
+    if (touched.length && !window.confirm(`직접 고치거나 확인 완료한 계좌 ${touched.length}개가 들어 있습니다. 삭제할까요? (바로 다음에 "되돌리기"로 살릴 수 있습니다)`)) return;
+    state.lastDeleted = targets.map(a => ({ a, index: state.accounts.indexOf(a) }));
+    state.accounts = state.accounts.filter(a => !set.has(a.id));
+    ids.forEach(id => state.picked.delete(id));
+    if (set.has(state.selected)) state.selected = null;
+    render();
+    setStatus(`${label} ${targets.length}개를 목록에서 삭제했습니다.`, false, true);
+  }
+  function undoDelete() {
+    const items = state.lastDeleted;
+    if (!items) return;
+    items.sort((x, y) => x.index - y.index).forEach(({ a, index }) => { state.accounts.splice(Math.min(index, state.accounts.length), 0, a); });
+    state.lastDeleted = null;
+    render();
+    setStatus(`삭제한 계좌 ${items.length}개를 되돌렸습니다.`);
+  }
+
+  // ---------------------------------------------------------------- 사전
+  function renderDictInfo() {
+    renderInstitutionList();
+    const d = D();
+    const n = state.dictChanges.length;
+    const prof = m => d.securities[m].reduce((k, b) => k + (b.profiles || []).length, 0);
+    const w = (state.dictWarnings || []).length;
+    ui.dictInfo.innerHTML = `사전: ${esc(state.dictSource)} · 버전 ${esc(d.version || 1)} (구조 ${esc(d.schemaVersion || 1)})` +
+      ` · 국내 형식 ${prof('domestic')}개 · 해외 형식 ${prof('foreign')}개 · 은행 형식 ${d.bank.profiles.length}개` +
+      (w ? ` · <span title="${esc(state.dictWarnings.join('\n'))}">사전 경고 ${w}건</span>` : '') +
+      (state.dictError ? ' · <b class="dirty">사전 오류</b>' : '') +
+      (n ? ` · <b class="dirty">저장하지 않은 변경 ${n}건</b>` : '');
+  }
+
+  // 사전이 바뀌면, 직접 고치지 않은 계좌는 새 사전으로 다시 판별·변환한다.
+  function rebuildAfterDictionaryChange(alsoIds) {
+    const perFile = {};
+    state.accounts.forEach(a => { perFile[a.fileName] = (perFile[a.fileName] || 0) + 1; });
+    let count = 0;
+    // 통화별로 나뉜 계좌는 한 원본에서 여러 계좌가 나오므로, 같은 원본의 다른 통화 계좌는 한 번만 다시 만든다
+    const done = new Set();
+    state.accounts = state.accounts.flatMap(a => {
+      if (a.edited && !(alsoIds || []).includes(a.id)) return [a];
+      const src = `${a.fileName}|${a.sheetName}`;
+      const siblings = state.accounts.filter(x => `${x.fileName}|${x.sheetName}` === src);
+      if (done.has(src) && siblings.length > 1) return [];
+      done.add(src);
+      const parts = BankbookConvert.rebuildAccounts(a, D(), perFile[a.fileName]);
+      // 형제 계좌(다른 통화)의 id·계좌명·저장 여부를 이어받는다
+      parts.slice(1).forEach(p => { const sib = siblings.find(x => x !== a && x.currency && x.currency === p.currency && !x.edited); if (sib) { p.id = sib.id; p.title = sib.title; p.include = sib.include; } });
+      const editedSibs = siblings.filter(x => x !== a && x.edited && !(alsoIds || []).includes(x.id));
+      const kept = parts.filter((p, i) => i === 0 || !editedSibs.some(x => x.currency === p.currency));
+      count += kept.length;
+      return kept;
+    });
+    // 직접 고친 형제 계좌는 위에서 그대로 남는다(중복 방지: 같은 id 는 하나만)
+    const ids = new Set();
+    state.accounts = state.accounts.filter(x => (ids.has(x.id) ? false : (ids.add(x.id), true)));
+    return count;
+  }
+
+  function reflectAccount(a) {
+    let changes;
+    try {
+      const b = a.broker || {};
+      const newFormat = a.kind === 'securities' && !b.exceptionRule && !(b.detected && !b.partial);
+      let label = '';
+      if (newFormat) label = window.prompt(`${a.institution || '이 기관'}에 새 형식으로 추가됩니다. 형식 이름을 붙이세요(예: HTS 거래내역, 비워도 됨).`, '') || '';
+      changes = BankbookDictionary.applyAccount(D(), a, { label });
+    } catch (e) {
+      setStatus(`사전 반영 실패: ${e.message}`, true);
+      return;
+    }
+    if (!changes.length) { setStatus('사전에 이미 같은 내용이 있습니다.'); return; }
+    state.dictChanges.push(...changes);
+    const n = rebuildAfterDictionaryChange([a.id]);
+    const after = state.accounts.find(x => x.id === a.id);
+    const st = after ? (STATUS[after.status] || {}).label : '';
+    setStatus(`사전 반영: ${changes.join(' / ')} — 계좌 ${n}개를 다시 판별했습니다. 이 계좌는 이제 "${st}". 팀에 공유하려면 "사전 파일 저장"을 누르세요.`);
+    renderDictInfo();
+    render();
+  }
+
+  function saveDictionary() {
+    try {
+      const blob = new Blob([BankbookDictionary.serialize(D())], { type: 'text/javascript;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'institutions.js';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      state.dictChanges = [];
+      setStatus('institutions.js 를 저장했습니다. 저장소의 dictionary/institutions.js 와 교체해 올리면 팀 전체에 적용됩니다.');
+      renderDictInfo();
+    } catch (e) {
+      console.error('[사전 저장 실패]', e);
+      setStatus(`사전 저장 실패: ${e.message}`, true);
+    }
+  }
+
+  async function loadDictionary(file) {
+    if (!file) return;
+    try {
+      // parse = 구조 변환 + 검사. 오류가 있으면 예외 → 지금 쓰던 사전을 그대로 유지한다.
+      const parsed = BankbookDictionary.parse(await file.text());
+      const info = parsed.loadInfo || { notes: [], warnings: [] };
+      window.BANKBOOK_DICTIONARY = parsed;
+      state.dictChanges = [];
+      state.dictSource = file.name;
+      state.dictWarnings = info.warnings;
+      state.dictError = '';
+      const n = rebuildAfterDictionaryChange();
+      setStatus(`사전 불러옴: ${file.name} (버전 ${parsed.version || 1}). 계좌 ${n}개를 다시 판별했습니다.` +
+        (info.notes.length ? ` 예전 구조라 자동 변환했습니다(${info.notes.join(', ')}) — 저장하면 새 구조로 저장됩니다.` : '') +
+        (info.warnings.length ? ` 사전 경고 ${info.warnings.length}건(사용 가능): ${info.warnings[0]}${info.warnings.length > 1 ? ' …' : ''}` : '') +
+        ' 새로고침하면 배포된 사전으로 돌아갑니다.');
+      renderDictInfo();
+      render();
+    } catch (e) {
+      console.error('[사전 불러오기 실패]', e, e.errors || '');
+      setStatus(`사전 불러오기 실패(지금 쓰던 사전을 그대로 씁니다): ${e.message}`, true);
+    }
+  }
+
+  function download() {
+    try {
+      const wb = BankbookConvert.buildWorkbook(XLSX, state.accounts, { includeOriginal: ui.includeOriginal.checked });
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      const name = `통장변환결과_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.xlsx`;
+      XLSX.writeFile(wb, name);
+      const bad = state.accounts.filter(a => a.include && a.output && a.output.sheet && a.status === 'mismatch').length;
+      setStatus(`${name} 저장.${bad ? ` 잔액 불일치 계좌 ${bad}개가 포함되어 있습니다(요약 시트 확인).` : ''}`, bad > 0);
+    } catch (e) {
+      console.error('[다운로드 실패]', e);
+      setStatus(`다운로드 실패: ${e.message}`, true);
+    }
+  }
+
+  // ---------------------------------------------------------------- 이벤트
+  if (!checkEnvironment()) return;
+  ui.drop.addEventListener('click', () => ui.input.click());
+  ui.drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ui.input.click(); } });
+  ui.input.addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+  ['dragenter', 'dragover'].forEach(t => ui.drop.addEventListener(t, e => { e.preventDefault(); ui.drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => ui.drop.addEventListener(t, e => { e.preventDefault(); ui.drop.classList.remove('over'); }));
+  ui.drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+  ui.summary.addEventListener('click', e => { const chip = e.target.closest('[data-filter]'); if (chip) { state.filter = chip.dataset.filter; render(); } });
+  ui.body.addEventListener('click', e => {
+    const del = e.target.closest('[data-delete]');
+    if (del) { e.stopPropagation(); deleteAccounts([del.dataset.delete], '계좌'); return; }
+    const pick = e.target.closest('[data-pick]');
+    if (pick) { if (pick.checked) state.picked.add(pick.dataset.pick); else state.picked.delete(pick.dataset.pick); render(); return; }
+    const inc = e.target.closest('[data-include]');
+    if (inc) { const a = state.accounts.find(x => x.id === inc.dataset.include); if (a) { a.include = inc.checked; render(); } return; }
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    state.selected = state.selected === tr.dataset.id ? null : tr.dataset.id;
+    state.tab = 'result';
+    render();
+    if (state.selected) ui.editor.scrollIntoView({ block: 'start' });
+  });
+  ui.editor.addEventListener('change', onEditorChange);
+  ui.editor.addEventListener('click', onEditorClick);
+  ui.download.addEventListener('click', download);
+  ui.clear.addEventListener('click', () => { state.filter = 'all'; deleteAccounts(state.accounts.map(a => a.id), '전체 계좌'); });
+  ui.undo.addEventListener('click', undoDelete);
+  ui.deletePicked.addEventListener('click', () => deleteAccounts([...state.picked], '선택한 계좌'));
+  ui.pickAll.addEventListener('change', e => {
+    const visible = state.accounts.filter(a => state.filter === 'all' || a.status === state.filter).map(a => a.id);
+    visible.forEach(id => (e.target.checked ? state.picked.add(id) : state.picked.delete(id)));
+    render();
+  });
+  ui.dictSave.addEventListener('click', saveDictionary);
+  ui.dictLoad.addEventListener('click', () => ui.dictInput.click());
+  ui.dictInput.addEventListener('change', e => { loadDictionary(e.target.files[0]); e.target.value = ''; });
+  window.addEventListener('beforeunload', e => {
+    if (state.dictChanges.length) { e.preventDefault(); e.returnValue = ''; } // 저장하지 않은 사전 변경 경고
+  });
+  renderDictInfo();
+  renderInstitutionList();
+})();
+</script>
+</body>
+</html>

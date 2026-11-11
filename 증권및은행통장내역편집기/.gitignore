@@ -1,0 +1,16 @@
+# 개발 의존성·테스트 산출물 (npm install / 테스트로 다시 생성)
+node_modules/
+tests/output/
+
+# 작업 복구용 로컬 백업 (지침상 version/ 은 Git 이력으로 대체하지 않음, 문서 사본에 고객 정보가 있을 수 있음)
+version/
+
+# 고객 데이터: 샘플 엑셀과 샘플별 기준값은 저장소에 올리지 않는다
+*.xlsx
+*.xls
+*.csv
+tests/expected.json
+tests/expected-convert.json
+
+# 예외 계좌 분석 보고서 (고객 데이터 포함, 로컬 전용)
+cases/
