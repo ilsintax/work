@@ -58,6 +58,30 @@
             text-align: center;
         }
         .basis-table td:first-child { text-align: center; }
+        /* 일괄 계산 모드 (20261112-004 추가) */
+        .mode-tab { padding: 0.5rem 1.25rem; border-radius: 0.5rem; font-weight: 600; background-color: #e2e8f0; color: #334155; }
+        .mode-tab:hover { background-color: #cbd5e1; }
+        .mode-tab.mode-tab-active { background-color: #4f46e5; color: #ffffff; }
+        .bulk-drop { border: 2px dashed #cbd5e1; border-radius: 0.75rem; padding: 2rem 1rem; text-align: center; background-color: #ffffff; cursor: pointer; transition: all 0.2s; }
+        .bulk-drop:hover, .bulk-drop.bulk-drag-over { border-color: #4f46e5; background-color: #eef2ff; }
+        .bulk-status { min-height: 1.5rem; font-size: 0.9rem; white-space: pre-line; }
+        .bulk-status.bulk-info { color: #475569; }
+        .bulk-status.bulk-ok { color: #047857; }
+        .bulk-status.bulk-warn { color: #b45309; }
+        .bulk-status.bulk-error { color: #b91c1c; }
+        .bulk-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+        .bulk-table th, .bulk-table td { border: 1px solid #e2e8f0; padding: 0.5rem 0.6rem; white-space: nowrap; }
+        .bulk-table th { background-color: #f1f5f9; font-weight: 600; position: sticky; top: 0; text-align: center; z-index: 1; }
+        .bulk-table td.bulk-num { text-align: right; }
+        .bulk-table td.bulk-center { text-align: center; }
+        .bulk-table tbody tr.bulk-row { cursor: pointer; }
+        .bulk-table tbody tr.bulk-row:hover { background-color: #dbeafe; }
+        .bulk-table tbody tr.bulk-row-selected { background-color: #bfdbfe; }
+        .bulk-table tbody tr.bulk-row-total td { font-weight: 700; background-color: #f8fafc; }
+        .bulk-badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+        .bulk-badge-ok { background-color: #d1fae5; color: #065f46; }
+        .bulk-badge-warn { background-color: #fef3c7; color: #92400e; }
+        .bulk-badge-error { background-color: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body class="text-slate-800 flex items-center justify-center min-h-screen p-4">
@@ -68,6 +92,49 @@
         </header>
         
         <main>
+            <!-- 화면 전환 탭 (20261112-004 추가) -->
+            <div id="mode-tabs" class="flex flex-wrap justify-center gap-2 mb-6">
+                <button type="button" id="mode-bulk-btn" class="mode-tab mode-tab-active">계정별원장 파일 일괄 계산</button>
+                <button type="button" id="mode-paste-btn" class="mode-tab">붙여넣기 (탭 하나씩)</button>
+            </div>
+
+            <!-- 일괄 계산 영역 (20261112-004 추가) -->
+            <section id="bulk-mode" class="space-y-4">
+                <div id="bulk-drop" class="bulk-drop">
+                    <p class="text-lg font-semibold text-slate-700">계정별원장 엑셀 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요</p>
+                    <p class="text-sm text-slate-500 mt-1">.xls, .xlsx · 여러 파일 가능 · 모든 탭을 자동으로 인식합니다</p>
+                    <p class="text-xs text-slate-400 mt-1">지원 양식: 시트 이름 '0_보통예금(10300)' 형식, '(0103)보통예금' 형식</p>
+                    <input type="file" id="bulk-file-input" class="hidden" multiple accept=".xls,.xlsx">
+                </div>
+                <div id="bulk-status" class="bulk-status bulk-info" role="status" aria-live="polite"></div>
+
+                <div id="bulk-controls" class="hidden bg-slate-50 border rounded-lg p-4 space-y-3">
+                    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <span class="font-semibold text-slate-700">계산 기간</span>
+                        <label class="inline-flex items-center gap-1"><input type="radio" name="bulk-period" value="file" checked> 파일 기간 전체</label>
+                        <label class="inline-flex items-center gap-1"><input type="radio" name="bulk-period" value="month"> 월별</label>
+                        <label class="inline-flex items-center gap-1"><input type="radio" name="bulk-period" value="quarter"> 분기별</label>
+                        <label class="inline-flex items-center gap-1"><input type="radio" name="bulk-period" value="custom"> 직접 입력</label>
+                    </div>
+                    <div id="bulk-custom" class="hidden flex flex-wrap items-center gap-2">
+                        <input type="date" id="bulk-start" class="rounded-md border border-slate-300 p-2 text-sm">
+                        <span>~</span>
+                        <input type="date" id="bulk-end" class="rounded-md border border-slate-300 p-2 text-sm">
+                        <button type="button" id="bulk-apply-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg">적용</button>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" id="bulk-copy-btn" class="bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-4 rounded-lg">요약표 복사</button>
+                        <button type="button" id="bulk-download-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg">엑셀 다운로드</button>
+                        <button type="button" id="bulk-clear-btn" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold py-2 px-4 rounded-lg">모두 지우기</button>
+                    </div>
+                </div>
+
+                <div id="bulk-summary" class="hidden"></div>
+                <div id="bulk-detail" class="hidden"></div>
+            </section>
+
+            <!-- 기존 붙여넣기 방식 (화면 전환을 위해 감싸기만 함) -->
+            <div id="paste-mode" class="hidden">
             <!-- Calculation Area -->
             <div id="calculation-area" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-center">
                 <div class="grid grid-cols-2 gap-4">
@@ -136,6 +203,7 @@
                 </div>
                 <div id="preview-container" class="hidden w-full h-full"></div>
             </div>
+            </div><!-- /paste-mode -->
         </main>
     </div>
 
@@ -738,6 +806,592 @@
                  .replace(/"/g, "&quot;")
                  .replace(/'/g, "&#039;");
         }
+    </script>
+
+    <!-- 계정별원장 파일 일괄 계산 (20261112-004 추가). 기존 스크립트의 전역 이름과 겹치지 않도록 즉시실행 함수 안에 둠 -->
+    <script>
+    (function () {
+        'use strict';
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const DATE_HEADERS = ['날짜', '일자'];
+        const PERIOD_RE = /(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})\s*~\s*(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/;
+        const PERIOD_LABELS = { file: '파일 기간 전체', month: '월별', quarter: '분기별', custom: '직접 입력' };
+
+        // ---- 공통 도우미 (업무허브 '위하고 엑셀 편집기'의 normalizeText·parseNumber를 가져와 변형) ----
+        function normalizeText(value) {
+            if (value === null || value === undefined) return '';
+            return String(value).replace(/[  ᠎ -‍  　﻿]/g, ' ').replace(/\s+/g, ' ').trim();
+        }
+        function compact(value) { return normalizeText(value).replace(/\s/g, ''); }
+        function isBlank(value) { return normalizeText(value) === ''; }
+        // 숫자로 읽지 못하면 null (임의로 0으로 바꾸지 않음). 괄호 음수 (1,000) 지원
+        function parseAmount(value) {
+            if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+            const text = normalizeText(value).replace(/,/g, '').replace(/[₩￦원]/g, '');
+            if (text === '' || text === '-') return null;
+            const neg = text.match(/^\((.+)\)$/);
+            const normalized = neg ? `-${neg[1]}` : text;
+            if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null;
+            const parsed = Number(normalized);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+        function esc(value) {
+            return String(value === null || value === undefined ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+        function utcDate(y, m, d) { return new Date(Date.UTC(y, m - 1, d)); }
+        function isValidYmd(y, m, d) {
+            const t = utcDate(y, m, d);
+            return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+        }
+        function isoDate(date) { return date.toISOString().slice(0, 10); }
+        function fmt(num, decimals) {
+            if (typeof num !== 'number' || !Number.isFinite(num)) return '-';
+            return num.toLocaleString('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+        }
+        function toExcelSerial(date) { return (date.getTime() - Date.UTC(1899, 11, 30)) / DAY_MS; }
+
+        // 원장 날짜 칸 해석: 'MM-DD'(연도 없음) / 'YYYY-MM-DD' / 엑셀 날짜 일련번호
+        function parseLedgerDate(value) {
+            if (typeof value === 'number') {
+                if (value > 20000 && value < 80000) {
+                    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(value) * DAY_MS);
+                    return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() };
+                }
+                return null;
+            }
+            const text = normalizeText(value);
+            let m = /^(\d{1,2})\s*[-\/.]\s*(\d{1,2})$/.exec(text);
+            if (m) return { y: null, m: Number(m[1]), d: Number(m[2]) };
+            m = /^(\d{4})\s*[-\/.]\s*(\d{1,2})\s*[-\/.]\s*(\d{1,2})/.exec(text);
+            if (m) return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+            return null;
+        }
+
+        // 시트 이름으로 양식·계정 판별
+        function detectFormat(sheetName) {
+            let m = /^\s*(\d+)_(.+?)\((\d+)\)\s*$/.exec(sheetName);
+            if (m) return { format: 'A', accountName: m[2].trim(), accountCode: m[3] };
+            m = /^\s*\((\d+)\)(.+?)\s*$/.exec(sheetName);
+            if (m) return { format: 'B', accountName: m[2].trim(), accountCode: m[1] };
+            return { format: '기타', accountName: String(sheetName).trim(), accountCode: '' };
+        }
+
+        // ---- 시트 하나 분석: 기간·제목행·열·이월잔액·거래 잔액·검증 ----
+        function analyzeSheet(rows, sheetName, fileName) {
+            const info = detectFormat(sheetName);
+            const r = {
+                fileName, sheetName, format: info.format, accountName: info.accountName, accountCode: info.accountCode,
+                company: '', filePeriod: null, headerRow: null, openingRow: null, initialBalance: 0,
+                points: [], errors: [], warnings: [],
+                check: { direction: '', contOk: 0, contTotal: 0, contBadRows: [], monthOk: 0, monthBad: 0, monthBadRows: [], blankBalance: 0 }
+            };
+            const top = rows.slice(0, 10);
+            top.forEach(row => (row || []).forEach(cell => {
+                const t = normalizeText(cell);
+                const cm = /^회사명\s*[:：]\s*(.+)$/.exec(t);
+                if (cm && !r.company) r.company = cm[1].trim();
+                const pm = PERIOD_RE.exec(t);
+                if (pm && !r.filePeriod) {
+                    const a = pm.slice(1).map(Number);
+                    if (isValidYmd(a[0], a[1], a[2]) && isValidYmd(a[3], a[4], a[5])) {
+                        r.filePeriod = { start: utcDate(a[0], a[1], a[2]), end: utcDate(a[3], a[4], a[5]) };
+                    }
+                }
+            }));
+            if (!r.filePeriod) { r.errors.push('상단 기간 줄(YYYY.MM.DD ~ YYYY.MM.DD)을 찾지 못했습니다.'); return r; }
+            if (r.filePeriod.start > r.filePeriod.end) { r.errors.push('상단 기간의 시작일이 종료일보다 늦습니다.'); return r; }
+
+            let h = -1;
+            for (let i = 0; i < Math.min(rows.length, 20); i++) {
+                const row = (rows[i] || []).map(compact);
+                if (row.includes('잔액') && row.some(c => DATE_HEADERS.includes(c))) { h = i; break; }
+            }
+            if (h < 0) { r.errors.push('제목행(날짜 또는 일자, 잔액)을 찾지 못했습니다.'); return r; }
+            r.headerRow = h + 1;
+            const hdr = rows[h].map(compact);
+            const dateCol = hdr.findIndex(c => DATE_HEADERS.includes(c));
+            const balCol = hdr.indexOf('잔액');
+            const drCol = hdr.indexOf('차변');
+            const crCol = hdr.indexOf('대변');
+
+            let openIdx = -1;
+            for (let i = h + 1; i < Math.min(rows.length, h + 4); i++) {
+                if ((rows[i] || []).some(c => compact(c).includes('이월'))) { openIdx = i; break; }
+            }
+            if (openIdx >= 0) {
+                r.openingRow = openIdx + 1;
+                const v = (rows[openIdx] || [])[balCol];
+                const n = parseAmount(v);
+                if (n === null && !isBlank(v)) { r.errors.push(`${openIdx + 1}행 이월 잔액을 숫자로 읽지 못했습니다: ${normalizeText(v)}`); return r; }
+                r.initialBalance = n === null ? 0 : n;
+            } else {
+                r.warnings.push('이월 행이 없어 기초잔액을 0으로 계산했습니다.');
+            }
+
+            let year = r.filePeriod.start.getUTCFullYear();
+            let prevMonth = r.filePeriod.start.getUTCMonth() + 1;
+            let prevBal = r.initialBalance, monthDr = 0, monthCr = 0;
+            let assetHits = 0, liabHits = 0;
+            const contRows = [], skipped = [], outside = [];
+            const hasDrCr = drCol >= 0 && crCol >= 0;
+            for (let i = (openIdx >= 0 ? openIdx : h) + 1; i < rows.length; i++) {
+                const row = rows[i] || [];
+                const dv = row[dateCol];
+                const pd = parseLedgerDate(dv);
+                if (!pd) {
+                    if (row.some(c => compact(c).includes('월계'))) {
+                        if (hasDrCr) {
+                            const d = parseAmount(row[drCol]) || 0, c = parseAmount(row[crCol]) || 0;
+                            if (Math.abs(d - monthDr) < 0.5 && Math.abs(c - monthCr) < 0.5) r.check.monthOk++;
+                            else { r.check.monthBad++; r.check.monthBadRows.push(i + 1); }
+                        }
+                        monthDr = 0; monthCr = 0;
+                    } else if (!isBlank(dv)) {
+                        skipped.push(`${i + 1}행 '${normalizeText(dv)}'`);
+                    }
+                    continue;
+                }
+                let y = pd.y;
+                if (y === null) { if (pd.m < prevMonth) year++; y = year; }
+                prevMonth = pd.m;
+                if (!isValidYmd(y, pd.m, pd.d)) { skipped.push(`${i + 1}행 '${normalizeText(dv)}'`); continue; }
+                const bv = row[balCol];
+                let bal = parseAmount(bv);
+                if (bal === null) {
+                    if (isBlank(bv)) { bal = 0; r.check.blankBalance++; } // 원장은 잔액 0을 빈칸으로 표시 → 연속성 검증으로 확인
+                    else { r.errors.push(`${i + 1}행 잔액을 숫자로 읽지 못했습니다: ${normalizeText(bv)}`); continue; }
+                }
+                const date = utcDate(y, pd.m, pd.d);
+                if (date < r.filePeriod.start || date > r.filePeriod.end) outside.push(`${i + 1}행 ${isoDate(date)}`);
+                if (hasDrCr) {
+                    const dr = parseAmount(row[drCol]) || 0, cr = parseAmount(row[crCol]) || 0;
+                    monthDr += dr; monthCr += cr;
+                    const a = Math.abs(prevBal + dr - cr - bal) < 0.5, l = Math.abs(prevBal - dr + cr - bal) < 0.5;
+                    if (a) assetHits++;
+                    if (l) liabHits++;
+                    contRows.push({ row: i + 1, a, l });
+                }
+                prevBal = bal;
+                r.points.push({ date, balance: bal, row: i + 1 });
+            }
+            if (hasDrCr) {
+                const useAsset = assetHits >= liabHits;
+                r.check.direction = useAsset ? '차변 잔액' : '대변 잔액';
+                r.check.contTotal = contRows.length;
+                contRows.forEach(c => { if (useAsset ? c.a : c.l) r.check.contOk++; else r.check.contBadRows.push(c.row); });
+                if (r.check.contBadRows.length) r.warnings.push(`잔액 연속성 불일치 ${r.check.contBadRows.length}행 (예: ${r.check.contBadRows.slice(0, 5).join(', ')}행) — 이전잔액±차변·대변과 잔액이 다릅니다.`);
+                if (r.check.monthBad) r.warnings.push(`월계 불일치 ${r.check.monthBad}건 (${r.check.monthBadRows.slice(0, 5).join(', ')}행)`);
+            } else {
+                r.warnings.push('차변·대변 열이 없어 잔액 검증을 하지 못했습니다.');
+            }
+            if (skipped.length) r.warnings.push(`날짜를 읽지 못해 제외한 행 ${skipped.length}개 (예: ${skipped.slice(0, 3).join(', ')})`);
+            if (outside.length) r.warnings.push(`상단 기간 밖 날짜 ${outside.length}개 (예: ${outside.slice(0, 3).join(', ')})`);
+            if (!r.points.length && openIdx < 0) r.errors.push('거래 행과 이월 행이 모두 없습니다.');
+
+            // 같은 날짜는 그날 마지막 행의 잔액만 사용 (기존 붙여넣기 방식과 동일)
+            const byDate = new Map();
+            r.points.forEach(p => byDate.set(p.date.getTime(), p));
+            r.points = [...byDate.values()].sort((a, b) => a.date - b.date);
+            return r;
+        }
+
+        function analyzeWorkbook(wb, fileName) {
+            return wb.SheetNames.map(name => {
+                const ws = wb.Sheets[name];
+                if (!ws || !ws['!ref']) {
+                    const empty = analyzeSheet([], name, fileName);
+                    empty.errors = ['빈 시트입니다.'];
+                    return empty;
+                }
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: true });
+                return analyzeSheet(rows, name, fileName);
+            });
+        }
+
+        // ---- 평잔 계산 (기존 performCalculation과 같은 방식: 잔액 × 다음 변동일까지 일수의 합 ÷ 총일수) ----
+        function computePeriod(points, initialBalance, start, end) {
+            let startBalance = initialBalance;
+            for (const p of points) { if (p.date < start) startBalance = p.balance; else break; }
+            const tx = points.filter(p => p.date >= start && p.date <= end).map(p => ({ date: p.date, balance: p.balance }));
+            if (!tx.length || tx[0].date.getTime() !== start.getTime()) tx.unshift({ date: start, balance: startBalance });
+            const details = [];
+            let sumProducts = 0;
+            for (let i = 0; i < tx.length; i++) {
+                const next = i + 1 < tx.length ? tx[i + 1].date : new Date(end.getTime() + DAY_MS);
+                const days = Math.round((next - tx[i].date) / DAY_MS);
+                if (days <= 0) continue;
+                const product = tx[i].balance * days;
+                sumProducts += product;
+                details.push({ date: tx[i].date, balance: tx[i].balance, days, product });
+            }
+            const totalDays = Math.round((end - start) / DAY_MS) + 1;
+            return {
+                start, end, totalDays, startBalance,
+                endBalance: details.length ? details[details.length - 1].balance : startBalance,
+                sumProducts, average: totalDays > 0 ? sumProducts / totalDays : 0, details
+            };
+        }
+
+        function buildPeriods(filePeriod, mode, custom) {
+            if (mode === 'custom') return [{ label: '직접입력', start: custom.start, end: custom.end, isTotal: false }];
+            if (mode === 'file') return [{ label: '파일기간', start: filePeriod.start, end: filePeriod.end, isTotal: false }];
+            const step = mode === 'quarter' ? 3 : 1;
+            const list = [];
+            let y = filePeriod.start.getUTCFullYear();
+            let m = filePeriod.start.getUTCMonth(); // 0부터
+            if (step === 3) m -= m % 3;
+            for (let guard = 0; guard < 1200; guard++) {
+                const ps = new Date(Date.UTC(y, m, 1));
+                if (ps > filePeriod.end) break;
+                const pe = new Date(Date.UTC(y, m + step, 1) - DAY_MS);
+                const s = ps < filePeriod.start ? filePeriod.start : ps;
+                const e = pe > filePeriod.end ? filePeriod.end : pe;
+                const label = step === 3 ? `${y}년 ${Math.floor(m / 3) + 1}분기` : `${y}-${String(m + 1).padStart(2, '0')}`;
+                list.push({ label, start: s, end: e, isTotal: false });
+                m += step;
+                if (m >= 12) { y++; m -= 12; }
+            }
+            return [{ label: '전체', start: filePeriod.start, end: filePeriod.end, isTotal: true }].concat(list);
+        }
+
+        function sheetStatus(sheet) {
+            if (sheet.errors.length) return '오류';
+            if (sheet.warnings.length) return '경고';
+            return '정상';
+        }
+
+        function buildResults(sheets, mode, custom) {
+            const results = [];
+            sheets.forEach((sheet, sheetIndex) => {
+                if (sheet.errors.length) {
+                    results.push({ sheetIndex, label: '-', isTotal: false, calc: null, status: '오류', notes: sheet.errors.concat(sheet.warnings) });
+                    return;
+                }
+                buildPeriods(sheet.filePeriod, mode, custom).forEach(period => {
+                    const calc = computePeriod(sheet.points, sheet.initialBalance, period.start, period.end);
+                    const notes = sheet.warnings.slice();
+                    if (period.start < sheet.filePeriod.start || period.end > sheet.filePeriod.end) {
+                        notes.push('계산 기간이 파일 기간 밖을 포함합니다. 파일 기간 전에는 이월잔액, 후에는 마지막 잔액이 유지된다고 보고 계산했습니다.');
+                    }
+                    results.push({ sheetIndex, label: period.label, isTotal: period.isTotal, calc, status: notes.length ? '경고' : '정상', notes });
+                });
+            });
+            return results;
+        }
+
+        function verifyText(sheet) {
+            const c = sheet.check;
+            if (!c.direction) return '-';
+            const monthTotal = c.monthOk + c.monthBad;
+            return `잔액 ${c.contOk}/${c.contTotal} · 월계 ${c.monthOk}/${monthTotal}`;
+        }
+
+        const SUMMARY_HEADERS = ['No', '파일', '회사명', '계정코드', '계정명', '기간구분', '시작일', '종료일', '일수', '기간초 잔액', '기간말 잔액', '적수합계', '평균잔액', '검증', '상태', '메모'];
+        function summaryRows(results, sheets) {
+            return results.map((res, i) => {
+                const s = sheets[res.sheetIndex];
+                const c = res.calc;
+                return [i + 1, s.fileName, s.company, s.accountCode, s.accountName, res.label,
+                    c ? isoDate(c.start) : '', c ? isoDate(c.end) : '', c ? c.totalDays : '',
+                    c ? c.startBalance : '', c ? c.endBalance : '', c ? c.sumProducts : '',
+                    c ? Math.round(c.average * 100) / 100 : '', verifyText(s), res.status, res.notes.join(' / ')];
+            });
+        }
+        function summaryTSV(results, sheets) {
+            const clean = v => String(v === null || v === undefined ? '' : v).replace(/[\t\r\n]+/g, ' ');
+            // 계정코드는 엑셀에 붙여넣을 때 앞자리 0이 사라지지 않도록 ="0103" 형태로 보냄
+            const rows = summaryRows(results, sheets).map(r => { const c = r.slice(); if (c[3] !== '') c[3] = `="${c[3]}"`; return c; });
+            return [SUMMARY_HEADERS].concat(rows).map(r => r.map(clean).join('\t')).join('\r\n');
+        }
+
+        function safeSheetName(name, existing) {
+            const base = String(name || 'Sheet').replace(/[:\\\/?*\[\]]/g, '_').slice(0, 31) || 'Sheet';
+            let candidate = base, suffix = 1;
+            while (existing.includes(candidate)) { const tail = `_${suffix++}`; candidate = `${base.slice(0, 31 - tail.length)}${tail}`; }
+            existing.push(candidate);
+            return candidate;
+        }
+
+        // ---- 엑셀: 요약 시트 + 탭별 근거 시트 ----
+        function buildExportWorkbook(results, sheets, mode) {
+            const wb = XLSX.utils.book_new();
+            const used = [];
+            const titleStyle = { font: { bold: true, sz: 14 } };
+            const headStyle = { font: { bold: true, color: { rgb: 'FFFFFFFF' } }, fill: { fgColor: { rgb: 'FF4338CA' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+            const subStyle = { font: { bold: true }, fill: { fgColor: { rgb: 'FFEEF2FF' } } };
+            const intFmt = '#,##0', decFmt = '#,##0.00', dateFmt = 'yyyy-mm-dd';
+
+            const sumAoa = [['기간 평균잔액 일괄 계산 결과'], [`계산 기간: ${PERIOD_LABELS[mode] || mode} · 작성: ${new Date().toLocaleString('ko-KR')}`], [], SUMMARY_HEADERS]
+                .concat(summaryRows(results, sheets));
+            const ws = XLSX.utils.aoa_to_sheet(sumAoa);
+            if (ws.A1) ws.A1.s = titleStyle;
+            SUMMARY_HEADERS.forEach((_, c) => { const a = XLSX.utils.encode_cell({ r: 3, c }); if (ws[a]) ws[a].s = headStyle; });
+            for (let r = 4; r < sumAoa.length; r++) {
+                [8, 9, 10, 11].forEach(c => { const a = XLSX.utils.encode_cell({ r, c }); if (ws[a] && ws[a].t === 'n') ws[a].s = { numFmt: intFmt }; });
+                const a = XLSX.utils.encode_cell({ r, c: 12 }); if (ws[a] && ws[a].t === 'n') ws[a].s = { numFmt: decFmt };
+                if (results[r - 4] && results[r - 4].isTotal) {
+                    for (let c = 0; c < SUMMARY_HEADERS.length; c++) { const b = XLSX.utils.encode_cell({ r, c }); if (ws[b]) ws[b].s = Object.assign({}, ws[b].s || {}, { font: { bold: true } }); }
+                }
+            }
+            ws['!cols'] = [6, 28, 24, 10, 14, 12, 12, 12, 7, 16, 16, 20, 18, 22, 7, 50].map(w => ({ wch: w }));
+            XLSX.utils.book_append_sheet(wb, ws, safeSheetName('요약', used));
+
+            sheets.forEach((sheet, sheetIndex) => {
+                const mine = results.filter(r => r.sheetIndex === sheetIndex && r.calc);
+                if (!mine.length) return;
+                const total = mine.find(r => r.isTotal);
+                const sections = mine.filter(r => !r.isTotal);
+                const aoa = [[`${sheet.company ? sheet.company + ' ' : ''}${sheet.accountName}${sheet.accountCode ? '(' + sheet.accountCode + ')' : ''} 계산 근거`],
+                    [`파일: ${sheet.fileName} · 시트: ${sheet.sheetName} · 이월잔액: ${fmt(sheet.initialBalance, 0)} · 검증: ${verifyText(sheet)}`], []];
+                const styleCells = [];
+                sections.forEach(res => {
+                    const c = res.calc;
+                    styleCells.push({ r: aoa.length, kind: 'section' });
+                    aoa.push([`[${res.label}] ${isoDate(c.start)} ~ ${isoDate(c.end)}`]);
+                    styleCells.push({ r: aoa.length, kind: 'head' });
+                    aoa.push(['날짜', '잔액', '잔액 유지일수', '잔액 누계 (적수)', '평균잔액']);
+                    c.details.forEach(d => { styleCells.push({ r: aoa.length, kind: 'detail' }); aoa.push([toExcelSerial(d.date), d.balance, d.days, d.product, null]); });
+                    styleCells.push({ r: aoa.length, kind: 'sub' });
+                    aoa.push(['소계', null, c.totalDays, c.sumProducts, c.average]);
+                    aoa.push([]);
+                });
+                if (total) {
+                    styleCells.push({ r: aoa.length, kind: 'sub' });
+                    aoa.push([`전체 ${isoDate(total.calc.start)} ~ ${isoDate(total.calc.end)}`, null, total.calc.totalDays, total.calc.sumProducts, total.calc.average]);
+                }
+                const dws = XLSX.utils.aoa_to_sheet(aoa);
+                if (dws.A1) dws.A1.s = titleStyle;
+                styleCells.forEach(({ r, kind }) => {
+                    for (let c = 0; c < 5; c++) {
+                        const a = XLSX.utils.encode_cell({ r, c });
+                        if (!dws[a]) continue;
+                        if (kind === 'head') dws[a].s = headStyle;
+                        else if (kind === 'section') dws[a].s = { font: { bold: true } };
+                        else if (kind === 'detail') dws[a].s = { numFmt: c === 0 ? dateFmt : intFmt };
+                        else if (kind === 'sub') dws[a].s = Object.assign({}, subStyle, c >= 1 ? { numFmt: c === 4 ? decFmt : intFmt } : {});
+                    }
+                });
+                dws['!cols'] = [{ wch: 26 }, { wch: 18 }, { wch: 14 }, { wch: 22 }, { wch: 18 }];
+                XLSX.utils.book_append_sheet(wb, dws, safeSheetName(`${sheetIndex + 1}_${sheet.accountName}`, used));
+            });
+            return wb;
+        }
+
+        // 테스트에서 화면 없이 계산 함수를 쓰도록 공개
+        window.BulkAvg = { analyzeSheet, analyzeWorkbook, computePeriod, buildPeriods, buildResults, summaryTSV, buildExportWorkbook, parseAmount, parseLedgerDate };
+
+        // ---- 화면 ----
+        const el = {
+            bulkBtn: document.getElementById('mode-bulk-btn'), pasteBtn: document.getElementById('mode-paste-btn'),
+            bulkMode: document.getElementById('bulk-mode'), pasteMode: document.getElementById('paste-mode'),
+            drop: document.getElementById('bulk-drop'), input: document.getElementById('bulk-file-input'),
+            status: document.getElementById('bulk-status'), controls: document.getElementById('bulk-controls'),
+            custom: document.getElementById('bulk-custom'), start: document.getElementById('bulk-start'), end: document.getElementById('bulk-end'),
+            apply: document.getElementById('bulk-apply-btn'), copy: document.getElementById('bulk-copy-btn'),
+            download: document.getElementById('bulk-download-btn'), clear: document.getElementById('bulk-clear-btn'),
+            summary: document.getElementById('bulk-summary'), detail: document.getElementById('bulk-detail')
+        };
+        if (Object.values(el).some(x => !x)) { console.error('[일괄계산] 화면 요소를 찾지 못해 일괄 계산 화면을 시작하지 않습니다.'); return; }
+        if (typeof XLSX === 'undefined') { el.status.className = 'bulk-status bulk-error'; el.status.textContent = '엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침하세요.'; return; }
+
+        const state = { sheets: [], fileKeys: [], mode: 'file', custom: null, results: [], selected: -1 };
+
+        function setStatus(text, kind) { el.status.className = `bulk-status bulk-${kind}`; el.status.textContent = text; }
+
+        function switchMode(toBulk) {
+            el.bulkMode.classList.toggle('hidden', !toBulk);
+            el.pasteMode.classList.toggle('hidden', toBulk);
+            el.bulkBtn.classList.toggle('mode-tab-active', toBulk);
+            el.pasteBtn.classList.toggle('mode-tab-active', !toBulk);
+        }
+        el.bulkBtn.addEventListener('click', () => switchMode(true));
+        el.pasteBtn.addEventListener('click', () => switchMode(false));
+
+        el.drop.addEventListener('click', () => el.input.click());
+        el.drop.addEventListener('dragover', e => { e.preventDefault(); el.drop.classList.add('bulk-drag-over'); });
+        el.drop.addEventListener('dragleave', () => el.drop.classList.remove('bulk-drag-over'));
+        el.drop.addEventListener('drop', e => {
+            e.preventDefault();
+            el.drop.classList.remove('bulk-drag-over');
+            handleFiles(e.dataTransfer && e.dataTransfer.files);
+        });
+        el.input.addEventListener('change', () => { handleFiles(el.input.files).finally(() => { el.input.value = ''; }); });
+
+        async function handleFiles(fileList) {
+            const files = fileList ? Array.from(fileList) : [];
+            if (!files.length) { setStatus('선택된 파일이 없습니다.', 'warn'); return; }
+            const messages = [];
+            let added = 0;
+            for (const file of files) {
+                const ext = (file.name.split('.').pop() || '').toLowerCase();
+                if (!['xls', 'xlsx'].includes(ext)) { messages.push(`${file.name}: 지원하지 않는 형식입니다 (.xls, .xlsx만 가능).`); continue; }
+                if (file.size === 0) { messages.push(`${file.name}: 빈 파일입니다.`); continue; }
+                const key = `${file.name}|${file.size}|${file.lastModified}`;
+                if (state.fileKeys.includes(key)) { messages.push(`${file.name}: 이미 추가된 파일이라 건너뜁니다.`); continue; }
+                setStatus(`${file.name} 읽는 중...`, 'info');
+                try {
+                    const buf = await file.arrayBuffer();
+                    const wb = XLSX.read(buf, { type: 'array' });
+                    if (!wb.SheetNames.length) { messages.push(`${file.name}: 시트가 없습니다.`); continue; }
+                    const sheets = analyzeWorkbook(wb, file.name);
+                    state.sheets.push(...sheets);
+                    state.fileKeys.push(key);
+                    added++;
+                    const bad = sheets.filter(s => s.errors.length).length;
+                    messages.push(`${file.name}: 시트 ${sheets.length}개 인식${bad ? ` (오류 ${bad}개)` : ''}`);
+                } catch (err) {
+                    console.error('[일괄계산] 파일 읽기 실패:', file.name, err);
+                    messages.push(`${file.name}: 읽기 실패 — 파일 형식이나 손상 여부를 확인하세요. (${err && err.message ? err.message : err})`);
+                }
+            }
+            if (state.sheets.length) {
+                prefillCustom();
+                recalc();
+            }
+            const kind = !added ? 'error' : messages.some(m => /실패|오류|지원하지|빈 파일|시트가 없|건너뜁/.test(m)) ? 'warn' : 'ok';
+            setStatus(messages.join('\n'), kind);
+        }
+
+        function prefillCustom() {
+            const ok = state.sheets.filter(s => s.filePeriod);
+            if (!ok.length || el.start.value || el.end.value) return;
+            el.start.value = isoDate(new Date(Math.min(...ok.map(s => s.filePeriod.start.getTime()))));
+            el.end.value = isoDate(new Date(Math.max(...ok.map(s => s.filePeriod.end.getTime()))));
+        }
+
+        document.querySelectorAll('input[name="bulk-period"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (!radio.checked) return;
+                el.custom.classList.toggle('hidden', radio.value !== 'custom');
+                if (radio.value === 'custom') { setStatus('기간을 입력하고 [적용]을 누르세요.', 'info'); return; }
+                state.mode = radio.value;
+                recalc();
+            });
+        });
+        el.apply.addEventListener('click', () => {
+            const s = el.start.value, e = el.end.value;
+            const sm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s), em = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e);
+            if (!sm || !em) { setStatus('시작일과 종료일을 모두 입력하세요.', 'error'); return; }
+            const start = utcDate(+sm[1], +sm[2], +sm[3]), end = utcDate(+em[1], +em[2], +em[3]);
+            if (start > end) { setStatus('시작일이 종료일보다 늦습니다.', 'error'); return; }
+            state.mode = 'custom';
+            state.custom = { start, end };
+            recalc();
+            setStatus(`직접 입력 기간 ${s} ~ ${e}로 계산했습니다.`, 'ok');
+        });
+
+        el.clear.addEventListener('click', () => {
+            state.sheets = []; state.fileKeys = []; state.results = []; state.selected = -1;
+            el.start.value = ''; el.end.value = '';
+            el.controls.classList.add('hidden'); el.summary.classList.add('hidden'); el.detail.classList.add('hidden');
+            el.summary.innerHTML = ''; el.detail.innerHTML = '';
+            setStatus('모두 지웠습니다.', 'info');
+        });
+
+        el.copy.addEventListener('click', async () => {
+            if (!state.results.length) { setStatus('복사할 결과가 없습니다.', 'warn'); return; }
+            const text = summaryTSV(state.results, state.sheets);
+            try {
+                await navigator.clipboard.writeText(text);
+                setStatus(`요약표 ${state.results.length}행을 복사했습니다. 엑셀에 붙여넣으세요.`, 'ok');
+            } catch (err) {
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (ok) setStatus(`요약표 ${state.results.length}행을 복사했습니다.`, 'ok');
+                else { console.error('[일괄계산] 복사 실패:', err); setStatus('복사하지 못했습니다. 엑셀 다운로드를 이용하세요.', 'error'); }
+            }
+        });
+
+        el.download.addEventListener('click', () => {
+            if (!state.results.length) { setStatus('내려받을 결과가 없습니다.', 'warn'); return; }
+            try {
+                const wb = buildExportWorkbook(state.results, state.sheets, state.mode);
+                const n = new Date(), p = v => String(v).padStart(2, '0');
+                XLSX.writeFile(wb, `평균잔액_일괄계산_${n.getFullYear()}${p(n.getMonth() + 1)}${p(n.getDate())}_${p(n.getHours())}${p(n.getMinutes())}.xlsx`);
+                setStatus('엑셀 파일을 만들었습니다. (요약 시트 + 탭별 근거 시트)', 'ok');
+            } catch (err) {
+                console.error('[일괄계산] 엑셀 생성 실패:', err);
+                setStatus(`엑셀 파일을 만들지 못했습니다: ${err && err.message ? err.message : err}`, 'error');
+            }
+        });
+
+        function recalc() {
+            if (state.mode === 'custom' && !state.custom) return;
+            state.results = buildResults(state.sheets, state.mode, state.custom);
+            state.selected = -1;
+            el.controls.classList.remove('hidden');
+            renderSummary();
+            el.detail.classList.add('hidden');
+            el.detail.innerHTML = '';
+        }
+
+        function badge(status) {
+            const cls = status === '정상' ? 'bulk-badge-ok' : status === '경고' ? 'bulk-badge-warn' : 'bulk-badge-error';
+            return `<span class="bulk-badge ${cls}">${esc(status)}</span>`;
+        }
+
+        function renderSummary() {
+            const multiFile = new Set(state.sheets.map(s => s.fileName)).size > 1;
+            let html = '<div class="overflow-auto max-h-[520px] rounded-md border"><table class="bulk-table"><thead><tr>';
+            // 화면은 자주 보는 평균잔액·상태를 앞쪽에 둠 (엑셀·복사는 SUMMARY_HEADERS 순서)
+            const heads = ['No', '회사명', '계정', '기간구분', '평균잔액', '상태', '기간', '일수', '기간초 잔액', '기간말 잔액', '적수합계', '검증'].concat(multiFile ? ['파일'] : []);
+            heads.forEach(h => { html += `<th>${esc(h)}</th>`; });
+            html += '</tr></thead><tbody>';
+            state.results.forEach((res, i) => {
+                const s = state.sheets[res.sheetIndex], c = res.calc;
+                const cls = ['bulk-row'].concat(res.isTotal ? ['bulk-row-total'] : [], i === state.selected ? ['bulk-row-selected'] : []).join(' ');
+                html += `<tr class="${cls}" data-index="${i}" title="${esc(res.notes.join('\n'))}">`;
+                html += `<td class="bulk-center">${i + 1}</td>`;
+                html += `<td>${esc(s.company)}</td><td>${esc(s.accountName)}${s.accountCode ? ` <span class="text-slate-400">(${esc(s.accountCode)})</span>` : ''}</td>`;
+                html += `<td class="bulk-center">${esc(res.label)}</td>`;
+                html += `<td class="bulk-num font-bold text-indigo-700">${c ? fmt(c.average, 2) : '-'}</td>`;
+                html += `<td class="bulk-center">${badge(res.status)}</td>`;
+                html += `<td class="bulk-center">${c ? `${isoDate(c.start)} ~ ${isoDate(c.end)}` : '-'}</td>`;
+                html += `<td class="bulk-num">${c ? fmt(c.totalDays, 0) : '-'}</td>`;
+                html += `<td class="bulk-num">${c ? fmt(c.startBalance, 0) : '-'}</td>`;
+                html += `<td class="bulk-num">${c ? fmt(c.endBalance, 0) : '-'}</td>`;
+                html += `<td class="bulk-num">${c ? fmt(c.sumProducts, 0) : '-'}</td>`;
+                html += `<td class="bulk-center">${esc(verifyText(s))}</td>`;
+                if (multiFile) html += `<td>${esc(s.fileName)}</td>`;
+                html += '</tr>';
+            });
+            html += '</tbody></table></div><p class="text-xs text-slate-500 mt-2">행을 클릭하면 아래에 계산 근거와 확인 메시지가 나옵니다.</p>';
+            el.summary.innerHTML = html;
+            el.summary.classList.remove('hidden');
+            el.summary.querySelectorAll('tr.bulk-row').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    state.selected = Number(tr.dataset.index);
+                    el.summary.querySelectorAll('tr.bulk-row').forEach(x => x.classList.toggle('bulk-row-selected', x === tr));
+                    renderDetail();
+                });
+            });
+        }
+
+        function renderDetail() {
+            const res = state.results[state.selected];
+            if (!res) return;
+            const s = state.sheets[res.sheetIndex], c = res.calc;
+            let html = '<div class="border rounded-lg p-4 space-y-3 bg-white">';
+            html += `<h3 class="font-bold text-slate-800">${esc(s.accountName)} ${s.accountCode ? `(${esc(s.accountCode)})` : ''} · ${esc(res.label)}</h3>`;
+            html += `<p class="text-sm text-slate-600">파일 ${esc(s.fileName)} · 시트 ${esc(s.sheetName)} · 양식 ${esc(s.format)} · 제목행 ${s.headerRow || '-'} · 이월행 ${s.openingRow || '-'} · 이월잔액 ${fmt(s.initialBalance, 0)} · 잔액 방향 ${esc(s.check.direction || '-')} · 빈 잔액(0 처리) ${s.check.blankBalance}행</p>`;
+            if (res.notes.length) html += `<ul class="text-sm list-disc pl-5 ${res.status === '오류' ? 'text-red-700' : 'text-amber-700'}">${res.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+            if (c) {
+                html += '<div class="overflow-auto max-h-[420px] rounded-md border"><table class="bulk-table"><thead><tr><th>날짜</th><th>잔액</th><th>잔액 유지일수</th><th>잔액 누계 (적수)</th></tr></thead><tbody>';
+                c.details.forEach(d => { html += `<tr><td class="bulk-center">${isoDate(d.date)}</td><td class="bulk-num">${fmt(d.balance, 0)}</td><td class="bulk-num">${fmt(d.days, 0)}</td><td class="bulk-num">${fmt(d.product, 0)}</td></tr>`; });
+                html += `<tr class="bulk-row-total"><td class="bulk-center">합계</td><td class="bulk-num">평균 ${fmt(c.average, 2)}</td><td class="bulk-num">${fmt(c.totalDays, 0)}</td><td class="bulk-num">${fmt(c.sumProducts, 0)}</td></tr>`;
+                html += '</tbody></table></div>';
+            }
+            html += '</div>';
+            el.detail.innerHTML = html;
+            el.detail.classList.remove('hidden');
+        }
+
+        setStatus('계정별원장 파일을 올리면 모든 탭의 평균잔액을 한 번에 계산합니다. (기존 방식은 위의 [붙여넣기] 탭)', 'info');
+    })();
     </script>
 </body>
 </html>
