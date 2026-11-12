@@ -55,6 +55,203 @@
         let savedRules = { info: { company: '', year: '', month: '', w_dept: '', w_title: '', w_name: '', w_phone: '', w_email: '', c_dept: '', c_title: '', c_name: '', c_phone: '', c_email: '' }, bs: {}, is: {} };
         let currentProcess = 'BS'; let templateArrayBuffer = null; let internalData = []; let previewLimit = 25; let tutorialPhase = 0; let selectedCols = { account: null, left: null, right: null }; let extractedAccounts = []; let finalBsMapping = []; let finalIsMapping = []; let renderToken = 0; let preparedExcelBlob = null; let preparedJsonText = '';
         const PROCESS_BATCH_SIZE = 200; const RENDER_BATCH_SIZE = 40;
+        // 금감원 양식 합계 수식 보정표 (2026-11-12, 기본 템플릿 기준). [행, A열 계정명, 보정 수식]. A열이 다르면 적용하지 않음.
+        const FORMULA_FIXES = {
+            GA023: [
+                [33, "3) 투자자예탁금별도예치금(신탁)", "SUM(B34:B36)"],
+                [84, "8) 외화증권", "SUM(B85:B87)"],
+                [105, "5. 파생결합증권", "SUM(B106:B110)"],
+                [111, "6. 대손충당금(-)", "B112"],
+                [114, "1. 이자율관련", "SUM(B115:B117)"],
+                [118, "2. 통화관련", "SUM(B119:B121)"],
+                [122, "3. 주식관련", "SUM(B123:B125)"],
+                [126, "4. 신용관련", "SUM(B127:B129)"],
+                [130, "5. 상품관련", "SUM(B131:B133)"],
+                [142, "2. 신용공여금", "SUM(B143:B147)"],
+                [149, "4. 대여금", "SUM(B150:B152)"],
+                [157, "9. 대지급금", "SUM(B158:B162)"],
+                [169, "16. 대손충당금(-)", "SUM(B170:B184)"],
+                [185, "Ⅴ. 유형자산", "B187+B188+B189+B190+B191+B192+B193+B194+B195-B196-B202-B203"],
+                [196, "10. 감가상각누계액(-)", "SUM(B198:B201)+B197"],
+                [204, "Ⅵ. CMA운용자산(종금계정)", "SUM(B205:B209)"],
+                [210, "Ⅶ. 리스자산(종금계정)", "SUM(B211:B213)"],
+                [246, "2) 미수이자", "SUM(B247:B250)"],
+                [266, "8. 선물자기거래정산차금", "B267+B268"],
+                [269, "9. 보증금", "B272+B274+B270+B271+B273"],
+                [275, "10. 투자부동산", "SUM(B277:B279)"],
+                [280, "11. 손해배상공동기금", "SUM(B281:B283)"],
+                [284, "12. 무형자산", "B288+B289+B286+B287+B290"],
+                [295, "17. 대손충당금(-)", "B296+B297+B301+B302"],
+                [297, "2) 미수수익대손충당금", "SUM(B298:B300)"],
+                [306, "1. 투자자예수금", "SUM(B307:B313)"],
+                [314, "2. 수입담보금", "SUM(B315:B318)"],
+                [322, "Ⅱ. 차입부채", "B325+B326+B332+B333+B339+B345+B349+B351+B352+B353+B354"],
+                [326, "2. 차입금", "SUM(B327:B331)"],
+                [333, "4. 매도증권", "SUM(B334:B338)"],
+                [339, "5. 매도파생결합증권", "SUM(B340:B344)"],
+                [345, "6. 사채", "B347+B348"],
+                [355, "Ⅲ. 파생상품부채", "B356+B360+B364+B368+B372+B376+B377+B378"],
+                [356, "1. 이자율관련", "SUM(B357:B359)"],
+                [360, "2. 통화관련", "SUM(B361:B363)"],
+                [364, "3. 주식관련", "SUM(B365:B367)"],
+                [368, "4. 신용관련", "SUM(B369:B371)"],
+                [372, "5. 상품관련", "SUM(B373:B375)"],
+                [382, "1. 퇴직급여부채", "B383+B384+B385+B386"],
+                [386, "4) 사외적립자산(-)", "B387+B388"],
+                [406, "13. 선물자기거래 정산차금", "B407+B408"],
+                [415, "Ⅴ. 요구불상환지분", "B416+B417"],
+                [422, "자본총계", "B423+B429+B434+B441+B462"],
+                [423, "Ⅰ. 자본금", "B424+B425"],
+                [425, "2. 우선주자본금", "SUM(B426:B428)"],
+                [429, "Ⅱ. 자본잉여금", "SUM(B430:B433)"],
+            ],
+            GA025: [
+                [13, "1. 수수료수익", "B14+B26+B27+B30+B34+B38+B39+B44+B48+B56+B60+B65+B66+B67+B68+B69+B23"],
+                [14, "1) 수탁수수료", "SUM(B15:B22)"],
+                [23, "2) 인수 및 주선수수료", "B24+B25"],
+                [27, "4) 집합투자증권취급수수료", "B28+B29"],
+                [39, "8) 매수및합병수수료", "SUM(B40:B43)"],
+                [44, "9) 파생결합증권판매수수료", "SUM(B45:B47)"],
+                [48, "10) 신탁보수", "SUM(B49:B55)"],
+                [56, "11) 온라인소액투자중개 수수료", "SUM(B57:B59)"],
+                [60, "12) 채무보증 관련 수수료", "SUM(B61:B64)"],
+                [92, "4) 상각후원가측정증권처분이익", "SUM(B93:B95)"],
+                [96, "5) 증권 대손충당금환입액", "B97+B98"],
+                [99, "6) 매도증권평가이익", "SUM(B100:B102)"],
+                [103, "7) 파생결합증권처분이익", "SUM(B104:B106)"],
+                [107, "8) 파생결합증권평가이익", "SUM(B108:B110)"],
+                [111, "9) 파생결합증권상환이익", "SUM(B112:B114)"],
+                [115, "10) 매도파생결합증권평가이익", "SUM(B116:B118)"],
+                [119, "11) 매도파생결합증권상환이익", "SUM(B120:B122)"],
+                [123, "3. 파생상품 관련 이익", "B124+B131"],
+                [124, "1) 파생상품거래이익", "SUM(B125:B130)"],
+                [131, "2) 파생상품평가이익", "SUM(B132:B137)"],
+                [164, "5.대출채권 관련 이익", "SUM(B165:B168)"],
+                [177, "5) CMA운용수익(종금계정)", "B178+B179"],
+                [181, "7) 리스수익(종금계정)", "SUM(B182:B185)"],
+                [188, "10) 충당금환입액", "SUM(B189:B192)"],
+                [201, "8. 기타당기손익-공정가치측정금융상품 관련 이익", "B202+B205+B208+B212+B216"],
+                [202, "1) 기타금융자산처분이익", "B203+B204"],
+                [205, "2) 기타금융자산평가이익", "B206+B207"],
+                [208, "3) 기타금융부채처분이익", "SUM(B209:B211)"],
+                [212, "4) 기타금융부채평가이익", "SUM(B213:B215)"],
+                [218, "1. 수수료비용", "B219+B223+B224+B225+B226+B228+B227+B222"],
+                [229, "2. 증권평가 및 처분손실", "B230+B238+B245+B251+B255+B258+B262+B266+B270+B274+B278"],
+                [238, "2) 당기손익-공정가치측정증권평가손실", "B239+B240+B241+B242+B243+B244"],
+                [251, "4) 상각후원가측정증권처분손실", "SUM(B252:B254)"],
+                [255, "5) 증권 대손충당금전입액", "B256+B257"],
+                [258, "6) 매도증권평가손실", "SUM(B259:B261)"],
+                [262, "7) 파생결합증권처분손실", "SUM(B263:B265)"],
+                [266, "8) 파생결합증권평가손실", "SUM(B267:B269)"],
+                [270, "9) 파생결합증권상환손실", "SUM(B271:B273)"],
+                [274, "10) 매도파생결합증권평가손실", "SUM(B275:B277)"],
+                [278, "11) 매도파생결합증권상환손실", "SUM(B279:B281)"],
+                [282, "3. 파생상품 관련 손실", "B283+B290+B297"],
+                [283, "1) 파생상품거래손실", "SUM(B284:B289)"],
+                [290, "2) 파생상품평가손실", "SUM(B291:B296)"],
+                [298, "4. 이자비용", "B299+B303+B304+B305+B306+B307+B308+B309+B310+B311+B312+B313+B314+B315"],
+                [299, "1) 차입금이자", "SUM(B300:B302)"],
+                [316, "5. 대출채권 관련 손실", "SUM(B317:B320)"],
+                [324, "7. 판매비와관리비", "B325+B328+B335+B336+B337+B338+B339+B340+B341+B342+B343+B344+B345+B346+B351+B352+B353+B354+B355+B356+B357+B358+B359+B347+B348+B349+B350"],
+                [360, "8. 기타의 영업비용", "B361+B362+B368+B369+B370+B376+B377+B378+B379+B380+B382+B381"],
+                [362, "2) 리스비용(종금계정)", "SUM(B363:B367)"],
+                [383, "9. 기타당기손익-공정가치측정금융상품 관련 손실", "B384+B387+B390+B394+B398"],
+                [384, "1) 기타금융자산처분손실", "B385+B386"],
+                [387, "2) 기타금융자산평가손실", "B388+B389"],
+                [390, "3) 기타금융부채처분손실", "SUM(B391:B393)"],
+                [394, "4) 기타금융부채평가손실", "SUM(B395:B397)"],
+            ],
+        };
+        const DATA_HEADER_ROW = 11; const DATA_START_ROW = 12;
+        const normalizeLabel = (text) => String(text ?? '').replace(/\s+/g, '');
+        function getCellText(cell) { const v = cell.value; if (v && typeof v === 'object' && Array.isArray(v.richText)) return v.richText.map(t => t.text).join(''); if (v && typeof v === 'object' && 'result' in v) return String(v.result ?? ''); return v === null || v === undefined ? '' : String(v); }
+        function isFormulaCell(cell) { const v = cell.value; return !!(v && typeof v === 'object' && ('formula' in v || 'sharedFormula' in v)); }
+        // 하위가 있는 상위 행에만 합계 수식을 보정한다. 템플릿 A열 계정명이 보정표와 다르면 건너뛰고 기록한다.
+        function applyFormulaFixes(sheet, sheetKey, report) {
+            (FORMULA_FIXES[sheetKey] || []).forEach(([rowNumber, label, formula]) => {
+                const actual = getCellText(sheet.getCell(`A${rowNumber}`));
+                if (normalizeLabel(actual) !== normalizeLabel(label)) { report.skipped.push(`${sheetKey} ${rowNumber}행 (예상: ${label} / 실제: ${actual.trim() || '빈칸'})`); return; }
+                sheet.getCell(`B${rowNumber}`).value = { formula };
+                report.applied++;
+            });
+        }
+        // 데이터 영역 B열 중 수식이 없는 입력 칸을 0으로 초기화하고, 수식 칸의 이전 계산값(캐시)은 지운다.
+        function resetInputCells(sheet, sheetKey, report) {
+            if (normalizeLabel(getCellText(sheet.getCell(`A${DATA_HEADER_ROW}`))) !== '계정명') { report.skipped.push(`${sheetKey} A${DATA_HEADER_ROW}이 '계정명'이 아니어서 0 초기화를 하지 않음`); return; }
+            for (let rowNumber = DATA_START_ROW; rowNumber <= sheet.rowCount; rowNumber++) {
+                const cell = sheet.getCell(`B${rowNumber}`);
+                if (isFormulaCell(cell)) { if ('formula' in cell.value) cell.value = { formula: cell.value.formula }; continue; }
+                const hasLabel = getCellText(sheet.getCell(`A${rowNumber}`)).trim() !== '';
+                const hasValue = cell.value !== null && cell.value !== undefined && cell.value !== '';
+                if (hasLabel || hasValue) cell.value = 0;
+            }
+        }
+        function collectRowSums(mappingData) { const rowSums = {}; mappingData.forEach(acc => acc.splits.forEach(sp => { const rowNumber = parseInt(sp.targetRow, 10); if (!Number.isFinite(rowNumber) || rowNumber <= 0) return; rowSums[rowNumber] = (rowSums[rowNumber] || 0) + (Number(sp.amount) || 0); })); return rowSums; }
+        function findFormulaTargets(sheet, rowSums, sheetTitle) { if (!sheet) return []; return Object.keys(rowSums).filter(rowNumber => isFormulaCell(sheet.getCell(`B${rowNumber}`))).map(rowNumber => `${sheetTitle} B${rowNumber} ${getCellText(sheet.getCell(`A${rowNumber}`)).trim()}`); }
+        const escapeHtml = (text) => String(text ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        // 수식 문자열을 [행, 부호] 목록으로 바꾼다. 예: "B13+B55-B196" → [[13,1],[55,1],[196,-1]]. 다른 시트 참조는 무시.
+        function parseFormulaTerms(formula) {
+            if (!formula || String(formula).includes('!')) return [];
+            const expanded = String(formula).replace(/\s+/g, '').replace(/([+\-]?)SUM\(B(\d+):B(\d+)\)/gi, (m, sign, from, to) => { const parts = []; for (let r = Number(from); r <= Number(to); r++) parts.push(`${sign === '-' ? '-' : '+'}B${r}`); return parts.join(''); });
+            const terms = []; const re = /([+\-]*)B(\d+)/g; let m;
+            while ((m = re.exec(expanded)) !== null) terms.push([Number(m[2]), ((m[1].match(/-/g) || []).length % 2) ? -1 : 1]);
+            return terms;
+        }
+        // 템플릿(+합계 수식 보정표)의 행 정보: 계정명, 합계 행 여부, 상위 행. 매핑 화면 안내와 최종 확인에 사용.
+        let templateRowInfoCache = { buffer: null, info: {} };
+        function getTemplateRowInfo(processKey) {
+            if (!templateArrayBuffer) return null;
+            if (templateRowInfoCache.buffer !== templateArrayBuffer) {
+                templateRowInfoCache = { buffer: templateArrayBuffer, info: {} };
+                try {
+                    const wb = XLSX.read(new Uint8Array(templateArrayBuffer), { type: 'array', cellFormula: true });
+                    [['BS', 'GA023', '재무'], ['IS', 'GA025', '손익']].forEach(([key, code, word]) => {
+                        const name = wb.SheetNames.find(n => n.includes(code)) || wb.SheetNames.find(n => n.includes(word)); if (!name || !wb.Sheets[name]['!ref']) return;
+                        const sheet = wb.Sheets[name]; const lastRow = XLSX.utils.decode_range(sheet['!ref']).e.r + 1; const rows = {};
+                        for (let r = DATA_START_ROW; r <= lastRow; r++) { const a = sheet[`A${r}`]; const b = sheet[`B${r}`]; rows[r] = { label: a ? String(a.v ?? '').trim() : '', formula: b && b.f ? String(b.f) : null }; }
+                        (FORMULA_FIXES[code] || []).forEach(([r, label, formula]) => { if (rows[r] && normalizeLabel(rows[r].label) === normalizeLabel(label)) rows[r].formula = formula; });
+                        const parentOf = {}; Object.entries(rows).forEach(([r, row]) => parseFormulaTerms(row.formula).forEach(([child, sign]) => { if (!(child in parentOf)) parentOf[child] = [Number(r), sign]; }));
+                        templateRowInfoCache.info[key] = { rows, parentOf };
+                    });
+                } catch (error) { console.error('템플릿 행 정보를 읽지 못했습니다.', error); }
+            }
+            return templateRowInfoCache.info[processKey] || null;
+        }
+        // (-) 차감 항목이면 이 양식에서 입력해야 하는 부호(+1 양수 / -1 음수), 아니면 0.
+        // 가장 가까운 '차감 아닌' 상위 합계에서 이 행이 더해지면(+) 음수 입력, 빼지면(-) 양수 입력.
+        function expectedInputSign(info, rowNumber) {
+            const isDeduction = (r) => { for (let cur = r, guard = 0; cur && guard < 50; guard++) { if ((info.rows[cur]?.label || '').includes('(-)')) return true; cur = info.parentOf[cur]?.[0]; } return false; };
+            if (!isDeduction(rowNumber)) return 0;
+            let coef = 1; let cur = rowNumber;
+            for (let guard = 0; guard < 50; guard++) { const parent = info.parentOf[cur]; if (!parent) return 0; coef *= parent[1]; cur = parent[0]; if (!isDeduction(cur)) return -coef; }
+            return 0;
+        }
+        function describeTarget(processKey, targetRow, amount) {
+            const result = { label: '', isSum: false, missing: false, signMessage: '' }; const info = getTemplateRowInfo(processKey); const rowNumber = parseInt(targetRow, 10);
+            if (!info || !Number.isFinite(rowNumber)) return result;
+            const row = info.rows[rowNumber]; if (!row || !row.label) { result.missing = true; return result; }
+            result.label = row.label; result.isSum = !!row.formula;
+            const expected = expectedInputSign(info, rowNumber); const amt = Number(amount) || 0;
+            if (expected !== 0 && amt !== 0 && Math.sign(amt) !== expected) result.signMessage = `차감 항목이라 ${expected < 0 ? '음수(△)' : '양수'}로 입력해야 합니다`;
+            return result;
+        }
+        function collectMappingIssues(processKey, mappingData, sheetTitle) {
+            const issues = [];
+            mappingData.forEach(acc => acc.splits.forEach(sp => { const d = describeTarget(processKey, sp.targetRow, sp.amount); if (d.missing) issues.push(`${sheetTitle} B${sp.targetRow} (양식에 없는 행) ← ${acc.name} ${formatNum(sp.amount)}`); else if (d.signMessage) issues.push(`${sheetTitle} B${sp.targetRow} ${d.label} ← ${acc.name} ${formatNum(sp.amount)} : ${d.signMessage}`); }));
+            return issues;
+        }
+        // ExcelJS는 읽을 때 _x000D_를 CR로 풀지만 저장할 때 다시 바꾸지 않아 엑셀에서 CR이 사라진다. 저장 직전에 되돌린다.
+        function encodeCarriageReturns(workbook) {
+            let count = 0;
+            workbook.eachSheet(sheet => sheet.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: false }, cell => {
+                if (cell.isMerged && cell.master !== cell) return;
+                const v = cell.value;
+                if (typeof v === 'string' && v.includes('\r')) { cell.value = v.replace(/\r/g, '_x000D_'); count++; }
+                else if (v && typeof v === 'object' && Array.isArray(v.richText) && v.richText.some(t => String(t.text ?? '').includes('\r'))) { cell.value = { richText: v.richText.map(t => ({ ...t, text: String(t.text ?? '').replace(/\r/g, '_x000D_') })) }; count++; }
+            })));
+            return count;
+        }
+        function writeRowSums(sheet, rowSums) { Object.entries(rowSums).forEach(([rowNumber, sumVal]) => { sheet.getCell(`B${rowNumber}`).value = sumVal; }); }
         const formatNum = (num) => Number(num).toLocaleString('ko-KR');
         const getRawNum = (num) => {
             if (num === null || num === undefined || num === '') return 0;
@@ -155,11 +352,21 @@
             for (let i = 1; i < internalData.length; i++) { const row = internalData[i]; const rawAccountName = row[selectedCols.account]; if (shouldExcludeAccount(rawAccountName)) continue; const valLeft = getRawNum(row[selectedCols.left]); const valRight = selectedCols.right !== null ? getRawNum(row[selectedCols.right]) : 0; if (valLeft === 0 && valRight === 0) continue; const finalAmount = (valLeft !== 0) ? valLeft : valRight; const accCode = getAccountCode(rawAccountName); const savedSplitEntries = accCode ? normalizeSavedSplitEntries(activeRules[accCode], finalAmount) : null; const splitsArray = savedSplitEntries && savedSplitEntries.length > 0 ? savedSplitEntries : [{ id: `s_${Date.now()}_${i}`, amount: finalAmount, targetRow: '' }]; extractedAccounts.push({ id: `acc_${i}`, rawName: String(rawAccountName).trim(), name: cleanAccountName(rawAccountName), baseAmount: finalAmount, splits: splitsArray }); if (i % PROCESS_BATCH_SIZE === 0) { setAppStatus(`학습 규칙 적용 중... ${i.toLocaleString('ko-KR')} / ${Math.max(internalData.length - 1, 0).toLocaleString('ko-KR')} 행 처리`); await waitForPaint(); } }
             setAppStatus(`매핑 화면을 준비하는 중입니다... ${extractedAccounts.length.toLocaleString('ko-KR')}개 계정`); document.getElementById('step2').classList.add('hidden'); document.getElementById('step3').classList.remove('hidden'); await renderMappingTable(); btnConfirm.disabled = false; clearAppStatus();
         }
+        // 매핑 행 번호 아래에 양식 계정명과 경고(합계 행 / 없는 행 / 차감 항목 부호)를 보여준다.
+        function buildTargetHint(sp) {
+            if (!sp.targetRow || String(sp.targetRow).trim() === '') return '';
+            const d = describeTarget(currentProcess, sp.targetRow, sp.amount); const warnings = [];
+            if (d.missing) warnings.push('양식에 없는 행 번호입니다');
+            if (d.isSum) warnings.push('합계 행입니다. 하위 행 번호로 매핑하세요');
+            if (d.signMessage) warnings.push(d.signMessage);
+            if (!d.label && warnings.length === 0) return '';
+            return `<div class="text-xs ml-8 ${warnings.length ? 'text-red-600 font-bold' : 'text-gray-500'}">→ ${escapeHtml(d.label || '')}${warnings.map(w => ` · ${escapeHtml(w)}`).join('')}</div>`;
+        }
         function buildAccountRow(acc, index) {
             const tr = document.createElement('tr'); tr.id = `acc_row_${index}`; tr.className = 'hover:bg-blue-50/30 transition border-b';
             const currentSum = acc.splits.reduce((sum, sp) => sum + sp.amount, 0); const isSumValid = currentSum === acc.baseAmount; const isFullyMapped = acc.splits.every(sp => sp.targetRow && String(sp.targetRow).trim() !== ''); const isSplit = acc.splits.length > 1;
             const splitWrapperClass = isSplit ? 'space-y-2 p-2 bg-pink-50 border border-pink-300 rounded-md shadow-sm' : 'space-y-2'; let splitsHtml = `<div class="${splitWrapperClass}">`; if (isSplit) splitsHtml += '<div class="text-xs text-pink-600 font-bold mb-1">주의: 분할된 항목입니다. 금액을 올바르게 배분해주세요.</div>';
-            acc.splits.forEach((sp, sIdx) => { const borderClass = isSumValid ? (isSplit ? 'border-pink-200' : 'border-gray-200') : 'border-red-400'; splitsHtml += `<div class="flex items-center space-x-2 bg-white p-1.5 rounded border ${borderClass}"><span class="text-xs text-gray-500 w-6 text-center">${sIdx + 1}.</span><input type="text" value="${formatNum(sp.amount)}" class="w-28 text-right font-mono text-sm border-b focus:border-blue-500 outline-none" onchange="updateSplitData('${index}', '${sIdx}', 'amount', this.value)" placeholder="금액"><span class="text-xs text-gray-400">원</span><div class="flex items-center bg-gray-50 rounded px-1 border"><span class="text-xs font-bold text-gray-400 mr-1">B</span><input type="number" value="${sp.targetRow}" class="w-16 text-center text-sm outline-none bg-transparent" onchange="updateSplitData('${index}', '${sIdx}', 'targetRow', this.value)" placeholder="행 입력"></div>${sIdx === 0 ? `<button class="text-blue-500 hover:bg-blue-100 p-1 rounded transition text-xs font-bold" onclick="addSplit('${index}')" title="금액 나누기">나누기</button>` : `<button class="text-red-500 hover:bg-red-100 p-1 rounded transition text-xs font-bold" onclick="removeSplit('${index}', '${sIdx}')" title="삭제">삭제</button>`}</div>`; });
+            acc.splits.forEach((sp, sIdx) => { const borderClass = isSumValid ? (isSplit ? 'border-pink-200' : 'border-gray-200') : 'border-red-400'; splitsHtml += `<div class="flex items-center space-x-2 bg-white p-1.5 rounded border ${borderClass}"><span class="text-xs text-gray-500 w-6 text-center">${sIdx + 1}.</span><input type="text" value="${formatNum(sp.amount)}" class="w-28 text-right font-mono text-sm border-b focus:border-blue-500 outline-none" onchange="updateSplitData('${index}', '${sIdx}', 'amount', this.value)" placeholder="금액"><span class="text-xs text-gray-400">원</span><div class="flex items-center bg-gray-50 rounded px-1 border"><span class="text-xs font-bold text-gray-400 mr-1">B</span><input type="number" value="${sp.targetRow}" class="w-16 text-center text-sm outline-none bg-transparent" onchange="updateSplitData('${index}', '${sIdx}', 'targetRow', this.value)" placeholder="행 입력"></div>${sIdx === 0 ? `<button class="text-blue-500 hover:bg-blue-100 p-1 rounded transition text-xs font-bold" onclick="addSplit('${index}')" title="금액 나누기">나누기</button>` : `<button class="text-red-500 hover:bg-red-100 p-1 rounded transition text-xs font-bold" onclick="removeSplit('${index}', '${sIdx}')" title="삭제">삭제</button>`}</div>${buildTargetHint(sp)}`; });
             if (!isSumValid) splitsHtml += `<div class="text-xs text-red-500 font-bold mt-1">합계 불일치! (분할 합계: ${formatNum(currentSum)} / 원본: ${formatNum(acc.baseAmount)})</div>`; splitsHtml += '</div>';
             tr.innerHTML = `<td class="p-3 text-center align-top"><span class="text-xl">${isFullyMapped ? '●' : '○'}</span></td><td class="p-3 align-top"><div class="text-xs text-gray-400">${acc.rawName}</div><div class="font-bold text-gray-800 text-sm mt-1">${acc.name}</div></td><td class="p-3 text-right text-gray-700 font-mono cursor-pointer hover:bg-gray-100 hover:text-blue-600 transition group" ondblclick="enableEdit('${index}', 'baseAmount', this)">${formatNum(acc.baseAmount)} <span class="hidden group-hover:inline text-xs text-blue-400 ml-1">수정</span></td><td class="p-3 align-top bg-yellow-50/20">${splitsHtml}</td>`;
             return tr;
@@ -189,8 +396,24 @@
                 const a5Text = `회사 : ${info.company}   기준년월(일) : ${info.year}년 ${info.month}월`; const a7Text = `작성자 정보   소속 : ${info.w_dept}   직위 : ${info.w_title}   성명 : ${info.w_name}   전화번호 : ${info.w_phone}   이메일 : ${info.w_email}`; const a8Text = `확인자 정보   소속 : ${info.c_dept}   직위 : ${info.c_title}   성명 : ${info.c_name}   전화번호 : ${info.c_phone}   이메일 : ${info.c_email}`;
                 workbook.eachSheet(sheet => { sheet.getCell('A5').value = a5Text; sheet.getCell('A7').value = a7Text; sheet.getCell('A8').value = a8Text; });
                 let bsSheet = null, isSheet = null; workbook.eachSheet(sheet => { if (sheet.name.includes('GA023') || sheet.name.includes('재무')) bsSheet = sheet; if (sheet.name.includes('GA025') || sheet.name.includes('손익')) isSheet = sheet; });
-                const applyMappingToSheet = (mappingData, sheet, savedRuleMap) => { const rowSums = {}; const activeCodes = new Set(); const addRowAmount = (targetRow, amount) => { const rowNumber = parseInt(targetRow, 10); if (!Number.isFinite(rowNumber) || rowNumber <= 0) return; if (!rowSums[rowNumber]) rowSums[rowNumber] = 0; rowSums[rowNumber] += Number(amount) || 0; }; mappingData.forEach(acc => { const code = getAccountCode(acc.rawName); if (code) activeCodes.add(code); acc.splits.forEach(sp => addRowAmount(sp.targetRow, sp.amount)); }); Object.entries(savedRuleMap || {}).forEach(([code, savedEntry]) => { if (activeCodes.has(code) || !Array.isArray(savedEntry)) return; savedEntry.forEach(entry => addRowAmount(typeof entry === 'object' && entry !== null ? entry.targetRow : entry, 0)); }); Object.entries(rowSums).forEach(([rowNumber, sumVal]) => { sheet.getCell(`B${rowNumber}`).value = sumVal; }); };
-                if (bsSheet) applyMappingToSheet(finalBsMapping, bsSheet, savedRules.bs); if (isSheet) applyMappingToSheet(finalIsMapping, isSheet, savedRules.is);
+                // 1) 합계 수식 보정 → 2) 입력 칸 0 초기화(이전 값 제거) → 3) 수식 칸 매핑 확인 → 4) 이번 달 매핑 기록
+                const fixReport = { applied: 0, skipped: [] };
+                if (bsSheet) { applyFormulaFixes(bsSheet, 'GA023', fixReport); resetInputCells(bsSheet, 'GA023', fixReport); }
+                if (isSheet) { applyFormulaFixes(isSheet, 'GA025', fixReport); resetInputCells(isSheet, 'GA025', fixReport); }
+                const bsRowSums = collectRowSums(finalBsMapping); const isRowSums = collectRowSums(finalIsMapping);
+                const formulaTargets = [...findFormulaTargets(bsSheet, bsRowSums, '재무'), ...findFormulaTargets(isSheet, isRowSums, '손익')];
+                const mappingIssues = [...collectMappingIssues('BS', finalBsMapping, '재무'), ...collectMappingIssues('IS', finalIsMapping, '손익')];
+                if (formulaTargets.length > 0 || mappingIssues.length > 0) {
+                    let message = '매핑을 확인해주세요.\n';
+                    if (formulaTargets.length > 0) message += `\n[합계 행에 직접 매핑] 계속하면 합계 수식이 금액으로 바뀝니다. 하위 행으로 매핑을 바꾸는 것을 권장합니다.\n${formulaTargets.join('\n')}\n`;
+                    if (mappingIssues.length > 0) message += `\n[행 번호·부호 확인]\n${mappingIssues.join('\n')}\n`;
+                    if (!confirm(`${message}\n그대로 진행할까요?`)) { btn.innerHTML = '최종 파일 다시 준비'; btn.disabled = false; clearAppStatus(); return; }
+                }
+                if (bsSheet) writeRowSums(bsSheet, bsRowSums); if (isSheet) writeRowSums(isSheet, isRowSums);
+                workbook.calcProperties = workbook.calcProperties || {}; workbook.calcProperties.fullCalcOnLoad = true;
+                console.info(`합계 수식 보정 ${fixReport.applied}건 적용`, fixReport.skipped);
+                if (fixReport.skipped.length > 0) alert(`템플릿 구조가 예상과 달라 일부 보정을 건너뛰었습니다. 결과 엑셀의 합계를 직접 확인해주세요.\n\n${fixReport.skipped.slice(0, 15).join('\n')}${fixReport.skipped.length > 15 ? `\n외 ${fixReport.skipped.length - 15}건` : ''}`);
+                encodeCarriageReturns(workbook);
                 setAppStatus('엑셀 파일을 생성하는 중입니다...'); await waitForPaint(); const buffer = await workbook.xlsx.writeBuffer(); preparedExcelBlob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); preparedJsonText = JSON.stringify(savedRules, null, 2);
                 btn.innerHTML = '최종 파일 다시 준비'; btn.disabled = false; updateDownloadButtons(false); document.getElementById('step3').classList.add('hidden'); document.getElementById('step4').classList.remove('hidden'); clearAppStatus(); window.scrollTo(0, 0);
             } catch (error) { console.error(error); document.getElementById('btnNextPhase').disabled = false; clearAppStatus(); alert('엑셀 처리 중 오류가 발생했습니다.'); }
