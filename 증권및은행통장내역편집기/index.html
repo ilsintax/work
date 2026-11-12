@@ -122,6 +122,8 @@
     <div class="bb-dict" id="bb-dict">
       <span id="bb-dict-info"></span>
       <span class="bb-actions">
+        <button class="bb-btn secondary small" id="bb-dict-link" hidden title="로컬에서 열었을 때만: 프로젝트의 dictionary 폴더를 한 번 고르면, 이후 '사전에 반영'이 그 폴더의 institutions.js 에 바로 저장됩니다(이전 사전은 dictionary/_backup 에 백업).">프로젝트 사전 폴더 연결</button>
+        <button class="bb-btn secondary small" id="bb-dict-unlink" hidden>연결 끊기</button>
         <button class="bb-btn secondary small" id="bb-dict-save">사전 파일 저장</button>
         <button class="bb-btn secondary small" id="bb-dict-load">사전 불러오기</button>
         <input type="file" id="bb-dict-input" accept=".js,.json" hidden>
@@ -170,7 +172,7 @@
   };
   const KIND = { bank: '은행', securities: '증권', unknown: '판별 불가' };
   const BANK_FIELDS = [['dateCol', '결제일'], ['depositCol', '입금'], ['withdrawalCol', '출금'], ['balanceCol', '잔액'], ['signedAmountCol', '거래금액(±, 입출금 열이 없을 때)']];
-  const SEC_FIELDS = [['dateCol', '일자'], ['tradeTypeCol', '거래종류'], ['amountCol', '거래금액'], ['balanceCol', '잔액(예수금)'], ['feeCol', '수수료'], ['taxCol', '제세금'], ['extraCostCol1', '기타비용'], ['stockNameCol', '종목명'], ['stockQtyCol', '수량'], ['unitPriceCol', '단가'], ['stockBalanceCol', '유가잔고'], ['settlementCol', '정산금액(숨은 비용 계산)'], ['additionalCol1', '추가 적요 1'], ['additionalCol2', '추가 적요 2']];
+  const SEC_FIELDS = [['dateCol', '일자'], ['tradeTypeCol', '거래종류'], ['amountCol', '거래금액'], ['balanceCol', '잔액(예수금)'], ['feeCol', '수수료'], ['taxCol', '제세금'], ['extraCostCol1', '기타비용'], ['stockNameCol', '종목명'], ['stockQtyCol', '수량'], ['unitPriceCol', '단가'], ['stockBalanceCol', '유가잔고'], ['settlementCol', '정산금액(숨은 비용 계산)'], ['additionalCol1', '추가 적요 1'], ['additionalCol2', '추가 적요 2'], ['directionCol', '입출금 구분(잔액 없는 파일)']];
   const TYPE_BUCKETS = [['deposit', '입금'], ['withdrawal', '출금'], ['remove', '제거(입출금외)'], ['none', '미분류']];
 
   const el = id => document.getElementById(id);
@@ -178,9 +180,9 @@
     drop: el('bb-drop'), input: el('bb-file-input'), status: el('bb-status'), list: el('bb-list-section'),
     summary: el('bb-summary'), body: el('bb-list-body'), editor: el('bb-editor'),
     download: el('bb-download-btn'), clear: el('bb-clear-btn'), undo: el('bb-undo'), deletePicked: el('bb-delete-picked'), pickAll: el('bb-pick-all'), includeOriginal: el('bb-include-original'),
-    dictInfo: el('bb-dict-info'), dictSave: el('bb-dict-save'), dictLoad: el('bb-dict-load'), dictInput: el('bb-dict-input')
+    dictInfo: el('bb-dict-info'), dictLink: el('bb-dict-link'), dictUnlink: el('bb-dict-unlink'), dictSave: el('bb-dict-save'), dictLoad: el('bb-dict-load'), dictInput: el('bb-dict-input')
   };
-  const state = { accounts: [], filter: 'all', selected: null, tab: 'result', dictChanges: [], dictSource: '배포된 사전', picked: new Set(), lastDeleted: null };
+  const state = { accounts: [], filter: 'all', selected: null, tab: 'result', dictChanges: [], dictSource: '배포된 사전', picked: new Set(), lastDeleted: null, undoAction: null, disk: null };
   const D = () => window.BANKBOOK_DICTIONARY;
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -302,6 +304,7 @@
     (a.output && a.output.reviewReasons || []).forEach(m => out.push(m));
     (a.output && a.output.issues || []).forEach(m => out.push(m));
     (a.output && a.output.notes || []).forEach(m => out.push('참고: ' + m)); // 상태에 영향 없는 안내
+    if (!a.confirmed && a.confirmLost) out.unshift(`사전이 바뀌어 결과가 달라져 "사용자 확인"이 풀렸습니다 — 결과를 다시 보고 확인 완료를 눌러 주세요${a.confirmLost.note ? ` (이전 확인 메모: ${a.confirmLost.note})` : ''}`);
     if (a.confirmed) out.unshift(`사용자 확인${a.confirmed.note ? ': ' + a.confirmed.note : ''} (자동 판정: ${(STATUS[a.autoStatus] || {}).label || a.autoStatus})`);
     const mapped = a.output && a.output.sheet; // 열 지정이 끝나 변환됐으면 "사전 형식과 맞지 않음" 안내는 숨긴다
     (a.messages || []).filter(m => !/구형 \.xls|웹페이지\(HTML|현금 거래가 없습니다/.test(m))
@@ -366,7 +369,7 @@
     }
     const v = a.output && a.output.verification;
     const ok = !!(v && v.isCorrect && a.output.sheet);
-    return `<div class="bb-confirm"><input class="bb-input" id="ed-confirm-note" placeholder="${ok ? '확인 메모(선택)' : '확인 사유(필수) — 예: 원본에 입금 기록 누락, 차이 인정'}">
+    return `<div class="bb-confirm"><input class="bb-input" id="ed-confirm-note" value="${esc(a.confirmLost ? a.confirmLost.note || '' : '')}" placeholder="${ok ? '확인 메모(선택)' : '확인 사유(필수) — 예: 원본에 입금 기록 누락, 차이 인정'}">
       <button class="bb-btn small" data-action="confirm">확인 완료</button>
       <span class="bb-note" style="margin:0">${ok ? '내용을 확인했으면 누르세요.' : '잔액이 맞지 않거나 변환 전입니다. 사유를 적어야 확인할 수 있습니다.'} 다시 고치면 확인이 풀립니다.</span></div>`;
   }
@@ -583,6 +586,7 @@
           if (b.profile) { if (t.value.trim()) b.profile.label = t.value.trim().slice(0, 40); else delete b.profile.label; }
           setStatus(`사전 형식 이름 변경: ${changes.join(' / ')} — 팀에 공유하려면 "사전 파일 저장"을 누르세요.`);
           renderDictInfo(); render();
+          if (state.disk) persistToDisk('형식 이름 변경');
         }
       } catch (err) { setStatus(`형식 이름 변경 실패: ${err.message}`, true); }
       return;
@@ -637,6 +641,7 @@
       const ok = !!(v && v.isCorrect && a.output.sheet);
       if (!ok && !note.trim()) { setStatus('잔액이 맞지 않거나 변환 전인 계좌는 확인 사유를 적어야 합니다.', true); return; }
       a.confirmed = { note: note.trim(), at: new Date().toISOString() };
+      a.confirmLost = null;
       a.status = 'confirmed';
       setStatus(`"${a.title}" 사용자 확인 완료.`);
       render(); return;
@@ -680,6 +685,7 @@
     ids.forEach(id => state.picked.delete(id));
     if (set.has(state.selected)) state.selected = null;
     render();
+    state.undoAction = undoDelete;
     setStatus(`${label} ${targets.length}개를 목록에서 삭제했습니다.`, false, true);
   }
   function undoDelete() {
@@ -702,11 +708,36 @@
       ` · 국내 형식 ${prof('domestic')}개 · 해외 형식 ${prof('foreign')}개 · 은행 형식 ${d.bank.profiles.length}개` +
       (w ? ` · <span title="${esc(state.dictWarnings.join('\n'))}">사전 경고 ${w}건</span>` : '') +
       (state.dictError ? ' · <b class="dirty">사전 오류</b>' : '') +
+      (state.disk ? ` · <b style="color:var(--ok, #15803d)">프로젝트 사전 연결됨(${esc(state.disk.name)}/institutions.js — 반영 시 바로 저장)</b>` : '') +
       (n ? ` · <b class="dirty">저장하지 않은 변경 ${n}건</b>` : '');
   }
 
   // 사전이 바뀌면, 직접 고치지 않은 계좌는 새 사전으로 다시 판별·변환한다.
+  // 확인 완료 계좌의 결과 비교용 값: 자동 판정, 결과 시트 전체, 분류, 기초잔액
+  const resultKey = x => JSON.stringify({
+    s: x.autoStatus,
+    sheet: x.output && x.output.sheet ? x.output.sheet : null,
+    cls: x.config && x.config.classification ? ['depositTypes', 'withdrawalTypes', 'valuesToRemove'].map(k => [...(x.config.classification[k] || [])].sort()) : null,
+    base: x.output && x.output.verification ? x.output.verification.baseBalance : null
+  });
+  // 다시 만든 계좌(nu)에 이전 계좌(old)의 "사용자 확인"을 넘김: 결과가 같으면 유지, 바뀌었으면 풀고 사유
+  function carryConfirm(old, nu, stats) {
+    if (!old || !nu) return;
+    if (old.confirmLost && !nu.confirmLost) nu.confirmLost = old.confirmLost; // 아직 다시 확인 안 한 사유는 계속 표시
+    if (!old.confirmed) return;
+    if (resultKey(old) === resultKey(nu)) {
+      nu.confirmed = old.confirmed;
+      nu.status = 'confirmed';
+      stats.kept++;
+    } else {
+      nu.confirmLost = { note: old.confirmed.note || '', at: old.confirmed.at, prevStatus: old.autoStatus };
+      stats.lost++;
+    }
+  }
+
   function rebuildAfterDictionaryChange(alsoIds) {
+    const stats = { kept: 0, lost: 0 };
+    state.confirmStats = stats;
     const perFile = {};
     state.accounts.forEach(a => { perFile[a.fileName] = (perFile[a.fileName] || 0) + 1; });
     let count = 0;
@@ -719,8 +750,9 @@
       if (done.has(src) && siblings.length > 1) return [];
       done.add(src);
       const parts = BankbookConvert.rebuildAccounts(a, D(), perFile[a.fileName]);
-      // 형제 계좌(다른 통화)의 id·계좌명·저장 여부를 이어받는다
-      parts.slice(1).forEach(p => { const sib = siblings.find(x => x !== a && x.currency && x.currency === p.currency && !x.edited); if (sib) { p.id = sib.id; p.title = sib.title; p.include = sib.include; } });
+      if (parts[0] && parts[0].id === a.id) carryConfirm(a, parts[0], stats);
+      // 형제 계좌(다른 통화)의 id·계좌명·저장 여부·사용자 확인을 이어받는다
+      parts.slice(1).forEach(p => { const sib = siblings.find(x => x !== a && x.currency && x.currency === p.currency && !x.edited); if (sib) { p.id = sib.id; p.title = sib.title; p.include = sib.include; carryConfirm(sib, p, stats); } });
       const editedSibs = siblings.filter(x => x !== a && x.edited && !(alsoIds || []).includes(x.id));
       const kept = parts.filter((p, i) => i === 0 || !editedSibs.some(x => x.currency === p.currency));
       count += kept.length;
@@ -732,8 +764,15 @@
     return count;
   }
 
+  const confirmStatsText = () => {
+    const c = state.confirmStats || {};
+    if (!c.kept && !c.lost) return '';
+    return ` 확인 완료 계좌: ${c.kept ? `${c.kept}개 그대로 유지` : ''}${c.kept && c.lost ? ', ' : ''}${c.lost ? `${c.lost}개는 결과가 바뀌어 다시 확인 필요` : ''}.`;
+  };
+
   function reflectAccount(a) {
     let changes;
+    const perm = state.disk ? ensureWritable(state.disk.dir).catch(() => false) : null; // 클릭 안에서 권한 확인 시작
     try {
       const b = a.broker || {};
       const newFormat = a.kind === 'securities' && !b.exceptionRule && !(b.detected && !b.partial);
@@ -749,9 +788,129 @@
     const n = rebuildAfterDictionaryChange([a.id]);
     const after = state.accounts.find(x => x.id === a.id);
     const st = after ? (STATUS[after.status] || {}).label : '';
-    setStatus(`사전 반영: ${changes.join(' / ')} — 계좌 ${n}개를 다시 판별했습니다. 이 계좌는 이제 "${st}". 팀에 공유하려면 "사전 파일 저장"을 누르세요.`);
+    setStatus(`사전 반영: ${changes.join(' / ')} — 계좌 ${n}개를 다시 판별했습니다. 이 계좌는 이제 "${st}".${confirmStatsText()} 팀에 공유하려면 "사전 파일 저장"을 누르세요.`);
     renderDictInfo();
     render();
+    if (state.disk) persistToDisk(`사전 반영(${changes.length}건, 이 계좌 "${st}")`, perm);
+  }
+
+  // ---------------------------------------------------------------- 프로젝트 사전에 바로 저장(로컬 전용)
+  // 브라우저 폴더 접근 기능(Edge·크롬). 연결 정보(폴더 핸들)는 IndexedDB 에 기억. 쓰기 전 권한 확인 → 파일이 그 사이 바뀌었는지 확인
+  // → dictionary/_backup/institutions_시각.js 로 백업 → 저장 → 다시 읽어 검사.
+  const DISK_OK = location.protocol === 'file:' && typeof window.showDirectoryPicker === 'function';
+  const IDB = { name: 'bankbook-editor', store: 'handles', key: 'dictionary-dir' };
+  function idbDo(mode, fn) {
+    return new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(IDB.name, 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => req.result.createObjectStore(IDB.store);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const tx = req.result.transaction(IDB.store, mode);
+        const st = tx.objectStore(IDB.store);
+        let out;
+        try { out = fn(st); } catch (e) { reject(e); return; } // 저장할 수 없는 값 등은 오류로 돌려줌(화면은 계속)
+        tx.oncomplete = () => resolve(out && out.result);
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }
+  const pad = n => String(n).padStart(2, '0');
+  const stampNow = () => { const d = new Date(); return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
+  const dictMark = d => `${d.version || 1}|${d.updatedAt || ''}`;
+  async function readDiskText(dir) { const fh = await dir.getFileHandle('institutions.js'); return (await fh.getFile()).text(); }
+  async function ensureWritable(dir) {
+    const opts = { mode: 'readwrite' };
+    if (dir.queryPermission && (await dir.queryPermission(opts)) === 'granted') return true;
+    return !!(dir.requestPermission && (await dir.requestPermission(opts)) === 'granted');
+  }
+  function renderDiskButtons() {
+    ui.dictLink.hidden = !DISK_OK || !!state.disk;
+    ui.dictUnlink.hidden = !state.disk;
+  }
+  async function linkDictionaryFolder() {
+    try {
+      const dir = await window.showDirectoryPicker({ id: 'bankbook-dictionary', mode: 'readwrite' });
+      let text;
+      try { text = await readDiskText(dir); } catch (e) { throw new Error('고른 폴더에 institutions.js 가 없습니다. 프로젝트의 dictionary 폴더를 고르세요.'); }
+      const onDisk = BankbookDictionary.parse(text);
+      if (state.dictSource !== '배포된 사전') throw new Error('"사전 불러오기"로 다른 사전을 쓰는 중에는 연결하지 않습니다. 새로고침 후 연결하세요.');
+      if (dictMark(onDisk) !== state.diskBaseline) throw new Error(`폴더의 사전(버전 ${onDisk.version || 1})이 지금 화면의 사전과 다릅니다. 새로고침한 뒤 다시 연결하세요.`);
+      state.disk = { dir, name: dir.name };
+      try { await idbDo('readwrite', st => st.put(dir, IDB.key)); } catch (e) { /* 기억 실패해도 이번 화면에서는 사용 */ }
+      renderDiskButtons(); renderDictInfo();
+      if (state.dictChanges.length) await persistToDisk('연결 전 반영한 내용');
+      else setStatus(`프로젝트 사전 폴더(${dir.name})를 연결했습니다. 이제 "사전에 반영"하면 institutions.js 에 바로 저장됩니다(이전 사전은 _backup 에 백업).`);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      setStatus(`사전 폴더 연결 실패: ${e.message}`, true);
+    }
+  }
+  async function unlinkDictionaryFolder() {
+    state.disk = null;
+    try { await idbDo('readwrite', st => st.delete(IDB.key)); } catch (e) { /* 무시 */ }
+    renderDiskButtons(); renderDictInfo();
+    setStatus('프로젝트 사전 폴더 연결을 끊었습니다. 이제 "사전에 반영"은 화면 안에서만 적용됩니다.');
+  }
+  // 반영된 사전(D())을 프로젝트 파일에 저장. permissionPromise: 클릭 직후 시작한 권한 확인(브라우저 규칙상 클릭 안에서 요청해야 함)
+  async function persistToDisk(what, permissionPromise) {
+    const disk = state.disk;
+    if (!disk) return false;
+    try {
+      if (state.dictSource !== '배포된 사전') throw new Error('"사전 불러오기"로 다른 사전을 쓰는 중이라 프로젝트 사전에 쓰지 않았습니다.');
+      const ok = await (permissionPromise || ensureWritable(disk.dir));
+      if (!ok) throw new Error('폴더 쓰기 권한이 없습니다("허용"을 눌러야 저장됩니다). 이 변경은 화면에만 있습니다.');
+      const oldText = await readDiskText(disk.dir);
+      const onDisk = BankbookDictionary.parse(oldText);
+      if (dictMark(onDisk) !== state.diskBaseline) throw new Error(`프로젝트 사전 파일이 그 사이 바뀌었습니다(파일 버전 ${onDisk.version || 1}). 덮어쓰지 않았습니다 — 새로고침 후 다시 반영하세요.`);
+      const bdir = await disk.dir.getDirectoryHandle('_backup', { create: true });
+      const bname = `institutions_${stampNow()}.js`;
+      const bw = await (await bdir.getFileHandle(bname, { create: true })).createWritable();
+      await bw.write(oldText); await bw.close();
+      const newText = BankbookDictionary.serialize(D()).replace(/^\/\/ .*\n/, '// 통합 통장내역 편집기 기관사전.\n');
+      const w = await (await disk.dir.getFileHandle('institutions.js')).createWritable();
+      await w.write(newText); await w.close();
+      const back = BankbookDictionary.parse(await readDiskText(disk.dir));
+      state.diskBaseline = dictMark(back);
+      state.dictChanges = [];
+      state.undoAction = () => undoDiskWrite(oldText, bname);
+      renderDictInfo();
+      setStatus(`${what}: 프로젝트 사전(dictionary/institutions.js, 버전 ${back.version || 1})에 바로 저장했습니다. 이전 사전 백업: dictionary/_backup/${bname}`, false, true);
+      return true;
+    } catch (e) {
+      console.warn('[사전 바로 저장 실패]', e);
+      setStatus(`${what}은(는) 화면에 반영됐지만 프로젝트 사전 저장은 실패했습니다: ${e.message}`, true);
+      renderDictInfo();
+      return false;
+    }
+  }
+  // 방금 저장을 되돌림: 백업 내용으로 파일을 되돌리고 화면 사전도 그 내용으로
+  async function undoDiskWrite(oldText, bname) {
+    const disk = state.disk;
+    try {
+      if (!disk || !(await ensureWritable(disk.dir))) throw new Error('폴더 쓰기 권한이 없습니다.');
+      const w = await (await disk.dir.getFileHandle('institutions.js')).createWritable();
+      await w.write(oldText); await w.close();
+      const restored = BankbookDictionary.parse(oldText);
+      window.BANKBOOK_DICTIONARY = restored;
+      state.diskBaseline = dictMark(restored);
+      state.dictChanges = [];
+      const n = rebuildAfterDictionaryChange();
+      renderDictInfo(); render();
+      setStatus(`프로젝트 사전을 반영 전으로 되돌렸습니다(백업 ${bname} 내용, 계좌 ${n}개 다시 판별).${confirmStatsText()}`);
+    } catch (e) { setStatus(`되돌리기 실패: ${e.message} — dictionary/_backup/${bname} 을 institutions.js 로 복사하면 됩니다.`, true); }
+  }
+  async function restoreDiskLink() {
+    renderDiskButtons();
+    if (!DISK_OK) return;
+    try {
+      const dir = await idbDo('readonly', st => st.get(IDB.key));
+      if (!dir || !dir.getFileHandle) return;
+      const onDisk = BankbookDictionary.parse(await readDiskText(dir).catch(() => ''));
+      if (dictMark(onDisk) !== state.diskBaseline) return; // 화면 사전과 다르면 연결하지 않음(다시 연결 필요)
+      state.disk = { dir, name: dir.name };
+    } catch (e) { /* 권한 없음 등: 연결 단추로 다시 연결 */ }
+    renderDiskButtons(); renderDictInfo();
   }
 
   function saveDictionary() {
@@ -783,7 +942,7 @@
       state.dictWarnings = info.warnings;
       state.dictError = '';
       const n = rebuildAfterDictionaryChange();
-      setStatus(`사전 불러옴: ${file.name} (버전 ${parsed.version || 1}). 계좌 ${n}개를 다시 판별했습니다.` +
+      setStatus(`사전 불러옴: ${file.name} (버전 ${parsed.version || 1}). 계좌 ${n}개를 다시 판별했습니다.${confirmStatsText()}` +
         (info.notes.length ? ` 예전 구조라 자동 변환했습니다(${info.notes.join(', ')}) — 저장하면 새 구조로 저장됩니다.` : '') +
         (info.warnings.length ? ` 사전 경고 ${info.warnings.length}건(사용 가능): ${info.warnings[0]}${info.warnings.length > 1 ? ' …' : ''}` : '') +
         ' 새로고침하면 배포된 사전으로 돌아갑니다.');
@@ -837,7 +996,7 @@
   ui.editor.addEventListener('click', onEditorClick);
   ui.download.addEventListener('click', download);
   ui.clear.addEventListener('click', () => { state.filter = 'all'; deleteAccounts(state.accounts.map(a => a.id), '전체 계좌'); });
-  ui.undo.addEventListener('click', undoDelete);
+  ui.undo.addEventListener('click', () => { const fn = state.undoAction; state.undoAction = null; if (fn) fn(); });
   ui.deletePicked.addEventListener('click', () => deleteAccounts([...state.picked], '선택한 계좌'));
   ui.pickAll.addEventListener('change', e => {
     const visible = state.accounts.filter(a => state.filter === 'all' || a.status === state.filter).map(a => a.id);
@@ -845,13 +1004,17 @@
     render();
   });
   ui.dictSave.addEventListener('click', saveDictionary);
+  ui.dictLink.addEventListener('click', linkDictionaryFolder);
+  ui.dictUnlink.addEventListener('click', unlinkDictionaryFolder);
   ui.dictLoad.addEventListener('click', () => ui.dictInput.click());
   ui.dictInput.addEventListener('change', e => { loadDictionary(e.target.files[0]); e.target.value = ''; });
   window.addEventListener('beforeunload', e => {
     if (state.dictChanges.length) { e.preventDefault(); e.returnValue = ''; } // 저장하지 않은 사전 변경 경고
   });
+  state.diskBaseline = dictMark(D()); // 화면이 처음 읽은 사전(파일과 같은지 비교하는 기준)
   renderDictInfo();
   renderInstitutionList();
+  restoreDiskLink();
 })();
 </script>
 </body>

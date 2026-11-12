@@ -5,7 +5,7 @@
   'use strict';
   const E = root.BankbookEngine || (typeof require !== 'undefined' ? require('./engine.js') : null);
   const SEC_KEYS = ['dateCol', 'tradeTypeCol', 'amountCol', 'balanceCol', 'feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3',
-    'stockNameCol', 'stockQtyCol', 'unitPriceCol', 'stockBalanceCol', 'kbDepositAmountCol', 'kbWithdrawalAmountCol', 'settlementCol'];
+    'stockNameCol', 'stockQtyCol', 'unitPriceCol', 'stockBalanceCol', 'kbDepositAmountCol', 'kbWithdrawalAmountCol', 'settlementCol', 'directionCol'];
   const REQUIRED_SEC = ['dateCol', 'tradeTypeCol', 'amountCol', 'balanceCol'];
   const BANK_KEYS = ['dateCol', 'depositCol', 'withdrawalCol', 'balanceCol', 'signedAmountCol'];
 
@@ -169,6 +169,7 @@
         if (b.aliases !== undefined && !isStrList(b.aliases)) errors.push(`${where} aliases 는 글자 목록이어야 합니다.`);
         if (!Array.isArray(b.profiles)) { errors.push(`${where}: profiles 목록이 없습니다.`); return; }
         const shared = b.shared ? checkBuckets(b.shared, `${where} 공통 분류`) : {};
+        if (b.shared) BUCKETS.forEach(k => (b.shared[k] || []).forEach(t => { if (E.generalizeType(t) !== t) warnings.push(`${where} 공통 분류: 거래종류 "${t}"에 거래처 이름이 들어 있는 것 같습니다 — 앞부분 일치("${E.generalizeType(t)}")로 바꾸세요.`); }));
         checkRules(b.specialRules, where);
         checkSplit(b.currencySplit, where);
         if (b.exceptions !== undefined) {
@@ -187,7 +188,8 @@
           const pw = `${where} 형식${pi + 1}`;
           if (!p || typeof p.columns !== 'object' || !p.columns) { errors.push(`${pw}: columns 가 없습니다.`); return; }
           Object.entries(p.columns).forEach(([k, v]) => { if (!isStrList(v) || !v.length) errors.push(`${pw}: 열 ${k} 의 이름 목록이 비었거나 잘못됐습니다.`); });
-          const miss = ['dateCol', 'tradeTypeCol', 'amountCol', 'balanceCol'].filter(k => !p.columns[k]);
+          const miss = ['dateCol', 'tradeTypeCol', 'amountCol', ...(p.noBalance ? [] : ['balanceCol'])].filter(k => !p.columns[k]);
+          if (p.noBalance !== undefined && typeof p.noBalance !== 'boolean') errors.push(`${pw}: noBalance(잔액 없는 형식)는 true/false 여야 합니다.`);
           if (miss.length && !(miss.length === 1 && miss[0] === 'amountCol' && ((p.specialRules || b.specialRules) || {}).deriveAmountFromTradeTypeText)) {
             warnings.push(`${pw}: 필수 열(${miss.join(', ')})이 없어 열 일치만으로는 확정되지 않습니다.`);
           }
@@ -203,6 +205,7 @@
             });
           }
           const own = checkBuckets(p, pw);
+          BUCKETS.forEach(k => (p[k] || []).forEach(t => { if (E.generalizeType(t) !== t) warnings.push(`${pw}: 거래종류 "${t}"에 거래처 이름이 들어 있는 것 같습니다 — 앞부분 일치("${E.generalizeType(t)}")로 바꾸세요(공개 저장소에 거래처 이름이 남음).`); }));
           checkRules(p.specialRules, pw);
           Object.entries(own).forEach(([k, b2]) => { if (shared[k] && shared[k] !== b2) warnings.push(`${pw}: "${k}" 분류가 증권사 공통(${BUCKET_LABEL[shared[k]]})과 다릅니다 — 이 형식에서는 형식 분류(${BUCKET_LABEL[b2]})를 따릅니다.`); });
         });
@@ -232,15 +235,17 @@
     const out = account.output || {};
     const mapping = out.mapping || {};
     const header = account.layout.header;
-    const cls = account.config.classification;
+    let cls = account.config.classification;
     if (!cls || !Array.isArray(cls.depositTypes)) throw new Error('거래종류 분류가 아직 없습니다. 열을 지정해 변환을 먼저 완료하세요.');
     const columns = {};
     SEC_KEYS.forEach(k => {
       const idx = mapping[k];
       if (idx !== undefined && idx !== null && header[idx]) columns[k] = [header[idx]];
     });
-    const missing = REQUIRED_SEC.filter(k => !columns[k]);
-    if (missing.length) throw new Error('일자·거래종류·거래금액·잔액 열이 모두 지정되어야 사전에 반영할 수 있습니다.');
+    // 잔액 없는 형식(원본에 잔액 열 없음): 잔액 열 없이도 반영. 형식에 noBalance 로 표시
+    const noBal = !!(out.noBalance && !columns.balanceCol);
+    const missing = REQUIRED_SEC.filter(k => !columns[k] && !(noBal && k === 'balanceCol'));
+    if (missing.length) throw new Error(noBal ? '일자·거래종류·거래금액 열이 모두 지정되어야 사전에 반영할 수 있습니다.' : '일자·거래종류·거래금액·잔액 열이 모두 지정되어야 사전에 반영할 수 있습니다.');
     const name = (account.institution || '').trim();
     if (!name) throw new Error('기관 이름을 입력하세요.');
     // 예외 규칙(잔액 기준 분류) 계좌: 분류는 파일마다 잔액으로 정하므로 사전에 저장하지 않는다
@@ -264,6 +269,7 @@
     if (!profile) {
       // signature: 이 파일의 전체 열 이름(형식 지문). 흔한 열 이름만으로 다른 증권사 파일과 혼동되지 않게 판별에 쓴다.
       profile = { columns, signature: [...new Set(header.filter(Boolean))], depositTypes: [], withdrawalTypes: [], removalTypes: [] };
+      if (noBal) profile.noBalance = true;
       const lbl = String((opts && opts.label) || '').trim();
       if (lbl) profile.label = lbl.slice(0, 40);
       // 같은 증권사 형식에만 있던 특수 규칙은 이어받는다(증권사 단위 규칙 broker.specialRules 는 자동으로 적용됨)
@@ -287,8 +293,13 @@
     const keyCount = Object.keys(columns).length;
     if (keyCount < 5) profile.minMatchedKeys = Math.max(4, keyCount); // 기존 판별 규칙은 기본 5개 열 일치 필요
 
+    // 거래처 이름이 붙은 거래종류는 앞부분 일치로 저장(사전에 거래처 이름이 남지 않게, 다른 거래처에도 같은 분류 적용)
+    const gen = arr => uniq((arr || []).map(E.generalizeType));
+    const generalized = (out.tradeTypes || []).filter(t => E.generalizeType(t) !== t);
+    if (generalized.length) changes.push(`거래처 이름이 붙은 거래종류 ${generalized.length}개는 앞부분만 저장(예: ${E.generalizeType(generalized[0])})`);
+    cls = { ...cls, depositTypes: gen(cls.depositTypes), withdrawalTypes: gen(cls.withdrawalTypes), valuesToRemove: gen(cls.valuesToRemove) };
     // 이번 계좌에 나온 거래종류만 다시 배정하고, 다른 계좌에서 배운 값은 유지
-    const seen = new Set((out.tradeTypes || []).map(E.norm));
+    const seen = new Set((out.tradeTypes || []).flatMap(t => [E.norm(t), E.norm(E.generalizeType(t))]));
     const keep = arr => (arr || []).filter(v => !seen.has(E.norm(v)));
     const before = JSON.stringify([profile.depositTypes, profile.withdrawalTypes, profile.removalTypes]);
     profile.depositTypes = uniq([...keep(profile.depositTypes), ...cls.depositTypes]).sort();

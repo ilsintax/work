@@ -14,3 +14,6 @@ tests/expected-convert.json
 
 # 예외 계좌 분석 보고서 (고객 데이터 포함, 로컬 전용)
 cases/
+
+# 화면의 "프로젝트 사전 폴더 연결"로 바로 저장할 때 생기는 이전 사전 백업(로컬 전용)
+dictionary/_backup/

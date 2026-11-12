@@ -8,7 +8,7 @@
     "test:convert": "node tests/run-convert.js",
     "test:dictionary": "node tests/run-dictionary.js",
     "test:browser": "node tests/browser-check.js",
-    "test:all": "node tests/run-samples.js && node tests/run-convert.js && node tests/run-verification.js && node tests/run-structure.js && node tests/run-foreign.js && node tests/run-order.js && node tests/run-memo.js && node tests/run-picker.js && node tests/run-dictionary.js && node tools/check-dictionary.js && node tests/browser-check.js",
+    "test:all": "node tests/run-samples.js && node tests/run-convert.js && node tests/run-verification.js && node tests/run-structure.js && node tests/run-foreign.js && node tests/run-order.js && node tests/run-memo.js && node tests/run-picker.js && node tests/run-import.js && node tests/run-prefix.js && node tests/run-dictionary.js && node tools/check-dictionary.js && node tests/browser-check.js",
     "check-publish": "node tools/check-publish.js",
     "extract-presets": "node tools/extract-presets.js",
     "extract-securities-engine": "node tools/extract-securities-engine.js",
@@ -19,7 +19,10 @@
     "test:foreign": "node tests/run-foreign.js",
     "test:order": "node tests/run-order.js",
     "test:memo": "node tests/run-memo.js",
-    "test:picker": "node tests/run-picker.js"
+    "test:picker": "node tests/run-picker.js",
+    "import-dictionary": "node tools/import-dictionary.js",
+    "test:import": "node tests/run-import.js",
+    "test:prefix": "node tests/run-prefix.js"
   },
   "devDependencies": {
     "playwright-core": "^1.48.2",

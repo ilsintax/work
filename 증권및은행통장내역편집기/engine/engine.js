@@ -86,7 +86,8 @@
     }
     let sheets = wb.SheetNames.map(name => ({
       name,
-      rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: true, blankrows: true })
+      rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: true, blankrows: true }),
+      merges: ((wb.Sheets[name] && wb.Sheets[name]['!merges']) || []).map(m => ({ r0: m.s.r, c0: m.s.c, r1: m.e.r, c1: m.e.c }))
     }));
     if (format === 'html') sheets = mergeHtmlTables(sheets, warnings);
     return { sheets, format, warnings };
@@ -104,12 +105,42 @@
     let pending = [];
     nonEmpty.forEach((s, i) => {
       if (!flags[i]) { pending.push(...s.rows.filter(r => !isBlankRow(r)), []); return; }
-      out.push({ name: s.name, rows: [...pending, ...s.rows] });
+      const shift = pending.length;
+      out.push({ name: s.name, rows: [...pending, ...s.rows], merges: (s.merges || []).map(m => ({ r0: m.r0 + shift, c0: m.c0, r1: m.r1 + shift, c1: m.c1 })) });
       pending = [];
     });
     const merged = nonEmpty.length - out.length;
     warnings.push(`웹페이지 안의 제목·안내 표 ${merged}개는 따로 계좌로 만들지 않고 거래 표의 제목으로 붙였습니다.`);
     return out;
+  }
+
+  // ---------------------------------------------------------------- 병합 머리글 해석
+  // 엑셀에서 머리글 한 칸이 가로로 여러 열에 병합되면 글자는 첫 열에만 있다(예: 한국투자증권 "거래종류" B1:C1 → B=순번, C=거래종류 이름).
+  // 병합 범위 안에서 첫 열의 값이 숫자(순번)뿐이고 다른 열에 글자가 있으면, 머리글 이름을 글자 열로 옮기고 첫 열은 "이름(번호)"로 바꾼다.
+  // 거래당 1줄·머리글 1줄인 표에만 적용(여러 줄 머리글은 기존 방식 유지). 반환: 바꾼 내용 설명 목록
+  function applyHeaderMerges(layout, merges) {
+    const notes = [];
+    if (!layout || !layout.ok || layout.stride !== 1 || layout.headerRows.length !== 1 || !(merges || []).length) return notes;
+    const hr = layout.headerRows[0];
+    merges.filter(m => m.r0 <= hr && m.r1 >= hr && m.c1 > m.c0).forEach(m => {
+      const name = text(layout.header[m.c0]).trim();
+      if (!name) return;
+      const vals = c => layout.records.map(r => r[c]).filter(v => v !== null && v !== undefined && text(v).trim() !== '');
+      const isNum = v => typeof v === 'number' || /^[\d,.\-\s]+$/.test(text(v).trim());
+      const first = vals(m.c0);
+      if (first.length && !first.every(isNum)) return; // 첫 열에 글자가 있으면 그대로
+      for (let c = m.c0 + 1; c <= m.c1; c++) {
+        if (text(layout.header[c]).trim()) continue;
+        const v = vals(c);
+        if (v.length && v.some(x => !isNum(x))) {
+          layout.header[c] = name;
+          layout.header[m.c0] = `${name}(번호)`;
+          notes.push(`"${name}" 머리글이 ${m.c1 - m.c0 + 1}칸에 병합돼 있어, 첫 칸(순번) 대신 글자가 있는 ${c + 1}번째 열을 "${name}" 열로 읽었습니다.`);
+          return;
+        }
+      }
+    });
+    return notes;
   }
 
   // ---------------------------------------------------------------- 파일명 해석
@@ -428,6 +459,40 @@
     return (broker.brokerId && list.find(b => b.id === broker.brokerId)) || (broker.name && list.find(b => b.name === broker.name)) || null;
   }
 
+  // ---------------------------------------------------------------- 거래종류 앞부분 일치
+  // 거래종류 끝 괄호에 거래처(상대 금융기관·회사 이름)가 붙는 증권사가 있다(예: 한화 "[입금] 은행이체입금(국민은행 주식회사○○)").
+  // 사전에는 "[입금] 은행이체입금(…)"처럼 괄호 시작까지만 저장하고, 그 앞부분으로 시작하는 거래종류를 같은 분류로 본다.
+  // (외화)·(이자)·(연계은행)처럼 짧은 구분어는 그대로 둔다.
+  const PATTERN_TAIL = '(…)';
+  const isPatternType = t => String(t || '').trim().endsWith(PATTERN_TAIL);
+  const patternPrefix = t => String(t || '').trim().slice(0, -PATTERN_TAIL.length + 1); // "…(" 까지
+  // 괄호 안이 거래처로 보이는지: 7자 이상, 또는 회사 표시(주식회사·(주)·㈜), 또는 공백이 있고 금융기관 이름이 들어 있음
+  function looksLikeCounterparty(inner) {
+    const s = String(inner || '').trim();
+    if (!s) return false;
+    if (/주식회사|㈜|\(주\)|유한회사|합자회사/.test(s)) return true;
+    if (s.replace(/\s+/g, '').length >= 7) return true;
+    return /\s/.test(s) && /은행|증권|투자|금고|저축|캐피탈|자산운용|보험|신협|농협|수협/.test(s);
+  }
+  // 거래종류 → 사전에 저장할 모양(거래처 괄호면 앞부분 일치로)
+  function generalizeType(t) {
+    const s = String(t || '').trim();
+    if (isPatternType(s)) return s;
+    const m = s.match(/^(.*\()([^()]*)\)\s*$/);
+    return m && m[1].length > 1 && looksLikeCounterparty(m[2]) ? `${m[1]}…)` : s;
+  }
+  // 사전 목록(앞부분 일치 포함)을 실제 거래종류 목록에 맞춰 풀어 쓴다. norm: 비교용 정리 함수
+  function expandTypePatterns(list, actualTypes, normFn) {
+    const nf = normFn || (v => String(v || '').replace(/\s+/g, ''));
+    const out = [];
+    (list || []).forEach(t => {
+      if (!isPatternType(t)) { out.push(t); return; }
+      const pre = nf(patternPrefix(t));
+      (actualTypes || []).forEach(a => { if (nf(a).startsWith(pre)) out.push(a); });
+    });
+    return [...new Set(out)];
+  }
+
   // 예외 규칙(사례에서 나온 규칙): 증권사 항목의 exceptions[]. 그 파일의 열 이름이 사례 파일과 "모두 같을 때만" 적용한다.
   //  { id, label, cases, source, signature: [사례 파일의 전체 열 이름], classificationBasis: 'balance', currencySplit? }
   //  classificationBasis 'balance' = 사전의 입금/출금 목록을 쓰지 않고 잔액으로만 분류(같은 거래종류도 계좌·통화에 따라 입금/출금이 바뀔 수 있음)
@@ -480,6 +545,12 @@
     amount: /거래금액|거래대금|입출금액|세전금액|정산금액/,
     balance: /예수금|최종금액|현금잔액|잔고금액/
   };
+  // 잔액 열이 없는 증권 파일(홈페이지·앱 간편 조회 등): 거래종류 + 거래금액 + 종목·수량·수수료 중 하나, 잔액 열 없음
+  function looksLikeSecuritiesNoBalance(header) {
+    const n = header.map(norm);
+    return n.some(h => SEC_HINTS.tradeType.test(h)) && n.some(h => SEC_HINTS.amount.test(h)) &&
+      n.some(h => /종목명|거래수량|^수량$|수수료/.test(h)) && !n.some(h => SEC_HINTS.balance.test(h) || /잔액|잔고$/.test(h) && !/유가/.test(h));
+  }
   function looksLikeSecurities(header) {
     const n = header.map(norm);
     return n.some(h => SEC_HINTS.tradeType.test(h)) && n.some(h => SEC_HINTS.amount.test(h)) && n.some(h => SEC_HINTS.balance.test(h));
@@ -488,7 +559,7 @@
   // ---------------------------------------------------------------- 시트 1개 분석
   // pick: 사용자가 화면에서 고른 기관 { kind: 'securities'|'bank', name, market?: 'domestic'|'foreign' }.
   //       파일명에 그 기관 이름이 있는 것과 똑같이 판별한다(보수적 판별 규칙 그대로).
-  function analyzeSheet({ fileName, sheetName, rows, dictionary, readWarnings = [], pick = null }) {
+  function analyzeSheet({ fileName, sheetName, rows, dictionary, readWarnings = [], pick = null, merges = [] }) {
     const result = {
       fileName, sheetName, file: parseFileName(fileName), messages: [...readWarnings],
       status: 'fail', kind: 'unknown', institution: '', account: '', layout: null, columns: null, broker: null
@@ -507,9 +578,11 @@
 
     if (!rows || !rows.length || rows.every(isBlankRow)) { result.messages.push('빈 시트입니다.'); return result; }
     const layout = detectLayout(rows);
+    const mergeNotes = applyHeaderMerges(layout, merges);
+    result.merges = merges && merges.length ? merges : undefined; // 다시 판별할 때 같은 병합 정보를 쓰도록 보관
     result.layout = layout;
     if (!layout.ok) { result.messages.push(layout.error); return result; }
-    result.messages.push(...layout.warnings);
+    result.messages.push(...layout.warnings, ...mergeNotes);
     if (!layout.records.length) { result.messages.push('거래 행이 없습니다.'); return result; }
 
     const meta = readTitleMeta(rows, layout.titleRows);
@@ -545,7 +618,7 @@
       result.basis = nameHit && nameHit.bank ? `${fromName.source} → ${nameHit.bank}, 열 구조 은행형` : '열 구조 은행형, 은행 이름 미확인';
       if (!result.institution) result.messages.push(`은행 이름을 파일명에서 찾지 못했습니다${profile ? ` (열 구조는 ${profile.name} 형식과 같음 — 확인 후 입력)` : ''}.`);
       if (nameHit && !nameHit.bank) result.messages.push(`파일명은 증권사(${nameHit.securities})인데 열 구조는 은행형입니다.`);
-    } else if (broker.detected || looksLikeSecurities(header) || secName) {
+    } else if (broker.detected || looksLikeSecurities(header) || secName || looksLikeSecuritiesNoBalance(header)) {
       result.kind = 'securities';
       result.basis = broker.basis;
       if (broker.detected) {
@@ -571,6 +644,11 @@
       return result;
     }
 
+    // 잔액 열이 없는 증권 파일: 잔액 검증 없이 입출금 구분 열·사전으로 분류(변환에서 처리)
+    if (result.kind === 'securities' && !(result.columns && result.columns.balanceCol !== undefined) && !header.some(h => SEC_HINTS.balance.test(norm(h)))) {
+      result.noBalance = true;
+      result.messages.push('이 파일에는 잔액(예수금) 열이 없습니다 — 잔액 검증 없이 입출금 구분 열·사전으로 분류합니다. 전월 말 잔액을 기초잔액에 넣으면 잔액이 계산됩니다.');
+    }
     if (/잔고증명/.test(result.file.docType)) result.messages.push('파일명이 "잔고증명"입니다. 거래내역인지 확인하세요(자동 제외하지 않음).');
 
     // 현금 거래 없음: 증권형에서 금액·잔액이 모두 비었거나 0
@@ -604,6 +682,7 @@
     if (result.foreignHint && result.kind === 'securities') result.reviewReasons.push('파일명 해외/외화 표시');
     if (result.kind === 'securities' && result.market === 'foreign') result.reviewReasons.push('해외 계좌(원화·외화 구분 확인)');
     if (result.messages.some(m => /읽지 못한/.test(m))) result.reviewReasons.push('숫자로 못 읽은 금액');
+    if (result.noBalance) result.reviewReasons.push('잔액 열 없음(검증 불가)');
     if (result.messages.some(m => /잔고증명/.test(m))) result.reviewReasons.push('잔고증명 파일');
     if (result.messages.some(m => /인데 열 구조는/.test(m))) result.reviewReasons.push('파일명 기관 유형과 열 구조 불일치');
     if (result.messages.some(m => /계좌번호.*다릅니다/.test(m))) result.reviewReasons.push('계좌번호 불일치');
@@ -694,7 +773,7 @@
     const nonEmpty = book.sheets.filter(s => !s.rows.every(isBlankRow));
     const sheets = nonEmpty.length ? nonEmpty : book.sheets;
     return sheets.flatMap(s => {
-      const r = analyzeSheet({ fileName, sheetName: s.name, rows: s.rows, dictionary, readWarnings: book.warnings });
+      const r = analyzeSheet({ fileName, sheetName: s.name, rows: s.rows, dictionary, readWarnings: book.warnings, merges: s.merges || [] });
       r.format = book.format;
       r.readWarnings = book.warnings;
       // 사전이 바뀌면 다시 판별할 수 있도록 원본 행을 보관(목록 표시·직렬화에는 나오지 않게)
@@ -708,7 +787,8 @@
   const api = {
     text, norm, isBlankRow, isNumericCell, parseAmount, parseDateCell,
     readWorkbook, parseFileName, resolveAbbreviation, detectLayout, mapBankColumns, findBankProfile, findHeader, headerKey, detectBroker, evaluateProfiles, decideBroker, chooseMarket, brokerEntry, brokerProcessing, institutionsFromName,
-    analyzeSheet, analyzeFile, splitByCurrency, findException, sameHeaderSet
+    analyzeSheet, analyzeFile, splitByCurrency, findException, sameHeaderSet,
+    isPatternType, patternPrefix, looksLikeCounterparty, generalizeType, expandTypePatterns
   };
   root.BankbookEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

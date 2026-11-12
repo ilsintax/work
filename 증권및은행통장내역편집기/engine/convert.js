@@ -318,7 +318,10 @@
       if (phase3[k] === undefined && Array.isArray(proc.memo[k])) { const i = E.findHeader(data[0], proc.memo[k]); if (i >= 0) phase3[k] = i; }
     });
     Object.assign(phase3, cfg.columnOverrides || {});
-    const required = ['dateCol', 'tradeTypeCol', 'amountCol', 'balanceCol'];
+    // 잔액 없는 형식: 원본에 잔액 열이 없음(판별 결과·사전 형식 noBalance) 또는 입출금 구분 열만 지정된 경우.
+    //  잔액으로 검증·추정할 수 없으므로 입출금 구분 열 → 사전 분류 순으로 나누고, 상태는 항상 확인 필요.
+    const noBalance = phase3.balanceCol === undefined && (!!account.noBalance || !!(det && det.profile && det.profile.noBalance) || phase3.directionCol !== undefined);
+    const required = noBalance ? ['dateCol', 'tradeTypeCol', 'amountCol'] : ['dateCol', 'tradeTypeCol', 'amountCol', 'balanceCol'];
     const missing = required.filter(k => phase3[k] === undefined);
     if (missing.length) {
       return { sheet: null, error: `증권 필수 열을 찾지 못했습니다: ${missing.map(k => ({ dateCol: '일자', tradeTypeCol: '거래종류', amountCol: '거래금액', balanceCol: '잔액' }[k])).join(', ')}. 열 지정에서 선택하세요.`, mapping: phase3 };
@@ -341,6 +344,12 @@
       if (ex.length) pre.slice(1).forEach(r => { if (ex.includes(E.text(r[ci]).trim())) r[ci] = ''; });
     });
     const d3 = DT.transformPhase3(pre, phase3);
+    // 사전의 앞부분 일치 거래종류("…(…)")를 이 파일의 실제 거래종류로 풀어 쓴다(기존 엔진은 정확히 같은 이름만 비교)
+    {
+      const actual = [...new Set(d3.slice(1).map(r => DT._normalizeTradeTypeValue(r[phase3.tradeTypeCol])).filter(Boolean))];
+      const nf = v => BAM.normalizeTradeType(v);
+      ['presetDepositTypes', 'presetWithdrawalTypes', 'presetRemovalTypes'].forEach(k => { phase3[k] = E.expandTypePatterns(phase3[k], actual, nf); });
+    }
 
     const base5 = {
       dateCol: phase3.dateCol, amountCol: phase3.amountCol, balanceCol: phase3.balanceCol, tradeTypeCol: phase3.tradeTypeCol,
@@ -397,6 +406,20 @@
         });
       }
     }
+    // 잔액 없는 형식: 입출금 구분 열(예: 거래구분 = 입금/출금) 값으로 행마다 방향을 정한다
+    if (noBalance && phase3.directionCol !== undefined) {
+      const dh = (proc.keywordRules && proc.keywordRules.directionHints) || { deposit: ['입금', '매도', '배당', '환급', '이입'], withdrawal: ['출금', '매수', '수수료', '세금', '이체'] };
+      const dirOf = v => {
+        const s = E.text(v).replace(/\s+/g, '');
+        if (!s) return null;
+        if (/^입금$|입금$/.test(s) && !/출금/.test(s)) return 'deposit';
+        if (/^출금$|출금$/.test(s) && !/입금/.test(s)) return 'withdrawal';
+        if ((dh.deposit || []).some(k => s.includes(k))) return 'deposit';
+        if ((dh.withdrawal || []).some(k => s.includes(k))) return 'withdrawal';
+        return null;
+      };
+      d3.forEach((r, i) => { if (i) rowDir[i] = dirOf(r[phase3.directionCol]); });
+    }
     const tally = () => {
       const ev = {};
       d3.forEach((r, i) => { if (i && rowDir[i]) { const t = nt0(r[phase3.tradeTypeCol]); (ev[t] = ev[t] || { deposit: 0, withdrawal: 0 })[rowDir[i]]++; } });
@@ -406,7 +429,7 @@
     // 예외 규칙(잔액 기준): 같은 거래종류가 입금·출금 양쪽으로 움직이면(예: "입출금") 행마다 나눈다 → "거래종류 [입금]"/"[출금]".
     // 잔액으로 방향을 못 정한 행은 "[방향 미확인]"으로 두고 확인 필요 사유를 남긴다.
     const rowSplit = { types: [], unresolved: 0 };
-    if (proc.balanceBasis) {
+    if (proc.balanceBasis || noBalance) {
       const mixedTypes = new Set(Object.entries(evidence).filter(([, e]) => e.deposit && e.withdrawal).map(([t]) => t));
       if (mixedTypes.size) {
         const label = { deposit: '[입금]', withdrawal: '[출금]' };
@@ -423,7 +446,18 @@
     }
 
     let conf;
-    if (cfg.classification && Array.isArray(cfg.classification.depositTypes)) {
+    if (noBalance && !(cfg.classification && Array.isArray(cfg.classification.depositTypes))) {
+      // 사전(형식·공통) 분류를 먼저 적용하고, 입출금 구분 열로 방향이 정해진 거래종류는 그 방향으로
+      const ac = buildAutoClassifyConfig(d3, { ...base5, baseAmount: 0 });
+      const dep = new Set(ac.depositTypes), wd = new Set(ac.withdrawalTypes), rm = new Set(ac.valuesToRemove);
+      Object.entries(evidence).forEach(([t, ev]) => {
+        if (ev.deposit && !ev.withdrawal) { dep.add(t); wd.delete(t); rm.delete(t); }
+        else if (ev.withdrawal && !ev.deposit) { wd.add(t); dep.delete(t); rm.delete(t); }
+      });
+      conf = { ...ac, depositTypes: [...dep].sort(), withdrawalTypes: [...wd].sort(), valuesToRemove: [...rm].sort(),
+        inferredFeeMode: proc.inferredFeeMode || 'separate' };
+      cfg.classification = { valuesToRemove: conf.valuesToRemove, depositTypes: conf.depositTypes, withdrawalTypes: conf.withdrawalTypes, inferredFeeMode: conf.inferredFeeMode };
+    } else if (cfg.classification && Array.isArray(cfg.classification.depositTypes)) {
       // 사용자가 편집한 분류를 그대로 사용
       conf = { ...base5, ...cfg.classification };
     } else {
@@ -482,6 +516,46 @@
 
     // 잔액 보정 행(선택): 날짜별 말 잔액이 원본과 다르면 그 날 끝에 "(잔액보정)" 행을 넣는다(기존 도구의 mismatch_dates 방식)
     conf.balanceAdjustmentMode = cfg.balanceAdjustment ? 'mismatch_dates' : null;
+    // 제거(입출금외) 거래에 붙은 비용(수수료·세금·기타비용)은 실제로 빠져나간 돈이다(예: 주식 타사대체출고 수수료 5,000원).
+    // 기존 엔진은 제거 행을 통째로 빼므로, 비용만 "(입출금외 거래 비용)" 출금 행으로 바로 뒤에 넣는다.
+    // 원래 행의 원본 잔액은 비용 행으로 옮겨(비용이 빠진 뒤 잔액) 그 행에서 잔액을 검증한다. 주식 이동 기록은 입출금외 내역에 그대로.
+    const costRowTypes = new Set();
+    {
+      const rmSet0 = new Set(conf.valuesToRemove.map(t => DT._normalizeTradeTypeValue(t)));
+      const costKeys = ['feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3'].filter(k => conf[k] !== undefined);
+      if (rmSet0.size && costKeys.length) {
+        const out = [d3[0]];
+        let prevBal = null; // 직전 행까지의 마지막 원본 잔액(잔액 0 = 표시 없음은 제외)
+        d3.slice(1).forEach(row => {
+          out.push(row);
+          const raw = E.parseAmount(row[conf.balanceCol]);
+          const hasBal = raw !== null && E.text(row[conf.balanceCol]).trim() !== '' && raw !== 0;
+          const before = prevBal;
+          if (hasBal) prevBal = raw;
+          const t = DT._normalizeTradeTypeValue(row[conf.tradeTypeCol]);
+          if (!rmSet0.has(t)) return;
+          const cost = costKeys.reduce((sum, k) => sum + Math.abs(E.parseAmount(row[conf[k]]) || 0), 0);
+          if (!(cost > 0)) return;
+          // 잔액이 정확히 그 비용만큼 줄었을 때만(요약 행의 수수료처럼 이미 다른 행에 반영된 비용은 넣지 않음)
+          if (!hasBal || before === null || Math.abs((before - cost) - raw) > unit * (1 + 1e-6)) return;
+          const c = row.slice();
+          const ct = `${t} (비용)`;
+          c[conf.tradeTypeCol] = ct;
+          c[conf.amountCol] = cost;
+          costKeys.forEach(k => { c[conf[k]] = 0; });
+          ['stockQtyCol', 'unitPriceCol'].forEach(k => { if (phase3[k] !== undefined) c[phase3[k]] = ''; });
+          c[conf.jukyoCol] = `(입출금외 거래 비용) ${E.text(row[conf.jukyoCol])}`.trim();
+          row[conf.balanceCol] = ''; // 원래 행 잔액은 비용 행이 가진다
+          out.push(c);
+          costRowTypes.add(ct);
+        });
+        if (costRowTypes.size) {
+          d3.splice(0, d3.length, ...out);
+          conf = { ...conf, withdrawalTypes: [...conf.withdrawalTypes, ...costRowTypes] };
+          notes.push(`입출금외(제거) 거래에 붙은 비용을 출금 행으로 넣었습니다: ${[...costRowTypes].map(t => t.replace(/ \(비용\)$/, '')).join(', ')} (거래 자체는 입출금외 내역에 보관)`);
+        }
+      }
+    }
     const split = DT.transformPhase4(d3, conf);
     const sheet = DT.transformPhase5(split.kept, conf);
     const v = DT.verifyPhase5(split.kept, conf);
@@ -544,6 +618,47 @@
     };
     // ---- 검증 강도와 분류 근거 점검 → "확인 필요" 사유 (거짓 자동 완료 방지)
     const reviewReasons = [...earlyReasons];
+    // 제거(입출금외)로 분류된 거래에서 원본 잔액이 계산 잔액과 다르게 움직이면, 실제 돈이 움직인 거래일 수 있다 → 확인 필요
+    // (제거 행은 잔액 검증에서 빠지므로 이 점검이 없으면 거짓 자동 완료가 될 수 있음)
+    {
+      const rmSet1 = new Set(conf.valuesToRemove.map(t => DT._normalizeTradeTypeValue(t)));
+      const cps1 = projection.checkpoints || [];
+      // 기준 잔액: 직접 입력한 기초잔액, 없으면 입출금 거래 전에는 처음 보이는 잔액(주식 입고·출고만 있는 계좌 대비)
+      // 같은 날 안의 순서는 확실하지 않으므로(순서 복원·합산 정산 등), 그날 나온 계산 잔액(그날 시작 잔액 포함) 중 하나와 같으면 정상으로 본다.
+      const dayOf = row => E.parseDateCell(row[conf.dateCol]) || E.text(row[conf.dateCol]).slice(0, 10);
+      const runsByDay = new Map(); // 날짜 → 그날의 계산 잔액들
+      {
+        let k = 0, running = cfg.baseAmountManual && cfg.baseAmount !== null && cfg.baseAmount !== undefined ? cfg.baseAmount : null;
+        d3.slice(1).forEach(row => {
+          const day = dayOf(row);
+          if (!runsByDay.has(day)) runsByDay.set(day, running === null ? [] : [running]);
+          if (rmSet1.has(DT._normalizeTradeTypeValue(row[conf.tradeTypeCol]))) return;
+          if (cps1[k]) { running = cps1[k].calculatedBalance; runsByDay.get(day).push(running); }
+          k++;
+        });
+      }
+      const moved = [];
+      let firstSeen = null; // 입출금 거래가 하나도 없을 때의 기준(처음 보이는 잔액)
+      d3.slice(1).forEach(row => {
+        const t = DT._normalizeTradeTypeValue(row[conf.tradeTypeCol]);
+        if (!rmSet1.has(t)) return;
+        const raw = E.parseAmount(row[conf.balanceCol]);
+        const shown = raw !== null && E.text(row[conf.balanceCol]).trim() !== '' && raw !== 0; // 잔액 0 = 표시 없음으로 보고 판단 안 함
+        if (!shown) return;
+        const runs = runsByDay.get(dayOf(row)) || [];
+        const refs = runs.length ? runs : (firstSeen === null ? [raw] : [firstSeen]);
+        if (firstSeen === null) firstSeen = raw;
+        if (!refs.some(x => Math.abs(raw - x) <= unit * (1 + 1e-6))) {
+          moved.push(`${t}(${dayOf(row)}, 원본 잔액 ${Math.round(raw).toLocaleString('ko-KR')} / 그날 계산 잔액 ${refs.map(x => Math.round(x).toLocaleString('ko-KR')).slice(-2).join('·')})`);
+        }
+      });
+      if (moved.length) reviewReasons.push(`입출금외(제거)로 분류한 거래에서 잔액이 바뀌었습니다 — 실제 돈이 움직였다면 입금/출금으로 바꾸세요: ${moved.slice(0, 3).join(', ')}${moved.length > 3 ? ' …' : ''}`);
+    }
+    if (noBalance) {
+      reviewReasons.push('원본에 잔액 열이 없어 잔액으로 검증할 수 없습니다 — 분류(입출금 구분 열·사전 기준)와 기초잔액(전월 말 잔액)을 확인한 뒤 "확인 완료"를 누르세요.');
+      const minRow = sheet.slice(1).reduce((m, r) => (typeof r[3] === 'number' && (m === null || r[3] < m[3]) ? r : m), null);
+      if (minRow && minRow[3] < -unit) reviewReasons.push(`계산 잔액이 음수가 되는 곳이 있습니다(${minRow[0]}, ${Math.round(minRow[3]).toLocaleString('ko-KR')}) — 기초잔액을 입력하거나 수수료 처리(포함/별도)를 확인하세요.`);
+    }
     // 같은 거래종류가 잔액상 입금·출금 양쪽으로 움직이면 거래종류 단위 분류로는 맞출 수 없다 → 확인 필요
     const mixed = Object.entries(evidence).filter(([, ev]) => ev.deposit && ev.withdrawal).map(([t, ev]) => `${t}(입금 ${ev.deposit}·출금 ${ev.withdrawal}건)`);
     if (mixed.length) reviewReasons.push(`같은 거래종류가 잔액상 입금·출금 양쪽으로 움직임: ${mixed.join(', ')}`);
@@ -585,7 +700,7 @@
         candidate: !proc.balanceBasis && !!evDir && evDir === cur && known[t] !== cur
       };
     });
-    if (!cfg.classificationEdited) {
+    if (!cfg.classificationEdited && !noBalance) {
       const L = { deposit: '입금', withdrawal: '출금', remove: '제거', none: '미분류' };
       const firstCpIndex = baseManual ? -1 : cps.findIndex(c => c.isCheckpoint);
       const differs = [], unverified = [], removedGuess = [];
@@ -618,7 +733,7 @@
     });
 
     return {
-      sheet, issues, notes, evidence, typeInfo, mapping: phase3, tradeTypes: allTypes, unassigned, nonCash, reviewReasons, currency: account.currency || null, tolerance: unit, adjustRows,
+      sheet, issues, notes, evidence, typeInfo, noBalance, mapping: phase3, tradeTypes: allTypes, unassigned, nonCash, reviewReasons, currency: account.currency || null, tolerance: unit, adjustRows,
       removed: split.removed, classification: cfg.classification,
       verification: {
         checkpointCount: cpCount, independentCheckpoints: independent, baseManual,
@@ -696,7 +811,7 @@
   // 통화 분리 결과가 여러 계좌면 배열로 돌려준다: 같은 통화(없으면 첫 번째)가 원래 계좌를 이어받고, 나머지는 새 계좌.
   function rebuildAccounts(account, dictionary, sameFileSheetCount) {
     if (!account.rows) return [account];
-    const r = E.analyzeSheet({ fileName: account.fileName, sheetName: account.sheetName, rows: account.rows, dictionary, readWarnings: account.readWarnings || [], pick: account.pick || null });
+    const r = E.analyzeSheet({ fileName: account.fileName, sheetName: account.sheetName, rows: account.rows, dictionary, readWarnings: account.readWarnings || [], pick: account.pick || null, merges: account.merges || [] });
     r.format = account.format;
     r.readWarnings = account.readWarnings;
     const parts = E.splitByCurrency(r, dictionary);
