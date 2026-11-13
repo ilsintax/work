@@ -48,8 +48,8 @@
         <div id="appStatus" class="hidden bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg shadow-sm text-sm font-medium"></div>
         <section id="step1" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 fade-in"><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded-lg p-6 text-center hover:bg-gray-100 transition cursor-pointer relative" onclick="document.getElementById('templateFile').click()"><div class="absolute top-2 right-2 text-[10px] bg-gray-200 text-gray-600 px-2 py-1 rounded">클릭하여 변경 가능</div><div class="text-gray-700 font-bold text-lg mb-2 mt-4" id="templateStatusText">기본 금감원 템플릿 사용 중</div><p class="text-sm text-gray-500 mb-2">다른 템플릿을 쓰려면 클릭해서 업로드하세요.</p><input type="file" id="templateFile" accept=".xlsx" class="hidden" onchange="handleTemplateUpload(event)"></div><div class="border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-lg p-6 text-center hover:bg-blue-50 transition cursor-pointer shadow-sm" onclick="document.getElementById('dataFile').click()"><div class="text-blue-700 font-bold text-lg mb-2 mt-4" id="uploadBoxText">사내 엑셀(재무제표) 선택</div><p class="text-sm text-gray-500 mb-2">최근 추출한 로우 데이터 (.xlsx, .xls, .csv)</p><input type="file" id="dataFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleDataUpload(event)"></div></div><div class="mt-4 bg-sky-50 border border-sky-200 text-sky-900 rounded-lg px-4 py-3 text-sm leading-6"><strong>1단계 안내</strong><br>회계프로그램 재무제표에서 반드시 계정코드가 보이도록 설정한 뒤 다운로드해주세요.<br>세무사랑은 <strong>F11</strong>, 위하고는 <strong>Shift+F4</strong>로 계정코드가 보이도록 설정합니다.</div></section>
         <section id="step2" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hidden fade-in"><div id="tutorialBanner" class="bg-blue-600 text-white p-5 rounded-lg mb-4 shadow-md sticky top-0 z-20 flex justify-between items-center transition-colors duration-300"><div><h2 class="text-xl font-bold flex items-center"><span class="bg-white text-blue-800 rounded-full w-7 h-7 inline-flex items-center justify-center text-sm mr-3 shadow-inner">2</span><span id="tutorialMainText">1단계: [계정명] 열을 클릭해주세요!</span></h2><p class="text-sm text-blue-100 mt-1 ml-10" id="tutorialDesc">계정명이 있는 열을 선택하세요.</p></div><div class="flex items-center space-x-2"><button onclick="resetCurrentUpload()" class="bg-white/15 hover:bg-white/25 text-white border border-white/40 px-4 py-2 rounded-md font-medium transition text-sm">파일 다시 선택</button><button id="btnSkipRight" onclick="skipRightColumn()" class="hidden bg-white/20 hover:bg-white/30 text-white border border-white/50 px-4 py-2 rounded-md font-medium transition text-sm">우측 금액 없음</button><button id="btnConfirmColumns" onclick="finishTutorial()" class="hidden bg-white text-blue-700 hover:bg-gray-100 px-6 py-2 rounded-md font-bold transition shadow">선택 완료</button></div></div><div class="overflow-x-auto border border-gray-300 rounded-lg max-h-[400px] bg-white relative shadow-inner"><table class="w-full text-sm text-left border-collapse" id="previewTable"></table></div><div class="mt-4 bg-sky-50 border border-sky-200 text-sky-900 rounded-lg px-4 py-3 text-sm leading-6"><strong>2단계 안내</strong><br>업로드 전 원본 재무제표에서 계정코드가 실제로 표시되는지 다시 확인해주세요.<br>계정코드가 없으면 자동 매칭과 작업기억 불러오기가 정확하지 않을 수 있습니다. 세무사랑은 <strong>F11</strong>, 위하고는 <strong>Shift+F4</strong>입니다.</div></section>
-        <section id="step3" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hidden fade-in"><div class="flex flex-col md:flex-row justify-between items-end mb-4"><div><h2 class="text-lg font-bold flex items-center text-blue-800"><span class="bg-blue-600 text-white rounded-full w-6 h-6 inline-flex items-center justify-center text-sm mr-2 shadow">3</span><span id="mappingTitle">금감원 양식 B열 행 번호 매핑 및 분할</span></h2><ul class="text-xs text-blue-600 mt-2 space-y-1 list-disc list-inside bg-blue-50 p-3 rounded border border-blue-100 shadow-sm"><li>대괄호가 포함된 계정 중 금액이 0이 아닌 항목만 자동 추출됩니다.</li><li>기존 작업기억이 있으면 같은 계정코드의 타겟 행 번호를 자동 반영합니다.</li><li>분할된 항목은 분홍색으로 강조되며, 합계가 원본 금액과 같아야 합니다.</li></ul></div></div><div class="overflow-x-auto border border-gray-300 rounded-lg mb-6 shadow-inner"><table class="w-full text-sm text-left"><thead class="bg-gray-100 text-gray-700 sticky top-0 shadow-sm z-10"><tr><th class="p-3 text-center w-12 border-b">상태</th><th class="p-3 border-b">사내 계정명</th><th class="p-3 text-right border-b w-40">인식된 금액<br><span class="text-[10px] text-gray-400 font-normal">(더블클릭 수정)</span></th><th class="p-3 border-b bg-yellow-50/50 w-[450px]">매핑 및 금액 나누기 (타겟: <span id="targetSheetName" class="font-bold text-blue-600">GA023 B열</span>)</th></tr></thead><tbody id="mappingTableBody" class="divide-y divide-gray-200"></tbody></table></div><div class="flex justify-between border-t pt-5"><button onclick="goBackToUpload()" class="bg-gray-200 text-gray-700 px-5 py-3 rounded-md font-bold hover:bg-gray-300 transition">이전 단계로 돌아가기</button><button id="btnNextPhase" onclick="processNextPhase()" class="bg-blue-600 text-white px-8 py-3 rounded-md font-bold text-lg hover:bg-blue-700 transition shadow-lg flex items-center">재무제표 확정 및 손익계산서로 이동</button></div></section>
-        <section id="step4" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hidden fade-in"><div class="flex items-center justify-between gap-4"><div><h2 class="text-xl font-bold text-emerald-700">최종 파일 준비 완료</h2><p class="text-sm text-gray-500 mt-1">원하는 파일만 선택해서 다운로드하세요. 자동 다운로드는 하지 않습니다.</p></div><button onclick="goBackToUpload()" class="bg-gray-200 text-gray-700 px-5 py-3 rounded-md font-bold hover:bg-gray-300 transition">손익계산서 다시 작업</button></div><div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4"><button id="btnDownloadExcel" onclick="downloadPreparedExcel()" class="bg-emerald-600 text-white px-6 py-4 rounded-lg font-bold hover:bg-emerald-700 transition disabled:bg-emerald-300">엑셀 다운로드</button><button id="btnDownloadJson" onclick="downloadPreparedJson()" class="bg-slate-700 text-white px-6 py-4 rounded-lg font-bold hover:bg-slate-800 transition disabled:bg-slate-400">JSON 다운로드</button></div></section>
+        <section id="step3" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hidden fade-in"><div class="flex flex-col md:flex-row justify-between items-end mb-4"><div><h2 class="text-lg font-bold flex items-center text-blue-800"><span class="bg-blue-600 text-white rounded-full w-6 h-6 inline-flex items-center justify-center text-sm mr-2 shadow">3</span><span id="mappingTitle">금감원 양식 B열 행 번호 매핑 및 분할</span></h2><ul class="text-xs text-blue-600 mt-2 space-y-1 list-disc list-inside bg-blue-50 p-3 rounded border border-blue-100 shadow-sm"><li>대괄호가 포함된 계정 중 금액이 0이 아닌 항목만 자동 추출됩니다.</li><li>기존 작업기억이 있으면 같은 계정코드의 타겟 행 번호를 자동 반영합니다.</li><li>분할된 항목은 분홍색으로 강조되며, 합계가 원본 금액과 같아야 합니다.</li></ul></div></div><div id="sourceCheckBox" class="hidden mb-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-4 py-3 text-sm leading-6"></div><div class="overflow-x-auto border border-gray-300 rounded-lg mb-6 shadow-inner"><table class="w-full text-sm text-left"><thead class="bg-gray-100 text-gray-700 sticky top-0 shadow-sm z-10"><tr><th class="p-3 text-center w-12 border-b">상태</th><th class="p-3 border-b">사내 계정명</th><th class="p-3 text-right border-b w-40">인식된 금액<br><span class="text-[10px] text-gray-400 font-normal">(더블클릭 수정)</span></th><th class="p-3 border-b bg-yellow-50/50 w-[450px]">매핑 및 금액 나누기 (타겟: <span id="targetSheetName" class="font-bold text-blue-600">GA023 B열</span>)</th></tr></thead><tbody id="mappingTableBody" class="divide-y divide-gray-200"></tbody></table></div><div class="flex justify-between border-t pt-5"><button onclick="goBackToUpload()" class="bg-gray-200 text-gray-700 px-5 py-3 rounded-md font-bold hover:bg-gray-300 transition">이전 단계로 돌아가기</button><button id="btnNextPhase" onclick="processNextPhase()" class="bg-blue-600 text-white px-8 py-3 rounded-md font-bold text-lg hover:bg-blue-700 transition shadow-lg flex items-center">재무제표 확정 및 손익계산서로 이동</button></div></section>
+        <section id="step4" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hidden fade-in"><div class="flex items-center justify-between gap-4"><div><h2 class="text-xl font-bold text-emerald-700">최종 파일 준비 완료</h2><p class="text-sm text-gray-500 mt-1">원하는 파일만 선택해서 다운로드하세요. 자동 다운로드는 하지 않습니다.</p></div><button onclick="goBackToUpload()" class="bg-gray-200 text-gray-700 px-5 py-3 rounded-md font-bold hover:bg-gray-300 transition">손익계산서 다시 작업</button></div><div id="reconcileBox" class="mt-6"></div><div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4"><button id="btnDownloadExcel" onclick="downloadPreparedExcel()" class="bg-emerald-600 text-white px-6 py-4 rounded-lg font-bold hover:bg-emerald-700 transition disabled:bg-emerald-300">엑셀 다운로드</button><button id="btnDownloadJson" onclick="downloadPreparedJson()" class="bg-slate-700 text-white px-6 py-4 rounded-lg font-bold hover:bg-slate-800 transition disabled:bg-slate-400">JSON 다운로드</button></div></section>
     </div>
     <script>
         let savedRules = { info: { company: '', year: '', month: '', w_dept: '', w_title: '', w_name: '', w_phone: '', w_email: '', c_dept: '', c_title: '', c_name: '', c_phone: '', c_email: '' }, bs: {}, is: {} };
@@ -251,6 +251,79 @@
             })));
             return count;
         }
+        // ── 당기순이익 연결 · 원본 소계 점검 · 총계 대사 (2026-11-13) ──
+        let sourceTotals = { BS: {}, IS: {} }; let sourceCheckWarnings = { BS: [], IS: [] }; let lastReconcile = [];
+        const isNetIncomeLabel = (label) => /^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\.?당기순/.test(label);
+        // 재무 '(당기순이익)' 행이 손익 당기순이익 행을 항상 참조하도록 수식을 다시 넣는다. (지난 보고서를 템플릿으로 써서 숫자로 바뀐 경우 대비)
+        function restoreNetIncomeLink(bsSheet, isSheet, report) {
+            if (!bsSheet || !isSheet) return;
+            const findRow = (sheet, test) => { for (let r = DATA_START_ROW; r <= sheet.rowCount; r++) { if (test(normalizeLabel(getCellText(sheet.getCell(`A${r}`))))) return r; } return null; };
+            const bsRow = findRow(bsSheet, label => label === '(당기순이익)'); const isRow = findRow(isSheet, isNetIncomeLabel);
+            if (!bsRow || !isRow) { report.skipped.push('재무 (당기순이익) 행 또는 손익 당기순이익 행을 찾지 못해 연결 수식을 넣지 못함'); return; }
+            bsSheet.getCell(`B${bsRow}`).value = { formula: `'${isSheet.name.replace(/'/g, "''")}'!B${isRow}` };
+            report.netIncomeLink = `재무 B${bsRow} = 손익 B${isRow}`;
+        }
+        // 업로드한 재무제표의 총계 행(자산·부채·자본총계, 당기순이익)을 읽어 둔다. '당기순손실' 표기는 부호를 바꾼다.
+        function captureSourceTotals(processKey) {
+            const pick = (row) => { const l = getRawNum(row[selectedCols.left]); const r = selectedCols.right !== null ? getRawNum(row[selectedCols.right]) : 0; return l !== 0 ? l : r; };
+            const totals = {};
+            for (let i = 1; i < internalData.length; i++) {
+                const row = internalData[i]; const label = normalizeLabel(row[selectedCols.account]); if (!label || /\[.*?\]/.test(label)) continue;
+                if (processKey === 'BS') { ['자산총계', '부채총계', '자본총계'].forEach(key => { if (label === key && !(key in totals)) totals[key] = pick(row); }); }
+                else if (/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]*\.?당기순(이익|손실|손익)/.test(label) && !('당기순이익' in totals)) { const v = pick(row); totals['당기순이익'] = (label.includes('손실') && !label.includes('이익')) ? -v : v; }
+            }
+            return totals;
+        }
+        // 업로드 원본에서 [코드] 세부 계정의 합계가 바로 위 소계 행과 같은지 점검한다.
+        // 소계가 있는 열 기준으로 더하고, 세부 계정이 그 열에 금액이 없으면 다른 선택 열로 더한다.
+        function checkSourceSubtotals() {
+            const cols = [selectedCols.left, selectedCols.right].filter(c => c !== null && c !== undefined); const hasCode = (row) => /\[.*?\]/.test(String(row?.[selectedCols.account] ?? ''));
+            const warnings = []; let i = 1;
+            while (i < internalData.length) {
+                const row = internalData[i]; const label = String(row[selectedCols.account] ?? '').trim();
+                if (!label || hasCode(row)) { i++; continue; }
+                const details = []; let j = i + 1;
+                while (j < internalData.length && hasCode(internalData[j])) { details.push(internalData[j]); j++; }
+                const col = cols.find(c => getRawNum(row[c]) !== 0);
+                if (details.length > 0 && col !== undefined) {
+                    const subtotal = getRawNum(row[col]); let useCol = col;
+                    if (details.every(d => getRawNum(d[col]) === 0)) useCol = cols.find(c => c !== col && details.some(d => getRawNum(d[c]) !== 0)) ?? col;
+                    const sum = details.reduce((s, d) => s + getRawNum(d[useCol]), 0);
+                    if (Math.round(sum) !== Math.round(subtotal)) warnings.push({ label, subtotal, sum, diff: subtotal - sum });
+                }
+                i = details.length > 0 ? j : i + 1;
+            }
+            return warnings;
+        }
+        function renderSourceCheck(processKey) {
+            const box = document.getElementById('sourceCheckBox'); const list = sourceCheckWarnings[processKey] || [];
+            if (list.length === 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+            box.innerHTML = `<strong>원본 재무제표 점검: 소계와 세부 계정 합계가 다른 곳이 있습니다.</strong> 회계프로그램에서 해당 계정 잔액을 확인해주세요. 그대로 진행하면 금감원 보고서 총계도 같은 금액만큼 달라집니다.<ul class="list-disc list-inside mt-1">${list.map(w => `<li>${escapeHtml(w.label)} — 소계 ${formatNum(w.subtotal)} / 세부 합계 ${formatNum(w.sum)} / 차이 <strong>${formatNum(w.diff)}</strong></li>`).join('')}</ul>`;
+            box.classList.remove('hidden');
+        }
+        // 매핑 결과로 금감원 양식의 특정 행 값을 계산한다(보정 수식 기준). 합계 행에 직접 매핑했다면 그 금액을 쓴다.
+        function computeReportValue(processKey, rowSums, rowNumber) {
+            const info = getTemplateRowInfo(processKey); if (!info) return null; const memo = {};
+            const value = (r, depth) => { if (depth > 60) return 0; if (r in memo) return memo[r]; let v; if (r in rowSums) v = Number(rowSums[r]) || 0; else v = parseFormulaTerms(info.rows[r]?.formula).reduce((s, [child, sign]) => s + sign * value(child, depth + 1), 0); memo[r] = v; return v; };
+            return value(rowNumber, 0);
+        }
+        function buildReconciliation(bsRowSums, isRowSums) {
+            const result = [];
+            [['자산총계', 'BS'], ['부채총계', 'BS'], ['자본총계', 'BS'], ['당기순이익', 'IS']].forEach(([name, key]) => {
+                const info = getTemplateRowInfo(key); const test = key === 'BS' ? (l => l === name) : isNetIncomeLabel;
+                const row = info ? Object.keys(info.rows).map(Number).find(r => test(normalizeLabel(info.rows[r].label))) : undefined;
+                const report = row ? computeReportValue(key, key === 'BS' ? bsRowSums : isRowSums, row) : null; const source = sourceTotals[key]?.[name];
+                result.push({ name, row: row ?? null, report, source: source ?? null, diff: (report !== null && source !== undefined && source !== null) ? report - source : null });
+            });
+            return result;
+        }
+        function renderReconciliation(result) {
+            const box = document.getElementById('reconcileBox'); const bad = result.some(r => r.diff !== null && Math.round(r.diff) !== 0);
+            const cell = (v) => v === null || v === undefined ? '<span class="text-gray-400">원본에서 찾지 못함</span>' : formatNum(v);
+            const rows = result.map(r => { const ok = r.diff !== null && Math.round(r.diff) === 0; const status = r.diff === null ? '<span class="text-gray-500">확인 불가</span>' : ok ? '<span class="text-emerald-700 font-bold">일치</span>' : `<span class="text-red-600 font-bold">차이 ${formatNum(r.diff)}</span>`; return `<tr class="border-t"><td class="p-2">${r.name}${r.row ? ` <span class="text-xs text-gray-400">(B${r.row})</span>` : ''}</td><td class="p-2 text-right font-mono">${cell(r.source)}</td><td class="p-2 text-right font-mono">${cell(r.report)}</td><td class="p-2 text-right">${status}</td></tr>`; }).join('');
+            const notes = [...(sourceCheckWarnings.BS || []), ...(sourceCheckWarnings.IS || [])];
+            box.innerHTML = `<div class="border rounded-lg ${bad ? 'border-red-300 bg-red-50' : 'border-emerald-200 bg-emerald-50'} p-4"><h3 class="font-bold ${bad ? 'text-red-700' : 'text-emerald-800'} mb-2">${bad ? '총계 대사: 원본 재무제표와 다른 항목이 있습니다' : '총계 대사: 원본 재무제표와 일치합니다'}</h3><table class="w-full text-sm bg-white rounded"><thead><tr class="text-gray-500"><th class="p-2 text-left">구분</th><th class="p-2 text-right">원본 재무제표</th><th class="p-2 text-right">금감원 보고서(계산)</th><th class="p-2 text-right">결과</th></tr></thead><tbody>${rows}</tbody></table>${notes.length ? `<p class="text-xs text-red-700 mt-2">원본 소계 불일치: ${notes.map(w => `${escapeHtml(w.label)} 차이 ${formatNum(w.diff)}`).join(', ')} — 원본 회계자료를 먼저 확인하세요.</p>` : ''}${bad ? '<p class="text-xs text-red-700 mt-1">누락된 계정, 잘못된 행 번호·부호, 원본 자료 오류를 확인한 뒤 다시 만들어주세요.</p>' : ''}</div>`;
+        }
         function writeRowSums(sheet, rowSums) { Object.entries(rowSums).forEach(([rowNumber, sumVal]) => { sheet.getCell(`B${rowNumber}`).value = sumVal; }); }
         const formatNum = (num) => Number(num).toLocaleString('ko-KR');
         const getRawNum = (num) => {
@@ -350,6 +423,7 @@
         async function finishTutorial() {
             extractedAccounts = []; const activeRules = currentProcess === 'BS' ? savedRules.bs : savedRules.is; const btnConfirm = document.getElementById('btnConfirmColumns'); btnConfirm.disabled = true; setAppStatus('학습 규칙을 적용해 계정과 매핑 후보를 추출하는 중입니다...'); await waitForPaint();
             for (let i = 1; i < internalData.length; i++) { const row = internalData[i]; const rawAccountName = row[selectedCols.account]; if (shouldExcludeAccount(rawAccountName)) continue; const valLeft = getRawNum(row[selectedCols.left]); const valRight = selectedCols.right !== null ? getRawNum(row[selectedCols.right]) : 0; if (valLeft === 0 && valRight === 0) continue; const finalAmount = (valLeft !== 0) ? valLeft : valRight; const accCode = getAccountCode(rawAccountName); const savedSplitEntries = accCode ? normalizeSavedSplitEntries(activeRules[accCode], finalAmount) : null; const splitsArray = savedSplitEntries && savedSplitEntries.length > 0 ? savedSplitEntries : [{ id: `s_${Date.now()}_${i}`, amount: finalAmount, targetRow: '' }]; extractedAccounts.push({ id: `acc_${i}`, rawName: String(rawAccountName).trim(), name: cleanAccountName(rawAccountName), baseAmount: finalAmount, splits: splitsArray }); if (i % PROCESS_BATCH_SIZE === 0) { setAppStatus(`학습 규칙 적용 중... ${i.toLocaleString('ko-KR')} / ${Math.max(internalData.length - 1, 0).toLocaleString('ko-KR')} 행 처리`); await waitForPaint(); } }
+            sourceTotals[currentProcess] = captureSourceTotals(currentProcess); sourceCheckWarnings[currentProcess] = checkSourceSubtotals(); renderSourceCheck(currentProcess);
             setAppStatus(`매핑 화면을 준비하는 중입니다... ${extractedAccounts.length.toLocaleString('ko-KR')}개 계정`); document.getElementById('step2').classList.add('hidden'); document.getElementById('step3').classList.remove('hidden'); await renderMappingTable(); btnConfirm.disabled = false; clearAppStatus();
         }
         // 매핑 행 번호 아래에 양식 계정명과 경고(합계 행 / 없는 행 / 차감 항목 부호)를 보여준다.
@@ -396,10 +470,11 @@
                 const a5Text = `회사 : ${info.company}   기준년월(일) : ${info.year}년 ${info.month}월`; const a7Text = `작성자 정보   소속 : ${info.w_dept}   직위 : ${info.w_title}   성명 : ${info.w_name}   전화번호 : ${info.w_phone}   이메일 : ${info.w_email}`; const a8Text = `확인자 정보   소속 : ${info.c_dept}   직위 : ${info.c_title}   성명 : ${info.c_name}   전화번호 : ${info.c_phone}   이메일 : ${info.c_email}`;
                 workbook.eachSheet(sheet => { sheet.getCell('A5').value = a5Text; sheet.getCell('A7').value = a7Text; sheet.getCell('A8').value = a8Text; });
                 let bsSheet = null, isSheet = null; workbook.eachSheet(sheet => { if (sheet.name.includes('GA023') || sheet.name.includes('재무')) bsSheet = sheet; if (sheet.name.includes('GA025') || sheet.name.includes('손익')) isSheet = sheet; });
-                // 1) 합계 수식 보정 → 2) 입력 칸 0 초기화(이전 값 제거) → 3) 수식 칸 매핑 확인 → 4) 이번 달 매핑 기록
+                // 1) 합계 수식 보정 + 재무 당기순이익 연결 복원 → 2) 입력 칸 0 초기화(이전 값 제거) → 3) 수식 칸 매핑 확인 → 4) 이번 달 매핑 기록 → 5) 총계 대사
                 const fixReport = { applied: 0, skipped: [] };
-                if (bsSheet) { applyFormulaFixes(bsSheet, 'GA023', fixReport); resetInputCells(bsSheet, 'GA023', fixReport); }
-                if (isSheet) { applyFormulaFixes(isSheet, 'GA025', fixReport); resetInputCells(isSheet, 'GA025', fixReport); }
+                if (bsSheet) applyFormulaFixes(bsSheet, 'GA023', fixReport); if (isSheet) applyFormulaFixes(isSheet, 'GA025', fixReport);
+                restoreNetIncomeLink(bsSheet, isSheet, fixReport);
+                if (bsSheet) resetInputCells(bsSheet, 'GA023', fixReport); if (isSheet) resetInputCells(isSheet, 'GA025', fixReport);
                 const bsRowSums = collectRowSums(finalBsMapping); const isRowSums = collectRowSums(finalIsMapping);
                 const formulaTargets = [...findFormulaTargets(bsSheet, bsRowSums, '재무'), ...findFormulaTargets(isSheet, isRowSums, '손익')];
                 const mappingIssues = [...collectMappingIssues('BS', finalBsMapping, '재무'), ...collectMappingIssues('IS', finalIsMapping, '손익')];
@@ -411,7 +486,8 @@
                 }
                 if (bsSheet) writeRowSums(bsSheet, bsRowSums); if (isSheet) writeRowSums(isSheet, isRowSums);
                 workbook.calcProperties = workbook.calcProperties || {}; workbook.calcProperties.fullCalcOnLoad = true;
-                console.info(`합계 수식 보정 ${fixReport.applied}건 적용`, fixReport.skipped);
+                console.info(`합계 수식 보정 ${fixReport.applied}건 적용`, fixReport.netIncomeLink || '', fixReport.skipped);
+                lastReconcile = buildReconciliation(bsRowSums, isRowSums); renderReconciliation(lastReconcile);
                 if (fixReport.skipped.length > 0) alert(`템플릿 구조가 예상과 달라 일부 보정을 건너뛰었습니다. 결과 엑셀의 합계를 직접 확인해주세요.\n\n${fixReport.skipped.slice(0, 15).join('\n')}${fixReport.skipped.length > 15 ? `\n외 ${fixReport.skipped.length - 15}건` : ''}`);
                 encodeCarriageReturns(workbook);
                 setAppStatus('엑셀 파일을 생성하는 중입니다...'); await waitForPaint(); const buffer = await workbook.xlsx.writeBuffer(); preparedExcelBlob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); preparedJsonText = JSON.stringify(savedRules, null, 2);
