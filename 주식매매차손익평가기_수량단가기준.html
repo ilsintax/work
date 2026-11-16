@@ -3317,6 +3317,8 @@
           const filled = fieldInputs(ids).map(input => normalized(input.value)).find(Boolean);
           settings[group][key] = filled || '';
         }
+        // 종가 자동입력에서 사람이 고른 종목코드 연결 (종목 식별정보 → 코드)
+        settings.stockCodes = window.domesticClosePrices?.exportCodes?.() || {};
         return settings;
       }
       function validateSettings(settings) {
@@ -3330,6 +3332,15 @@
           if (value === undefined) continue;
           if (typeof value !== 'string' || value.length > 200) throw Error(`파일의 ${label} 값이 올바르지 않습니다.`);
           if (key === 'businessNo' && !/^\d{0,10}$/.test(normalized(value))) throw Error('파일의 사업자등록번호는 숫자 10자리 이내여야 합니다.');
+        }
+        const codes = settings.stockCodes;
+        if (codes !== undefined) {
+          if (!codes || typeof codes !== 'object' || Array.isArray(codes) || Object.keys(codes).length > 10000) throw Error('파일의 종목코드 기억 정보 형식이 올바르지 않습니다.');
+          for (const [identityText, value] of Object.entries(codes)) {
+            if (!identityText || identityText.length > 500 || !value || typeof value !== 'object'
+              || typeof value.code !== 'string' || !/^[0-9A-Z]{6}$/.test(value.code)
+              || typeof value.name !== 'string' || value.name.length > 200) throw Error('파일의 종목코드 기억 정보가 올바르지 않습니다.');
+          }
         }
         return settings;
       }
@@ -3352,7 +3363,11 @@
           semuYear.value = fiscalYear;
           changed.push('세무사랑 해당연도');
         }
-        if (changed.length) {
+        if (settings?.stockCodes) {
+          const added = window.domesticClosePrices?.importCodes?.(settings.stockCodes) || 0;
+          if (added) changed.push(`종목코드 기억 ${added}개`);
+        }
+        if (changed.some(label => !label.startsWith('종목코드 기억'))) {
           // 바뀐 계정으로 다시 만들도록 이미 만든 업로드 파일 버튼은 숨긴다.
           ['download-semu-btn', 'download-wihago-btn', 'download-valuation-semu-btn', 'download-valuation-wihago-btn']
             .map(id => document.getElementById(id))
@@ -3591,9 +3606,366 @@
       fileInput.addEventListener('change', () => cancel());
       startMappingBtn.addEventListener('click', () => cancel());
       resetMappingBtn.addEventListener('click', () => cancel());
-      return { payload, match, preview, apply, cancel, load, reconcile, collectSettings, applySettings, dropExcel };
+      return { payload, match, preview, apply, cancel, load, reconcile, collectSettings, applySettings, validateSettings, dropExcel };
     })();
   </script>
 
+  <!-- domestic-close-prices v1: 평가차액 입력 카드의 기말단가를 공공데이터포털(금융위원회) KRX 종가로 미리 채운다. 기존 계산 함수는 수정하지 않는다. -->
+  <script>
+    window.domesticClosePrices = (() => {
+      const KEY_STORE = 'domesticStockEvaluator.dataGoKrServiceKey';
+      const ENDPOINTS = [
+        { kind: '주식', required: true, url: 'https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo' },
+        { kind: 'ETF', required: false, url: 'https://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService/getETFPriceInfo' }
+      ];
+      const PAGE_SIZE = 5000;
+      const codeMemory = new Map();      // 종목 식별정보 → { code, name } (사람이 고른 연결)
+      const autoFilled = new WeakMap();  // 입력칸 객체 → 자동으로 넣은 단가
+      const cache = new Map();           // 기준일 → Promise<시세>
+      let lastResult = null, runToken = 0, scheduled = false, dateTouched = false;
+
+      const panel = document.getElementById('evaluation-work-panel');
+      const bar = document.createElement('div');
+      bar.id = 'close-price-bar';
+      bar.className = 'rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-700 space-y-2';
+      bar.innerHTML = `
+        <div class="flex flex-wrap items-end gap-3">
+          <p class="font-semibold w-full">기말단가 자동입력 (KRX 종가, 공공데이터포털)</p>
+          <label class="text-sm">종가 기준일<input id="close-price-date" type="date" class="block rounded-lg border border-slate-300 bg-white p-2 mt-1" /></label>
+          <button id="close-price-refresh" type="button" class="rounded-lg border border-sky-400 bg-white px-3 py-2">종가 다시 불러오기</button>
+          <button id="close-price-key-toggle" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-2">API 키 설정</button>
+        </div>
+        <div id="close-price-key-box" class="rounded-lg border border-slate-200 bg-white p-3 space-y-2" hidden>
+          <label class="block text-sm">공공데이터포털 일반 인증키 (Decoding 또는 Encoding 아무거나)
+            <input id="close-price-key" type="password" autocomplete="off" spellcheck="false" class="block w-full rounded-lg border border-slate-300 p-2 mt-1" />
+          </label>
+          <div class="flex flex-wrap gap-2">
+            <button id="close-price-key-save" type="button" class="rounded-lg bg-sky-700 text-white px-3 py-2">이 PC에 저장</button>
+            <button id="close-price-key-remove" type="button" class="rounded-lg border px-3 py-2">저장된 키 지우기</button>
+          </div>
+          <p class="text-xs text-slate-500">키는 파일이나 GitHub에 들어가지 않고 이 PC의 이 브라우저에만 저장됩니다. 조회 때 공공데이터포털로는 기준일만 보내고, 업체명·종목·수량은 보내지 않습니다.</p>
+        </div>
+        <p id="close-price-status" class="whitespace-pre-wrap"></p>`;
+      const stockList = document.getElementById('evaluation-stock-list');
+      if (panel && stockList) panel.insertBefore(bar, stockList);
+      const $ = id => document.getElementById(id);
+      const dateInput = $('close-price-date');
+
+      const storage = {
+        get() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (_) { return ''; } },
+        set(value) {
+          try { if (value) localStorage.setItem(KEY_STORE, value); else localStorage.removeItem(KEY_STORE); return true; }
+          catch (_) { return false; }
+        }
+      };
+      function serviceKey() {
+        let key = storage.get().trim();
+        if (/%[0-9A-Fa-f]{2}/.test(key)) { try { key = decodeURIComponent(key); } catch (_) { /* 그대로 사용 */ } }
+        return key;
+      }
+      function status(text, tone = 'info') {
+        const el = $('close-price-status');
+        el.textContent = text;
+        el.style.color = tone === 'error' ? '#9a3412' : tone === 'ok' ? '#065f46' : '#334155';
+      }
+
+      // ---------- 날짜 ----------
+      const pad = n => String(n).padStart(2, '0');
+      const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const dateOf = iso => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+      function workYear() {
+        const typed = ['opening-year', 'semu-fiscal-year'].map(id => String(document.getElementById(id)?.value || '').trim()).find(v => /^[1-9]\d{3}$/.test(v));
+        if (typed) return Number(typed);
+        let latest = '';
+        try {
+          for (const config of state.stockConfigs) {
+            for (const trade of collectSheetTransactions(config).transactions) {
+              if (/^\d{4}-\d{2}-\d{2}$/.test(trade.tradeDate) && trade.tradeDate > latest) latest = trade.tradeDate;
+            }
+          }
+        } catch (_) { /* 장부를 못 읽으면 올해 */ }
+        return latest ? Number(latest.slice(0, 4)) : new Date().getFullYear();
+      }
+      // 지난 연도 장부 → 그해 12/31, 올해 장부 → 지난달 말일 (월결산 기준). 사용자가 바꿀 수 있다.
+      function defaultDate() {
+        const now = new Date(), year = workYear();
+        if (year < now.getFullYear()) return `${year}-12-31`;
+        return isoOf(new Date(now.getFullYear(), now.getMonth(), 0));
+      }
+
+      // ---------- 공공데이터포털 조회 ----------
+      async function callApi(url, params) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        let response, text;
+        try {
+          response = await fetch(`${url}?${new URLSearchParams(params)}`, { signal: controller.signal });
+          text = await response.text();
+        } catch (_) {
+          throw Error('공공데이터포털에 접속하지 못했습니다. 인터넷 연결을 확인해주세요.');
+        } finally { clearTimeout(timer); }
+        let data;
+        try { data = JSON.parse(text); }
+        catch (_) {
+          const found = text.match(/<returnAuthMsg>([^<]+)<|<errMsg>([^<]+)</);
+          throw Error(`공공데이터포털 응답 오류: ${found ? (found[1] || found[2]) : `HTTP ${response.status}`}`);
+        }
+        const header = data?.response?.header;
+        if (!header) {
+          const msg = data?.OpenAPI_ServiceResponse?.cmmMsgHeader || {};
+          const hint = msg.errMsg === 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR' || msg.errMsg === 'SERVICE_ACCESS_DENIED_ERROR'
+            ? ' — 키가 틀렸거나 활용신청 승인 전(승인 후 반영까지 1시간 정도 걸릴 수 있음)입니다.' : '';
+          throw Error(`공공데이터포털 오류: ${[msg.returnAuthMsg, msg.errMsg].filter(Boolean).join(' / ') || `HTTP ${response.status}`}${hint}`);
+        }
+        if (String(header.resultCode) !== '00') throw Error(`공공데이터포털 오류: ${header.resultMsg || ''} (${header.resultCode})`);
+        const body = data.response.body || {};
+        let items = body.items?.item ?? [];
+        if (!Array.isArray(items)) items = items ? [items] : [];
+        return { items, total: Number(body.totalCount || 0) };
+      }
+      async function fetchDay(endpoint, key, basDt) {
+        const rows = [];
+        for (let page = 1; page <= 5; page++) {
+          const { items, total } = await callApi(endpoint.url, { serviceKey: key, resultType: 'json', numOfRows: String(PAGE_SIZE), pageNo: String(page), basDt });
+          for (const item of items) {
+            const close = Number(String(item.clpr ?? '').replace(/,/g, ''));
+            const code = String(item.srtnCd ?? '').trim().toUpperCase().replace(/^A(?=[0-9A-Z]{6}$)/, '');
+            if (!code || !item.itmsNm || !Number.isFinite(close) || close <= 0) continue;
+            rows.push({ code, name: String(item.itmsNm).trim(), close, market: String(item.mrktCtg || endpoint.kind), kind: endpoint.kind });
+          }
+          if (rows.length >= total || items.length < PAGE_SIZE) break;
+        }
+        return rows;
+      }
+      // 기준일 자료가 없으면(휴장일) 직전 거래일로 7일까지 거슬러 간다. 최근 4일 이내는 아직 미공시일 수 있어 거슬러 가지 않는다.
+      async function fetchMarket(requested, key) {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const recentLimit = new Date(today); recentLimit.setDate(recentLimit.getDate() - 4);
+        if (dateOf(requested) > today) throw Error('기준일이 오늘 이후입니다. 날짜를 확인해주세요.');
+        const notes = [];
+        for (let back = 0; back <= 7; back++) {
+          const day = dateOf(requested); day.setDate(day.getDate() - back);
+          if (day.getDay() === 0 || day.getDay() === 6) continue;
+          const basDt = isoOf(day).replace(/-/g, '');
+          const rows = [];
+          for (const endpoint of ENDPOINTS) {
+            try { rows.push(...await fetchDay(endpoint, key, basDt)); }
+            catch (error) {
+              if (endpoint.required) throw error;
+              notes.push(`${endpoint.kind} 시세는 가져오지 못했습니다(증권상품시세정보 활용신청 확인): ${error.message}`);
+            }
+          }
+          if (rows.some(row => row.kind === '주식')) return { requested, date: isoOf(day), rows, notes: [...new Set(notes)] };
+          if (day >= recentLimit) throw Error(`${isoOf(day)} 종가가 아직 올라오지 않았습니다. 공공데이터포털 자료는 다음 영업일 오후에 갱신됩니다. 나중에 '종가 다시 불러오기'를 누르거나 직접 입력해주세요.`);
+        }
+        throw Error(`${requested} 이전 7일 동안 종가 자료가 없습니다. 기준일을 확인해주세요.`);
+      }
+      function market(requested) {
+        if (!cache.has(requested)) {
+          const promise = fetchMarket(requested, serviceKey());
+          cache.set(requested, promise);
+          promise.catch(() => cache.delete(requested));
+        }
+        return cache.get(requested);
+      }
+
+      // ---------- 종목 맞추기 ----------
+      const identityOf = item => {
+        const config = state.stockConfigs.find(entry => entry.id === item.id) || item;
+        return String(config.stockIdentity ?? config.rawStockCellText ?? config.stockName ?? '').normalize('NFC').trim();
+      };
+      const normName = value => String(value ?? '').normalize('NFKC').toUpperCase().replace(/\(주\)|주식회사|\s+/g, '');
+      const codeIn = value => String(value ?? '').normalize('NFKC').toUpperCase().match(/(?:^|[^0-9A-Z])A?([0-9][0-9A-Z]{5})(?![0-9A-Z])/)?.[1] || '';
+      function resolve(item, rows) {
+        const identity = identityOf(item);
+        const remembered = codeMemory.get(identity);
+        if (remembered) {
+          const row = rows.find(entry => entry.code === remembered.code);
+          return row ? { status: 'ok', row, how: '기억된 종목' } : { status: 'none', note: `기억된 종목코드 ${remembered.code}(${remembered.name})가 기준일 시세에 없습니다(거래정지·상장폐지 등). 단가를 직접 확인해주세요.` };
+        }
+        const names = [item.stockName, identity];
+        const code = names.map(codeIn).find(Boolean);
+        if (code) {
+          const row = rows.find(entry => entry.code === code);
+          if (row) return { status: 'ok', row, how: '장부의 종목코드' };
+        }
+        const keys = [...new Set(names.map(normName).filter(Boolean))];
+        const exact = rows.filter(row => keys.includes(normName(row.name)));
+        if (exact.length === 1) return { status: 'ok', row: exact[0], how: '종목명 일치' };
+        const candidates = (exact.length ? exact : rows.filter(row => {
+          const name = normName(row.name);
+          return keys.some(key => key.length >= 2 && (name.includes(key) || key.includes(name)));
+        })).sort((a, b) => Math.abs(normName(a.name).length - keys[0].length) - Math.abs(normName(b.name).length - keys[0].length)).slice(0, 8);
+        return candidates.length ? { status: 'pick', candidates } : { status: 'none', note: '기준일 시세에서 같은 이름의 종목을 찾지 못했습니다.' };
+      }
+
+      // ---------- 화면 채우기 ----------
+      const fmt = n => Number(n).toLocaleString('ko-KR');
+      const cardOf = id => Array.from(stockList.children).find(card => card.querySelector(`[data-evaluation-summary="${CSS.escape(id)}"]`));
+      const inputOf = (account, field) => stockList.querySelector(`.evaluation-input[data-account-id="${CSS.escape(account.id)}"][data-field="${field}"]`);
+      function remember(item, row) {
+        codeMemory.set(identityOf(item), { code: row.code, name: row.name });
+      }
+      function pickerControls(item, result, info) {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex flex-wrap items-center gap-2 mt-2';
+        if (result?.candidates?.length) {
+          const select = document.createElement('select');
+          select.className = 'rounded-lg border border-slate-300 bg-white p-2';
+          select.append(new Option('후보에서 종목 선택', ''));
+          result.candidates.forEach(row => select.append(new Option(`${row.name} (${row.code}, ${row.market}) ${fmt(row.close)}원`, row.code)));
+          select.addEventListener('change', () => {
+            const row = lastResult?.rows.find(entry => entry.code === select.value);
+            if (row) { remember(item, row); fillAll(); }
+          });
+          wrap.append(select);
+        }
+        const codeBox = document.createElement('input');
+        codeBox.placeholder = '종목코드 6자리';
+        codeBox.maxLength = 7;
+        codeBox.className = 'w-32 rounded-lg border border-slate-300 bg-white p-2';
+        const apply = document.createElement('button');
+        apply.type = 'button';
+        apply.textContent = '코드로 연결';
+        apply.className = 'rounded-lg border border-slate-400 bg-white px-3 py-2';
+        apply.addEventListener('click', () => {
+          const code = codeBox.value.trim().toUpperCase().replace(/^A(?=[0-9A-Z]{6}$)/, '');
+          const row = lastResult?.rows.find(entry => entry.code === code);
+          if (!row) { info.dataset.error = '1'; codeBox.setCustomValidity('기준일 시세에 없는 종목코드'); codeBox.reportValidity(); return; }
+          remember(item, row); fillAll();
+        });
+        codeBox.addEventListener('input', () => codeBox.setCustomValidity(''));
+        wrap.append(codeBox, apply);
+        return wrap;
+      }
+      function fillItem(item) {
+        const card = cardOf(item.id);
+        const result = resolve(item, lastResult.rows);
+        if (result.status === 'ok') {
+          const price = String(Math.round(result.row.close));
+          item.accounts.forEach(account => {
+            if (account.price === '' || autoFilled.get(account) === account.price) {
+              account.price = price;
+              autoFilled.set(account, price);
+              const input = inputOf(account, 'price');
+              if (input) input.value = price;
+            }
+          });
+          if (item.accounts.length === 1 && String(item.accounts[0].qty).trim() === '') {
+            item.accounts[0].qty = String(item.endingQty);
+            const input = inputOf(item.accounts[0], 'qty');
+            if (input) input.value = item.accounts[0].qty;
+          }
+          updateEvaluationDraftSummary(item.id);
+        }
+        if (!card) return result.status;
+        card.querySelector('[data-close-info]')?.remove();
+        const info = document.createElement('div');
+        info.dataset.closeInfo = '1';
+        info.className = 'rounded-2xl border px-4 py-3 text-sm ' + (result.status === 'ok' ? 'border-sky-200 bg-sky-50 text-sky-900' : 'border-amber-300 bg-amber-50 text-amber-900');
+        const line = document.createElement('p');
+        if (result.status === 'ok') {
+          const manual = item.accounts.some(account => account.price !== '' && account.price !== String(Math.round(result.row.close)));
+          line.textContent = `KRX 종가 ${fmt(result.row.close)}원 · ${lastResult.date} · ${result.row.code} ${result.row.name} (${result.row.market}, ${result.how})` + (manual ? ' — 직접 입력한 단가는 그대로 두었습니다.' : '');
+          const change = document.createElement('button');
+          change.type = 'button';
+          change.textContent = '다른 종목으로 바꾸기';
+          change.className = 'ml-2 underline text-sky-800';
+          change.addEventListener('click', () => { change.remove(); info.append(pickerControls(item, null, info)); });
+          line.append(change);
+          info.append(line);
+        } else {
+          line.textContent = result.status === 'pick'
+            ? `종가 자동입력 대기: 이름이 정확히 같은 종목이 없어 후보를 골라주세요. 한 번 고르면 기초가액 파일에 저장할 때 함께 기억됩니다.`
+            : `종가 자동입력 안 됨: ${result.note} 종목코드를 알면 아래에 넣어주세요.`;
+          info.append(line, pickerControls(item, result, info));
+        }
+        card.append(info);
+        return result.status;
+      }
+      function fillAll() {
+        if (!lastResult || state.evaluationChoice !== 'yes') return;
+        const counts = { ok: 0, pick: 0, none: 0 };
+        state.evaluationDraft.forEach(item => { counts[fillItem(item)]++; });
+        syncBuildWorkbookAvailability();
+        const valuationDate = document.getElementById('valuation-date');
+        if (valuationDate && !valuationDate.value) valuationDate.value = lastResult.requested;
+        const shifted = lastResult.date !== lastResult.requested ? `\n${lastResult.requested}은(는) 휴장일이라 직전 거래일 ${lastResult.date} 종가를 넣었습니다.` : '';
+        status(`${lastResult.date} KRX 종가 자동입력: ${counts.ok}개 완료` + (counts.pick ? ` / 후보 선택 필요 ${counts.pick}개` : '') + (counts.none ? ` / 못 찾음 ${counts.none}개` : '') + `\n넣은 값은 그대로 고칠 수 있습니다. 직접 입력한 칸은 바꾸지 않습니다.${shifted}` + (lastResult.notes.length ? `\n${lastResult.notes.join('\n')}` : ''), counts.pick || counts.none ? 'info' : 'ok');
+      }
+      async function run(force = false) {
+        if (state.evaluationChoice !== 'yes' || !state.evaluationDraft.length) return;
+        if (!dateInput.value || (!dateTouched && force === 'init')) dateInput.value = defaultDate();
+        if (!serviceKey()) { status('종가 자동입력을 쓰려면 "API 키 설정"에 공공데이터포털 인증키를 넣어주세요. 키 없이도 기존처럼 직접 입력할 수 있습니다.'); return; }
+        const requested = dateInput.value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(requested)) { status('종가 기준일을 입력해주세요.', 'error'); return; }
+        if (force === true) cache.delete(requested);
+        if (lastResult?.requested === requested && force !== true) { fillAll(); return; }
+        const token = ++runToken;
+        status(`${requested} 종가를 불러오는 중입니다…`);
+        try {
+          const result = await market(requested);
+          if (token !== runToken || dateInput.value !== requested) return;
+          lastResult = result;
+          fillAll();
+        } catch (error) {
+          if (token !== runToken) return;
+          status(`종가 자동입력을 하지 못했습니다. 기말단가를 직접 입력하거나 나중에 다시 시도해주세요.\n${error.message}`, 'error');
+        }
+      }
+      function schedule(mode) {
+        if (scheduled) return;
+        scheduled = true;
+        setTimeout(() => { scheduled = false; run(mode); }, 0);
+      }
+      // 평가 카드가 새로 그려질 때마다(예 선택, 기초값 변경, 계좌 추가·삭제) 채운다.
+      if (stockList) new MutationObserver(() => schedule(false)).observe(stockList, { childList: true });
+      dateInput.addEventListener('change', () => { dateTouched = true; schedule(false); });
+      $('close-price-refresh').addEventListener('click', () => run(true));
+      $('close-price-key-toggle').addEventListener('click', () => {
+        const box = $('close-price-key-box');
+        box.hidden = !box.hidden;
+        $('close-price-key').value = '';
+        $('close-price-key').placeholder = storage.get() ? '저장된 키 있음 (바꾸려면 새 키 입력)' : '인증키 붙여넣기';
+      });
+      $('close-price-key-save').addEventListener('click', () => {
+        const value = $('close-price-key').value.trim();
+        if (!value) { status('인증키를 붙여넣은 뒤 저장해주세요.', 'error'); return; }
+        if (!storage.set(value)) { status('이 브라우저에서는 키를 저장할 수 없습니다(사생활 보호 모드 등).', 'error'); return; }
+        $('close-price-key').value = '';
+        $('close-price-key-box').hidden = true;
+        cache.clear(); lastResult = null;
+        status('인증키를 이 PC에 저장했습니다.', 'ok');
+        run(true);
+      });
+      $('close-price-key-remove').addEventListener('click', () => {
+        storage.set('');
+        cache.clear(); lastResult = null;
+        $('close-price-key').value = '';
+        status('저장된 인증키를 지웠습니다. 기말단가는 직접 입력해주세요.');
+      });
+      document.querySelectorAll('input[name="evaluation-work-yn"]').forEach(input => input.addEventListener('change', () => schedule('init')));
+
+      return {
+        exportCodes() {
+          const out = {};
+          for (const [identity, value] of codeMemory) out[identity] = { ...value };
+          return out;
+        },
+        importCodes(codes) {
+          let added = 0;
+          for (const [identity, value] of Object.entries(codes || {})) {
+            const before = codeMemory.get(identity);
+            if (!before || before.code !== value.code) added++;
+            codeMemory.set(identity, { code: value.code, name: value.name });
+          }
+          if (added && lastResult) fillAll();
+          return added;
+        },
+        run, resolve, normName,
+        _reset() { codeMemory.clear(); cache.clear(); lastResult = null; dateTouched = false; dateInput.value = ''; }
+      };
+    })();
+  </script>
 </body>
 </html>
