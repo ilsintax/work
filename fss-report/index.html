@@ -204,7 +204,8 @@
             if (templateRowInfoCache.buffer !== templateArrayBuffer) {
                 templateRowInfoCache = { buffer: templateArrayBuffer, info: {} };
                 try {
-                    const wb = XLSX.read(new Uint8Array(templateArrayBuffer), { type: 'array', cellFormula: true });
+                    // sheetStubs: 계산값(캐시)이 없는 수식 칸도 읽는다. 이 도구가 만든 결과 파일은 캐시를 지워 두므로, 이를 템플릿으로 쓰면 이 옵션 없이는 수식이 모두 빠진다(2026-11-16).
+                    const wb = XLSX.read(new Uint8Array(templateArrayBuffer), { type: 'array', cellFormula: true, sheetStubs: true });
                     [['BS', 'GA023', '재무'], ['IS', 'GA025', '손익']].forEach(([key, code, word]) => {
                         const name = wb.SheetNames.find(n => n.includes(code)) || wb.SheetNames.find(n => n.includes(word)); if (!name || !wb.Sheets[name]['!ref']) return;
                         const sheet = wb.Sheets[name]; const lastRow = XLSX.utils.decode_range(sheet['!ref']).e.r + 1; const rows = {};
