@@ -282,23 +282,46 @@
             while (i < internalData.length) {
                 const row = internalData[i]; const label = String(row[selectedCols.account] ?? '').trim();
                 if (!label || hasCode(row)) { i++; continue; }
-                const details = []; let j = i + 1;
-                while (j < internalData.length && hasCode(internalData[j])) { details.push(internalData[j]); j++; }
+                const details = []; const detailIdx = []; let j = i + 1;
+                while (j < internalData.length && hasCode(internalData[j])) { details.push(internalData[j]); detailIdx.push(j); j++; }
                 const col = cols.find(c => getRawNum(row[c]) !== 0);
                 if (details.length > 0 && col !== undefined) {
                     const subtotal = getRawNum(row[col]); let useCol = col;
                     if (details.every(d => getRawNum(d[col]) === 0)) useCol = cols.find(c => c !== col && details.some(d => getRawNum(d[c]) !== 0)) ?? col;
                     const sum = details.reduce((s, d) => s + getRawNum(d[useCol]), 0);
-                    if (Math.round(sum) !== Math.round(subtotal)) warnings.push({ label, subtotal, sum, diff: subtotal - sum });
+                    // zeroRows: 선택한 금액 열이 모두 0인 세부 계정(엑셀 변환에서 금액이 빠졌을 수 있는 계정)의 원본 행 위치
+                    const zeroRows = detailIdx.filter(k => cols.every(c => getRawNum(internalData[k][c]) === 0));
+                    if (Math.round(sum) !== Math.round(subtotal)) warnings.push({ label, subtotal, sum, diff: subtotal - sum, zeroRows, fix: null });
                 }
                 i = details.length > 0 ? j : i + 1;
             }
             return warnings;
         }
+        // 소계 차액 보정 계획 (2026-11-16).
+        // 세무사랑은 '△-1,000'처럼 차감(△)과 음수(-)가 겹친 금액을 엑셀로 내보내면 0으로 바꾼다. 그 결과 소계와 세부 합계가 어긋난다.
+        // ① 같은 소계 묶음 안에 0원 계정이 딱 하나면 → 차액을 그 계정의 '추정 금액'으로 넣는다(계정명·작업기억 매핑 그대로 사용).
+        // ② 0원 계정이 없거나 여럿이면 → '[차액-소계명]' 조정 항목을 만들어 사용자가 행 번호를 지정한다.
+        // 금액은 원본 소계 − 세부 합계로만 계산한다(원본에 없는 숫자를 만들지 않음).
+        function planSubtotalCorrections(warnings) {
+            const estimates = new Map(); const synthetic = [];
+            warnings.forEach(w => {
+                if (w.zeroRows.length === 1) {
+                    const idx = w.zeroRows[0]; const account = String(internalData[idx][selectedCols.account]).trim();
+                    estimates.set(idx, { amount: w.diff, note: `추정 금액 — 원본 '${w.label}' 소계와 세부 합계의 차액 ${formatNum(w.diff)}을(를) 0으로 나온 이 계정에 넣었습니다. 회계프로그램 잔액과 같은지 확인하세요.` });
+                    w.fix = { type: 'estimate', account, amount: w.diff };
+                } else {
+                    const code = `[차액-${normalizeLabel(w.label)}]`;
+                    synthetic.push({ code, rawName: `${code} ${w.label} 원본 차액`, name: `${cleanAccountName(w.label)} 원본 차액(조정)`, amount: w.diff, note: `원본 '${w.label}' 소계와 세부 합계의 차액입니다. 0원 계정이 ${w.zeroRows.length === 0 ? '없어' : '여러 개라'} 어느 계정인지 정할 수 없습니다. 알맞은 행 번호를 지정하세요.` });
+                    w.fix = { type: 'synthetic', account: `${code} ${w.label} 원본 차액`, amount: w.diff };
+                }
+            });
+            return { estimates, synthetic };
+        }
         function renderSourceCheck(processKey) {
             const box = document.getElementById('sourceCheckBox'); const list = sourceCheckWarnings[processKey] || [];
             if (list.length === 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
-            box.innerHTML = `<strong>원본 재무제표 점검: 소계와 세부 계정 합계가 다른 곳이 있습니다.</strong> 회계프로그램에서 해당 계정 잔액을 확인해주세요. 그대로 진행하면 금감원 보고서 총계도 같은 금액만큼 달라집니다.<ul class="list-disc list-inside mt-1">${list.map(w => `<li>${escapeHtml(w.label)} — 소계 ${formatNum(w.subtotal)} / 세부 합계 ${formatNum(w.sum)} / 차이 <strong>${formatNum(w.diff)}</strong></li>`).join('')}</ul>`;
+            const fixText = (w) => !w.fix ? '' : w.fix.type === 'estimate' ? ` → <strong>자동 보정:</strong> ${escapeHtml(w.fix.account)}에 ${formatNum(w.fix.amount)} 추정 입력 (아래 목록에 노란색 표시)` : ` → <strong>'원본 차액(조정)' 항목을 만들었습니다.</strong> 아래 목록에서 행 번호를 지정하세요`;
+            box.innerHTML = `<strong>원본 재무제표 점검: 소계와 세부 계정 합계가 다른 곳이 있어 차액을 보정했습니다.</strong> 회계프로그램(세무사랑 등)의 엑셀 변환에서 '△-' 표시 금액이 0으로 빠지는 경우가 있습니다. 보정 금액이 회계프로그램 잔액과 같은지 확인해주세요.<ul class="list-disc list-inside mt-1">${list.map(w => `<li>${escapeHtml(w.label)} — 소계 ${formatNum(w.subtotal)} / 세부 합계 ${formatNum(w.sum)} / 차이 <strong>${formatNum(w.diff)}</strong>${fixText(w)}</li>`).join('')}</ul>`;
             box.classList.remove('hidden');
         }
         // 매핑 결과로 금감원 양식의 특정 행 값을 계산한다(보정 수식 기준). 합계 행에 직접 매핑했다면 그 금액을 쓴다.
@@ -321,8 +344,11 @@
             const box = document.getElementById('reconcileBox'); const bad = result.some(r => r.diff !== null && Math.round(r.diff) !== 0);
             const cell = (v) => v === null || v === undefined ? '<span class="text-gray-400">원본에서 찾지 못함</span>' : formatNum(v);
             const rows = result.map(r => { const ok = r.diff !== null && Math.round(r.diff) === 0; const status = r.diff === null ? '<span class="text-gray-500">확인 불가</span>' : ok ? '<span class="text-emerald-700 font-bold">일치</span>' : `<span class="text-red-600 font-bold">차이 ${formatNum(r.diff)}</span>`; return `<tr class="border-t"><td class="p-2">${r.name}${r.row ? ` <span class="text-xs text-gray-400">(B${r.row})</span>` : ''}</td><td class="p-2 text-right font-mono">${cell(r.source)}</td><td class="p-2 text-right font-mono">${cell(r.report)}</td><td class="p-2 text-right">${status}</td></tr>`; }).join('');
-            const notes = [...(sourceCheckWarnings.BS || []), ...(sourceCheckWarnings.IS || [])];
-            box.innerHTML = `<div class="border rounded-lg ${bad ? 'border-red-300 bg-red-50' : 'border-emerald-200 bg-emerald-50'} p-4"><h3 class="font-bold ${bad ? 'text-red-700' : 'text-emerald-800'} mb-2">${bad ? '총계 대사: 원본 재무제표와 다른 항목이 있습니다' : '총계 대사: 원본 재무제표와 일치합니다'}</h3><table class="w-full text-sm bg-white rounded"><thead><tr class="text-gray-500"><th class="p-2 text-left">구분</th><th class="p-2 text-right">원본 재무제표</th><th class="p-2 text-right">금감원 보고서(계산)</th><th class="p-2 text-right">결과</th></tr></thead><tbody>${rows}</tbody></table>${notes.length ? `<p class="text-xs text-red-700 mt-2">원본 소계 불일치: ${notes.map(w => `${escapeHtml(w.label)} 차이 ${formatNum(w.diff)}`).join(', ')} — 원본 회계자료를 먼저 확인하세요.</p>` : ''}${bad ? '<p class="text-xs text-red-700 mt-1">누락된 계정, 잘못된 행 번호·부호, 원본 자료 오류를 확인한 뒤 다시 만들어주세요.</p>' : ''}</div>`;
+            // 원본 보정 기록: 소계 차액으로 금액을 추정해 넣은 계정(①) 또는 차액 조정 항목(②). 보정이 안 된 소계 불일치만 경고로 남긴다.
+            const corrected = [...(finalBsMapping || []), ...(finalIsMapping || [])].filter(acc => acc.estimated);
+            const notes = [...(sourceCheckWarnings.BS || []), ...(sourceCheckWarnings.IS || [])].filter(w => !w.fix);
+            const correctedHtml = corrected.length ? `<p class="text-xs text-amber-800 mt-2"><strong>원본 보정:</strong> ${corrected.map(acc => `${escapeHtml(acc.rawName)} ${formatNum(acc.baseAmount)}`).join(', ')} — 회계프로그램 엑셀 변환에서 빠진 금액을 원본 소계 차액으로 추정해 넣었습니다. 회계프로그램 잔액과 같은지 확인하세요.</p>` : '';
+            box.innerHTML = `<div class="border rounded-lg ${bad ? 'border-red-300 bg-red-50' : 'border-emerald-200 bg-emerald-50'} p-4"><h3 class="font-bold ${bad ? 'text-red-700' : 'text-emerald-800'} mb-2">${bad ? '총계 대사: 원본 재무제표와 다른 항목이 있습니다' : '총계 대사: 원본 재무제표와 일치합니다'}</h3><table class="w-full text-sm bg-white rounded"><thead><tr class="text-gray-500"><th class="p-2 text-left">구분</th><th class="p-2 text-right">원본 재무제표</th><th class="p-2 text-right">금감원 보고서(계산)</th><th class="p-2 text-right">결과</th></tr></thead><tbody>${rows}</tbody></table>${correctedHtml}${notes.length ? `<p class="text-xs text-red-700 mt-2">원본 소계 불일치: ${notes.map(w => `${escapeHtml(w.label)} 차이 ${formatNum(w.diff)}`).join(', ')} — 원본 회계자료를 먼저 확인하세요.</p>` : ''}${bad ? '<p class="text-xs text-red-700 mt-1">누락된 계정, 잘못된 행 번호·부호, 원본 자료 오류를 확인한 뒤 다시 만들어주세요.</p>' : ''}</div>`;
         }
         function writeRowSums(sheet, rowSums) { Object.entries(rowSums).forEach(([rowNumber, sumVal]) => { sheet.getCell(`B${rowNumber}`).value = sumVal; }); }
         const formatNum = (num) => Number(num).toLocaleString('ko-KR');
@@ -422,8 +448,10 @@
         }
         async function finishTutorial() {
             extractedAccounts = []; const activeRules = currentProcess === 'BS' ? savedRules.bs : savedRules.is; const btnConfirm = document.getElementById('btnConfirmColumns'); btnConfirm.disabled = true; setAppStatus('학습 규칙을 적용해 계정과 매핑 후보를 추출하는 중입니다...'); await waitForPaint();
-            for (let i = 1; i < internalData.length; i++) { const row = internalData[i]; const rawAccountName = row[selectedCols.account]; if (shouldExcludeAccount(rawAccountName)) continue; const valLeft = getRawNum(row[selectedCols.left]); const valRight = selectedCols.right !== null ? getRawNum(row[selectedCols.right]) : 0; if (valLeft === 0 && valRight === 0) continue; const finalAmount = (valLeft !== 0) ? valLeft : valRight; const accCode = getAccountCode(rawAccountName); const savedSplitEntries = accCode ? normalizeSavedSplitEntries(activeRules[accCode], finalAmount) : null; const splitsArray = savedSplitEntries && savedSplitEntries.length > 0 ? savedSplitEntries : [{ id: `s_${Date.now()}_${i}`, amount: finalAmount, targetRow: '' }]; extractedAccounts.push({ id: `acc_${i}`, rawName: String(rawAccountName).trim(), name: cleanAccountName(rawAccountName), baseAmount: finalAmount, splits: splitsArray }); if (i % PROCESS_BATCH_SIZE === 0) { setAppStatus(`학습 규칙 적용 중... ${i.toLocaleString('ko-KR')} / ${Math.max(internalData.length - 1, 0).toLocaleString('ko-KR')} 행 처리`); await waitForPaint(); } }
-            sourceTotals[currentProcess] = captureSourceTotals(currentProcess); sourceCheckWarnings[currentProcess] = checkSourceSubtotals(); renderSourceCheck(currentProcess);
+            sourceCheckWarnings[currentProcess] = checkSourceSubtotals(); const subtotalFixes = planSubtotalCorrections(sourceCheckWarnings[currentProcess]);
+            for (let i = 1; i < internalData.length; i++) { const row = internalData[i]; const rawAccountName = row[selectedCols.account]; if (shouldExcludeAccount(rawAccountName)) continue; const valLeft = getRawNum(row[selectedCols.left]); const valRight = selectedCols.right !== null ? getRawNum(row[selectedCols.right]) : 0; const estimate = subtotalFixes.estimates.get(i); if (valLeft === 0 && valRight === 0 && !estimate) continue; const finalAmount = estimate ? estimate.amount : ((valLeft !== 0) ? valLeft : valRight); const accCode = getAccountCode(rawAccountName); const savedSplitEntries = accCode ? normalizeSavedSplitEntries(activeRules[accCode], finalAmount) : null; const splitsArray = savedSplitEntries && savedSplitEntries.length > 0 ? savedSplitEntries : [{ id: `s_${Date.now()}_${i}`, amount: finalAmount, targetRow: '' }]; extractedAccounts.push({ id: `acc_${i}`, rawName: String(rawAccountName).trim(), name: cleanAccountName(rawAccountName), baseAmount: finalAmount, splits: splitsArray, estimated: !!estimate, estimateNote: estimate ? estimate.note : '' }); if (i % PROCESS_BATCH_SIZE === 0) { setAppStatus(`학습 규칙 적용 중... ${i.toLocaleString('ko-KR')} / ${Math.max(internalData.length - 1, 0).toLocaleString('ko-KR')} 행 처리`); await waitForPaint(); } }
+            subtotalFixes.synthetic.forEach((s, k) => { const saved = normalizeSavedSplitEntries(activeRules[s.code], s.amount); extractedAccounts.push({ id: `acc_diff_${k}`, rawName: s.rawName, name: s.name, baseAmount: s.amount, splits: saved && saved.length > 0 ? saved : [{ id: `s_diff_${Date.now()}_${k}`, amount: s.amount, targetRow: '' }], estimated: true, estimateNote: s.note }); });
+            sourceTotals[currentProcess] = captureSourceTotals(currentProcess); renderSourceCheck(currentProcess);
             setAppStatus(`매핑 화면을 준비하는 중입니다... ${extractedAccounts.length.toLocaleString('ko-KR')}개 계정`); document.getElementById('step2').classList.add('hidden'); document.getElementById('step3').classList.remove('hidden'); await renderMappingTable(); btnConfirm.disabled = false; clearAppStatus();
         }
         // 매핑 행 번호 아래에 양식 계정명과 경고(합계 행 / 없는 행 / 차감 항목 부호)를 보여준다.
@@ -442,7 +470,7 @@
             const splitWrapperClass = isSplit ? 'space-y-2 p-2 bg-pink-50 border border-pink-300 rounded-md shadow-sm' : 'space-y-2'; let splitsHtml = `<div class="${splitWrapperClass}">`; if (isSplit) splitsHtml += '<div class="text-xs text-pink-600 font-bold mb-1">주의: 분할된 항목입니다. 금액을 올바르게 배분해주세요.</div>';
             acc.splits.forEach((sp, sIdx) => { const borderClass = isSumValid ? (isSplit ? 'border-pink-200' : 'border-gray-200') : 'border-red-400'; splitsHtml += `<div class="flex items-center space-x-2 bg-white p-1.5 rounded border ${borderClass}"><span class="text-xs text-gray-500 w-6 text-center">${sIdx + 1}.</span><input type="text" value="${formatNum(sp.amount)}" class="w-28 text-right font-mono text-sm border-b focus:border-blue-500 outline-none" onchange="updateSplitData('${index}', '${sIdx}', 'amount', this.value)" placeholder="금액"><span class="text-xs text-gray-400">원</span><div class="flex items-center bg-gray-50 rounded px-1 border"><span class="text-xs font-bold text-gray-400 mr-1">B</span><input type="number" value="${sp.targetRow}" class="w-16 text-center text-sm outline-none bg-transparent" onchange="updateSplitData('${index}', '${sIdx}', 'targetRow', this.value)" placeholder="행 입력"></div>${sIdx === 0 ? `<button class="text-blue-500 hover:bg-blue-100 p-1 rounded transition text-xs font-bold" onclick="addSplit('${index}')" title="금액 나누기">나누기</button>` : `<button class="text-red-500 hover:bg-red-100 p-1 rounded transition text-xs font-bold" onclick="removeSplit('${index}', '${sIdx}')" title="삭제">삭제</button>`}</div>${buildTargetHint(sp)}`; });
             if (!isSumValid) splitsHtml += `<div class="text-xs text-red-500 font-bold mt-1">합계 불일치! (분할 합계: ${formatNum(currentSum)} / 원본: ${formatNum(acc.baseAmount)})</div>`; splitsHtml += '</div>';
-            tr.innerHTML = `<td class="p-3 text-center align-top"><span class="text-xl">${isFullyMapped ? '●' : '○'}</span></td><td class="p-3 align-top"><div class="text-xs text-gray-400">${acc.rawName}</div><div class="font-bold text-gray-800 text-sm mt-1">${acc.name}</div></td><td class="p-3 text-right text-gray-700 font-mono cursor-pointer hover:bg-gray-100 hover:text-blue-600 transition group" ondblclick="enableEdit('${index}', 'baseAmount', this)">${formatNum(acc.baseAmount)} <span class="hidden group-hover:inline text-xs text-blue-400 ml-1">수정</span></td><td class="p-3 align-top bg-yellow-50/20">${splitsHtml}</td>`;
+            tr.innerHTML = `<td class="p-3 text-center align-top"><span class="text-xl">${isFullyMapped ? '●' : '○'}</span></td><td class="p-3 align-top"><div class="text-xs text-gray-400">${acc.rawName}</div><div class="font-bold text-gray-800 text-sm mt-1">${acc.name}</div>${acc.estimated ? `<div class="text-xs text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-1 mt-1 font-bold">${escapeHtml(acc.estimateNote)}</div>` : ''}</td><td class="p-3 text-right text-gray-700 font-mono cursor-pointer hover:bg-gray-100 hover:text-blue-600 transition group" ondblclick="enableEdit('${index}', 'baseAmount', this)">${formatNum(acc.baseAmount)} <span class="hidden group-hover:inline text-xs text-blue-400 ml-1">수정</span></td><td class="p-3 align-top bg-yellow-50/20">${splitsHtml}</td>`;
             return tr;
         }
         async function renderMappingTable() {
