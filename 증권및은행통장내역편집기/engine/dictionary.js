@@ -145,9 +145,13 @@
       if (sp === undefined) return;
       const w = `${where} 통화 분리`;
       if (!sp || typeof sp !== 'object') { errors.push(`${w} 형식이 잘못됐습니다.`); return; }
-      if (!isStrList(sp.currencyCol || []) || !(sp.currencyCol || []).length) errors.push(`${w}: currencyCol(통화 열 이름 목록)이 없습니다.`);
+      const rr = sp.rowRule;
+      if (rr !== undefined) {
+        if (!rr || !isStrList(rr.col || []) || !(rr.col || []).length || !['equals', 'contains', 'decimal', 'nonzero'].includes(rr.op)) errors.push(`${w}: rowRule(행 규칙)은 col(열 이름 목록)과 op(equals·contains·decimal·nonzero)가 있어야 합니다.`);
+      } else if (!isStrList(sp.currencyCol || []) || !(sp.currencyCol || []).length) errors.push(`${w}: currencyCol(통화 열 이름 목록) 또는 rowRule(행 규칙)이 있어야 합니다.`);
       const bc = (sp.base && sp.base.columns) || {};
-      if (!isStrList(bc.amountCol || []) || !(bc.amountCol || []).length || !isStrList(bc.balanceCol || []) || !(bc.balanceCol || []).length) errors.push(`${w}: base.columns 에 원화 쪽 amountCol·balanceCol 이 있어야 합니다.`);
+      // 행 규칙으로 나누는 경우 잔액 열은 없어도 됨(잔액 없는 쪽)
+      if (!isStrList(bc.amountCol || []) || !(bc.amountCol || []).length || (!rr && (!isStrList(bc.balanceCol || []) || !(bc.balanceCol || []).length))) errors.push(`${w}: base.columns 에 원화 쪽 amountCol${rr ? '' : '·balanceCol'} 이 있어야 합니다.`);
       Object.entries({ ...bc, ...((sp.foreign && sp.foreign.columns) || {}) }).forEach(([k, v]) => { if (!isStrList(v) || !v.length) errors.push(`${w}: 열 ${k} 의 이름 목록이 비었거나 잘못됐습니다.`); });
       if (sp.base) checkBuckets(sp.base, `${w} 원화 쪽`);
     };
@@ -398,10 +402,54 @@
 
   // 계좌 1개의 현재 편집 상태를 사전에 반영한다. 반환: 변경 설명 목록 (빈 배열이면 이미 같은 내용)
   // opts.label: 새 형식이 생길 때 붙일 이름(선택)
+  // 화면에서 수기로 원화·외화를 나눈 계좌: 나누는 규칙(행 규칙 + 양쪽 열)만 그 형식의 예외 규칙으로 저장한다.
+  // 열 이름이 모두 같은 파일에만 적용되고, 분류는 잔액 기준(쪽마다 입금·출금이 다를 수 있음). 행마다 직접 고른 것은 저장하지 않는다.
+  function applyManualSplitRule(dict, account, changes) {
+    const ms = account.manualSplit || {};
+    const plan = ms.plan || {};
+    const rule = plan.rule;
+    if (!rule || !rule.op || rule.col === undefined || rule.col === null) throw new Error('규칙으로 나눈 경우에만 사전에 저장할 수 있습니다("규칙으로 고르기"를 쓴 뒤 나누세요). 행마다 고른 것은 저장되지 않습니다.');
+    const src = account.splitSource || account;
+    const b = src.broker || {};
+    if (!b.detected) throw new Error('사전 형식이 정해진 계좌만 나누기 규칙을 저장할 수 있습니다. 먼저 기관·열을 정해 원래 계좌를 사전에 반영하세요.');
+    const header = account.layout.header;
+    const market = b.market || 'domestic';
+    const list = dict.securities[market] || [];
+    const broker = list.find(x => x.id === b.brokerId) || list.find(x => x.name === b.name);
+    if (!broker) throw new Error('사전에서 이 증권사를 찾지 못했습니다.');
+    const nameOf = i => (i === undefined || i === null || !header[i] ? null : [header[i]]);
+    const cols = side => {
+      const out = {};
+      ['amountCol', 'balanceCol', 'feeCol', 'taxCol', 'settlementCol', 'extraCostCol1'].forEach(k => { const n = nameOf((plan[side] || {})[k]); if (n) out[k] = n; });
+      return out;
+    };
+    const signature = [...new Set(header.map(E.headerKey).filter(Boolean))];
+    broker.exceptions = broker.exceptions || [];
+    let ex = broker.exceptions.find(x => E.sameHeaderSet(x.signature, signature));
+    const spec = {
+      rowRule: { col: nameOf(rule.col), op: rule.op, ...(rule.value ? { value: String(rule.value) } : {}) },
+      baseCurrency: 'KRW', foreignCurrency: String(plan.fxCurrency || 'USD').toUpperCase(),
+      base: { columns: cols('base') }, foreign: { columns: cols('foreign') }
+    };
+    if (!spec.rowRule.col) throw new Error('규칙에 쓴 열을 찾지 못했습니다.');
+    const before = JSON.stringify(ex || null);
+    if (!ex) {
+      ex = { id: `manual-split-${slug(broker.name + signature.join('')).slice(7, 19)}`, label: `${broker.name} 원화·외화 나누기 규칙(화면에서 저장)`, cases: 1, source: '화면 원화·외화 나누기', signature, classificationBasis: 'balance', currencySplit: spec };
+      broker.exceptions.push(ex);
+    } else { ex.currencySplit = spec; ex.classificationBasis = 'balance'; }
+    if (JSON.stringify(ex) !== before) {
+      const opName = { equals: '같음', contains: '포함', decimal: '소수점 있음', nonzero: '0 아님' }[rule.op];
+      changes.push(`${MARKET_LABEL[market]} ${broker.name}: 원화·외화 나누기 규칙 저장 — "${spec.rowRule.col[0]}" ${opName}${rule.value ? ` "${rule.value}"` : ''} → ${spec.foreignCurrency}(열 이름이 모두 같은 파일에만, 분류는 잔액 기준)`);
+    }
+    const overridden = Object.keys(plan.overrides || {}).length;
+    if (overridden) changes.push(`행마다 직접 바꾼 ${overridden}행은 규칙에 저장되지 않았습니다(다음 파일에서는 규칙대로만 나뉨)`);
+  }
+
   function applyAccount(dict, account, opts) {
     if (!account || !account.config || !account.layout || !account.layout.ok) throw new Error('변환이 끝난 계좌만 반영할 수 있습니다.');
     const changes = [];
-    if (account.kind === 'bank') applyBank(dict, account, changes);
+    if (account.manualSplit) applyManualSplitRule(dict, account, changes);
+    else if (account.kind === 'bank') applyBank(dict, account, changes);
     else if (account.kind === 'securities') applySecurities(dict, account, changes, opts);
     else throw new Error('은행/증권 유형이 정해지지 않은 계좌입니다.');
     applyAbbreviation(dict, account, changes);

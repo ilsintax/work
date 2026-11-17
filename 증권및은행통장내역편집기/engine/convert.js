@@ -407,7 +407,7 @@
       }
     }
     // 잔액 없는 형식: 입출금 구분 열(예: 거래구분 = 입금/출금) 값으로 행마다 방향을 정한다
-    if (noBalance && phase3.directionCol !== undefined) {
+    if (noBalance) {
       const dh = (proc.keywordRules && proc.keywordRules.directionHints) || { deposit: ['입금', '매도', '배당', '환급', '이입'], withdrawal: ['출금', '매수', '수수료', '세금', '이체'] };
       const dirOf = v => {
         const s = E.text(v).replace(/\s+/g, '');
@@ -418,7 +418,9 @@
         if ((dh.withdrawal || []).some(k => s.includes(k))) return 'withdrawal';
         return null;
       };
-      d3.forEach((r, i) => { if (i) rowDir[i] = dirOf(r[phase3.directionCol]); });
+      // 입출금 구분 열이 있으면 그 값, 없으면 거래종류 글자(수기로 나눈 계좌 등)
+      const dirCol = phase3.directionCol !== undefined ? phase3.directionCol : phase3.tradeTypeCol;
+      d3.forEach((r, i) => { if (i) rowDir[i] = dirOf(r[dirCol]); });
     }
     const tally = () => {
       const ev = {};
@@ -618,6 +620,12 @@
     };
     // ---- 검증 강도와 분류 근거 점검 → "확인 필요" 사유 (거짓 자동 완료 방지)
     const reviewReasons = [...earlyReasons];
+    if (!isForeignCcy(account) && (account.broker || {}).market !== 'foreign' && !account.currencySide) {
+      const sig = E.foreignSignals(account.layout, phase3);
+      if (sig.decimalCount >= 3 && sig.decimalCount >= sig.valueCount * 0.2) {
+        reviewReasons.push(`금액·잔액 ${sig.valueCount}개 중 ${sig.decimalCount}개에 소수점(센트)이 있어 외화 계좌일 수 있습니다 — 기관 칸에서 "(해외)"를 고르거나, 통화를 지정하거나, "원화·외화 나누기"로 나누세요.`);
+      }
+    }
     // 제거(입출금외)로 분류된 거래에서 원본 잔액이 계산 잔액과 다르게 움직이면, 실제 돈이 움직인 거래일 수 있다 → 확인 필요
     // (제거 행은 잔액 검증에서 빠지므로 이 점검이 없으면 거짓 자동 완료가 될 수 있음)
     {
@@ -807,6 +815,58 @@
     return account;
   }
 
+  // ---------------------------------------------------------------- 원화·외화 수기 나누기
+  // plan = { fxCurrency: 'USD', assign: { 원본행번호: 'base'|'foreign'|'both' }, rule?: { colName, op, value },
+  //          base: { amountCol, balanceCol }, foreign: { amountCol, balanceCol } } — 열은 머리글 번호(잔액 없음 = null)
+  // 반환: 나눈 계좌 배열([원화, 외화]). 각 계좌는 직접 고친 계좌(edited)로 표시하고 원래 계좌를 splitSource 로 기억(나누기 취소용).
+  const SEC_MAP_KEYS = ['dateCol', 'tradeTypeCol', 'amountCol', 'balanceCol', 'feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3',
+    'stockNameCol', 'stockQtyCol', 'unitPriceCol', 'stockBalanceCol', 'settlementCol', 'additionalCol1', 'additionalCol2', 'directionCol'];
+  function manualSplit(account, dictionary, plan) {
+    if (!account || account.kind !== 'securities' || !account.layout || !account.layout.ok) throw new Error('증권 계좌만 나눌 수 있습니다.');
+    const mapping = (account.output && account.output.mapping) || {};
+    const effective = {};
+    SEC_MAP_KEYS.forEach(k => { const v = account.config.columnOverrides[k] !== undefined ? account.config.columnOverrides[k] : mapping[k]; if (v !== undefined && v !== null && v < account.layout.header.length) effective[k] = v; });
+    const sideCols = side => {
+      const c = { ...effective };
+      ['amountCol', 'balanceCol', 'feeCol', 'taxCol', 'settlementCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3'].forEach(k => { if (side[k] !== undefined) { if (side[k] === null) delete c[k]; else c[k] = side[k]; } });
+      return c;
+    };
+    const baseCols = sideCols(plan.base || {}), fxCols = sideCols(plan.foreign || {});
+    if (baseCols.amountCol === undefined || fxCols.amountCol === undefined || baseCols.dateCol === undefined || baseCols.tradeTypeCol === undefined) throw new Error('일자·거래종류·거래금액 열이 지정돼 있어야 나눌 수 있습니다.');
+    const fxCcy = String(plan.fxCurrency || 'USD').toUpperCase();
+    const L = account.layout;
+    const assign = plan.assign || {};
+    // 계좌가 원래 쓰던 사전(국내/해외)과 같은 쪽만 그 형식의 분류를 쓰고, 다른 쪽은 빈 분류(잔액 기준)로.
+    // 예: 해외 계좌의 원화 쪽에 해외 분류("외화매도 = 출금")를 쓰면 방향이 거꾸로 됨(원화 쪽에서는 입금)
+    const market = (account.broker && account.broker.market) || 'domestic';
+    const empty = { depositTypes: [], withdrawalTypes: [], removalTypes: [] };
+    const own = (account.broker && account.broker.profile) || empty;
+    const parts = E.splitBySides(account, {
+      baseCcy: 'KRW', fxCcy, baseCols, fxCols, note: '수기로 원화·외화 나눔',
+      baseProfile: market === 'domestic' ? own : empty, fxProfile: market === 'foreign' ? own : empty,
+      sideOf: (rec, i) => assign[L.sourceRows[i]] || 'base'
+    });
+    // 외화 쪽은 해외 사전, 원화 쪽은 (공통 분류를 섞지 않는) 원화 쪽으로 처리
+    parts.forEach(p => { if (p.broker) p.broker = { ...p.broker, market: p.currencySide === 'foreign' ? 'foreign' : market }; });
+    if (parts.length < 2) throw new Error('원화·외화 한쪽에 거래가 하나도 없습니다. 외화로 볼 행을 고르세요.');
+    const baseTitle = String(account.title || '').replace(/ \[[A-Z]{3}\]$/, '');
+    return parts.map(p => {
+      Object.defineProperty(p, 'rows', { value: account.rows, enumerable: false, writable: true });
+      const a = createAccount(p, 1);
+      const cols = p.currencySide === 'base' ? baseCols : fxCols;
+      a.config.columnOverrides = {};
+      SEC_MAP_KEYS.forEach(k => { a.config.columnOverrides[k] = cols[k]; });
+      a.noBalance = cols.balanceCol === undefined;
+      a.title = `${baseTitle} [${p.currency}]`;
+      a.id = `${account.id}|${p.currency}`;
+      a.include = account.include;
+      a.edited = true;
+      a.manualSplit = { plan: JSON.parse(JSON.stringify(plan)), side: p.currencySide, sourceId: account.id };
+      Object.defineProperty(a, 'splitSource', { value: account, enumerable: false, writable: true });
+      return convertAccount(a, dictionary);
+    });
+  }
+
   // 사전이 바뀐 뒤 같은 원본으로 다시 판별·변환한다. 계좌명·저장 여부·id 는 유지.
   // 통화 분리 결과가 여러 계좌면 배열로 돌려준다: 같은 통화(없으면 첫 번째)가 원래 계좌를 이어받고, 나머지는 새 계좌.
   function rebuildAccounts(account, dictionary, sameFileSheetCount) {
@@ -894,7 +954,7 @@
     return wb;
   }
 
-  const api = { OUTPUT_HEADER, normalizeCell, createAccount, convertAccount, rebuildAccount, rebuildAccounts, buildAccounts, buildWorkbook, safeSheetName };
+  const api = { manualSplit, SEC_MAP_KEYS, OUTPUT_HEADER, normalizeCell, createAccount, convertAccount, rebuildAccount, rebuildAccounts, buildAccounts, buildWorkbook, safeSheetName };
   root.BankbookConvert = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
