@@ -471,6 +471,9 @@
     }
     // 이 쪽의 현재 분류(사용자가 고친 것 포함)를 그 쪽 분류로 저장. 다른 쪽 분류는 이미 저장된 것을 유지(행 규칙이 같을 때)
     const side = account.manualSplit && account.manualSplit.side === 'foreign' ? 'foreign' : 'base';
+    // 나눈 뒤 이 계좌에서 열 지정을 바꿨으면 그 열로 저장(나눌 때 고른 열보다 우선)
+    const ownCols = splitSideColumns(account);
+    if (ownCols.amountCol) spec[side].columns = ownCols;
     const cls = account.config.classification || {};
     const lists = { depositTypes: [...(cls.depositTypes || [])].sort(), withdrawalTypes: [...(cls.withdrawalTypes || [])].sort(), removalTypes: [...(cls.valuesToRemove || [])].sort() };
     if (lists.depositTypes.length || lists.withdrawalTypes.length) Object.assign(spec[side], lists);
@@ -481,6 +484,7 @@
     if (old && JSON.stringify(old.rowRule) === JSON.stringify(spec.rowRule) && old[other]) {
       ['depositTypes', 'withdrawalTypes', 'removalTypes'].forEach(k => { if (old[other][k]) spec[other][k] = [...old[other][k]]; });
       if (old[other].inferredFeeMode) spec[other].inferredFeeMode = old[other].inferredFeeMode;
+      if (old[other].columns && old[other].columns.amountCol) spec[other].columns = JSON.parse(JSON.stringify(old[other].columns)); // 먼저 반영한 다른 쪽 열 지정 유지
     }
     const before = JSON.stringify(ex || null);
     if (!ex) {
@@ -500,7 +504,18 @@
     if (overridden) changes.push(`행마다 직접 바꾼 ${overridden}행은 규칙에 저장되지 않았습니다(다음 파일에서는 규칙대로만 나뉨)`);
   }
 
-  // 저장된 나누기 규칙으로 자동으로 나뉜 계좌: 그 쪽(원화/외화)의 분류·수수료 처리만 규칙에 갱신한다(나누는 방법·열은 그대로)
+  // 나눈 계좌(원화/외화 한쪽)의 지금 열 지정 → 열 이름. 화면 열 지정이 사전 값보다 우선
+  const SPLIT_COL_KEYS = ['amountCol', 'balanceCol', 'feeCol', 'taxCol', 'extraCostCol1', 'settlementCol'];
+  const COL_LABEL = { amountCol: '금액', balanceCol: '잔액', feeCol: '수수료', taxCol: '세금', extraCostCol1: '기타 비용', settlementCol: '정산금액' };
+  function splitSideColumns(account) {
+    const H = (account.layout && account.layout.header) || [];
+    const ov = (account.config && account.config.columnOverrides) || {}, mp = (account.output && account.output.mapping) || {};
+    const out = {};
+    SPLIT_COL_KEYS.forEach(k => { const i = ov[k] !== undefined ? ov[k] : mp[k]; if (i !== undefined && i !== null && H[i]) out[k] = [H[i]]; });
+    return out;
+  }
+
+  // 저장된 나누기 규칙으로 자동으로 나뉜 계좌: 그 쪽(원화/외화)의 열 지정·분류·수수료 처리를 규칙에 갱신한다(나누는 방법은 그대로)
   function applySplitSide(dict, account, changes) {
     const b = account.broker || {};
     const exr = b.exceptionRule;
@@ -511,15 +526,18 @@
     const side = account.currencySide === 'foreign' ? 'foreign' : 'base';
     const target = ex.currencySplit[side] = ex.currencySplit[side] || { columns: {} };
     const cls = account.config.classification || {};
-    const before = JSON.stringify([target.depositTypes || [], target.withdrawalTypes || [], target.removalTypes || [], target.inferredFeeMode || 'separate']);
+    const before = JSON.stringify([target.columns || {}, target.depositTypes || [], target.withdrawalTypes || [], target.removalTypes || [], target.inferredFeeMode || 'separate']);
+    // 화면에서 바꾼 이 쪽의 열 지정(금액·잔액·수수료·세금 등)도 저장 — 저장하지 않으면 반영 직후 다시 판별할 때 사전 열로 돌아감
+    const cols = splitSideColumns(account);
+    if (cols.amountCol) target.columns = cols;
     if ((cls.depositTypes || []).length || (cls.withdrawalTypes || []).length) {
       target.depositTypes = [...(cls.depositTypes || [])].sort();
       target.withdrawalTypes = [...(cls.withdrawalTypes || [])].sort();
       target.removalTypes = [...(cls.valuesToRemove || [])].sort();
     }
     if (cls.inferredFeeMode === 'included') target.inferredFeeMode = 'included'; else delete target.inferredFeeMode;
-    if (JSON.stringify([target.depositTypes || [], target.withdrawalTypes || [], target.removalTypes || [], target.inferredFeeMode || 'separate']) !== before) {
-      changes.push(`${MARKET_LABEL[market]} ${broker.name}: 원화·외화 나누기 규칙의 ${side === 'base' ? '원화' : '외화'} 쪽 갱신 — 분류(입금 ${(target.depositTypes || []).length}·출금 ${(target.withdrawalTypes || []).length}·제거 ${(target.removalTypes || []).length}) · 수수료 ${target.inferredFeeMode === 'included' ? '거래금액에 포함' : '별도 출금 행'}`);
+    if (JSON.stringify([target.columns || {}, target.depositTypes || [], target.withdrawalTypes || [], target.removalTypes || [], target.inferredFeeMode || 'separate']) !== before) {
+      changes.push(`${MARKET_LABEL[market]} ${broker.name}: 원화·외화 나누기 규칙의 ${side === 'base' ? '원화' : '외화'} 쪽 갱신 — 열(${Object.entries(target.columns || {}).map(([k, v]) => `${COL_LABEL[k] || k}=${v[0]}`).join(', ')}) · 분류(입금 ${(target.depositTypes || []).length}·출금 ${(target.withdrawalTypes || []).length}·제거 ${(target.removalTypes || []).length}) · 수수료 ${target.inferredFeeMode === 'included' ? '거래금액에 포함' : '별도 출금 행'}`);
     }
   }
 

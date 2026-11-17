@@ -524,7 +524,7 @@
       // 원화·외화 나누기 규칙에 쪽마다 분류가 저장돼 있으면 그 목록을 먼저 쓴다(그래도 잔액 근거가 한 방향이면 잔액이 고침)
       const st = profile0.splitSideTypes ? profile0 : null;
       return { market, entry, depositTypes: st ? [...(st.depositTypes || [])] : [], withdrawalTypes: st ? [...(st.withdrawalTypes || [])] : [], removalTypes: st ? [...(st.removalTypes || [])] : [], specialRules: profile0.specialRules || (entry && entry.specialRules) || null,
-        inferredFeeMode: profile0.splitFeeMode || null, sharedAdded: [], keywordRules: common0 || own0 ? { ...(common0 || {}), ...(own0 || {}) } : null, balanceBasis: true, memo: profile0.memo || null };
+        inferredFeeMode: profile0.splitFeeMode || null, fixedTypes: !!st, sharedAdded: [], keywordRules: common0 || own0 ? { ...(common0 || {}), ...(own0 || {}) } : null, balanceBasis: true, memo: profile0.memo || null };
     }
     const profile = broker && broker.detected ? (broker.profile || {}) : {};
     const specialRules = profile.specialRules || (entry && entry.specialRules) || null;

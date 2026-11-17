@@ -470,7 +470,9 @@
     // 잔액으로 방향을 못 정한 행은 "[방향 미확인]"으로 두고 확인 필요 사유를 남긴다.
     const rowSplit = { types: [], unresolved: 0 };
     if (proc.balanceBasis || noBalance) {
-      const mixedTypes = new Set(Object.entries(evidence).filter(([, e]) => e.deposit && e.withdrawal).map(([t]) => t));
+      // 나누기 규칙에 저장된 분류(사용자가 확인한 목록)에 있는 거래종류는 행마다 나누지 않는다
+      const fixedSet = new Set(proc.fixedTypes ? [...proc.depositTypes, ...proc.withdrawalTypes, ...proc.removalTypes].map(nt0) : []);
+      const mixedTypes = new Set(Object.entries(evidence).filter(([t, e]) => e.deposit && e.withdrawal && !fixedSet.has(t)).map(([t]) => t));
       if (mixedTypes.size) {
         const label = { deposit: '[입금]', withdrawal: '[출금]' };
         d3.forEach((r, i) => {
@@ -519,7 +521,10 @@
       if (proc.balanceBasis) {
         const nt = DT._normalizeTradeTypeValue.bind(DT);
         const fixed = [];
+        // 나누기 규칙에 저장된 분류(사용자가 확인·수정해 반영한 목록)는 그대로 지킨다 — 잔액 근거는 목록에 없는 거래종류에만
+        const keep = new Set(proc.fixedTypes ? [...proc.depositTypes, ...proc.withdrawalTypes, ...proc.removalTypes].map(nt) : []);
         Object.entries(evidence).forEach(([t, ev]) => {
+          if (keep.has(t)) return;
           if (!!ev.deposit === !!ev.withdrawal) return; // 근거 없음 또는 양쪽 → 그대로
           const to = ev.deposit ? 'depositTypes' : 'withdrawalTypes';
           const from = to === 'depositTypes' ? 'withdrawalTypes' : 'depositTypes';

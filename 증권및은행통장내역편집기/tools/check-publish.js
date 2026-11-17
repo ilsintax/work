@@ -31,7 +31,7 @@ const sensitive = new Set();
 const SAMPLES = fs.existsSync(path.join(root, 'samples')) ? path.join(root, 'samples') : root;
 // 하위 폴더(예: samples/26111702샘플추가)의 샘플도 모두 포함 — 샘플은 계속 추가된다
 const walkS = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walkS(path.join(d, e.name)) : [path.join(d, e.name)]));
-const samples = (SAMPLES === root ? fs.readdirSync(root).map(x => path.join(root, x)) : walkS(SAMPLES)).filter(f => /\.(xlsx|xls|csv)$/i.test(f)).map(f => path.relative(SAMPLES, f));
+const samples = (SAMPLES === root ? fs.readdirSync(root).map(x => path.join(root, x)) : walkS(SAMPLES)).filter(f => /\.(xlsx|xls|csv)$/i.test(f) && !/^통장변환결과_/.test(path.basename(f))).map(f => path.relative(SAMPLES, f)); // 이 도구의 결과 파일(정답 보관용)은 입력 샘플이 아님
 if (!samples.length) { console.log('샘플 파일을 찾지 못했습니다(samples/ 또는 루트) — 고객 정보 검사를 할 수 없습니다.'); process.exit(1); }
 samples.forEach(rel => {
   const f = path.basename(rel);

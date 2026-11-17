@@ -810,7 +810,8 @@
     } else if (t.dataset.secCol) {
       if (t.value === '') c.columnOverrides[t.dataset.secCol] = undefined;
       else c.columnOverrides[t.dataset.secCol] = Number(t.value);
-      c.classification = null;
+      // 직접 고친 분류는 열을 바꿔도 유지(이전에는 열을 바꾸면 분류가 초기화됨). 직접 고친 적이 없으면 새 열로 다시 자동 분류
+      if (!c.classificationEdited) c.classification = null;
     } else if (t.id === 'ed-balance-adjust') {
       c.balanceAdjustment = t.checked; // 원본에 빠진 거래가 확실할 때만 — 넣으면 "확인 필요"로 표시
     } else if (t.id === 'ed-fee-mode') {
@@ -883,6 +884,8 @@
       else { a.config.baseAmount = null; a.config.baseAmountManual = false; }
       reconvert(a);
     } else if (btn.dataset.action === 'reclassify') {
+      // 직접 고친 분류가 있으면 지우기 전에 확인(사전 규칙으로 정한 분류도 잔액 추정으로 바뀔 수 있음)
+      if (a.config.classificationEdited && !window.confirm('직접 고친 거래종류 분류가 지워지고 잔액 기준으로 다시 추정합니다. 계속할까요?')) return;
       a.config.classification = null;
       a.config.classificationEdited = false;
       reconvert(a);
@@ -954,6 +957,7 @@
   function rebuildAfterDictionaryChange(alsoIds) {
     const stats = { kept: 0, lost: 0 };
     state.confirmStats = stats;
+    const prevById = new Map(state.accounts.map(x => [x.id, x]));
     const perFile = {};
     state.accounts.forEach(a => { perFile[a.fileName] = (perFile[a.fileName] || 0) + 1; });
     let count = 0;
@@ -977,6 +981,17 @@
     // 직접 고친 형제 계좌는 위에서 그대로 남는다(중복 방지: 같은 id 는 하나만)
     const ids = new Set();
     state.accounts = state.accounts.filter(x => (ids.has(x.id) ? false : (ids.add(x.id), true)));
+    // 사전에 저장되지 않는 계좌별 설정(잔액 보정 행, 직접 넣은 기초잔액, 날짜 순서 방식)은 다시 만든 같은 계좌가 이어받는다
+    state.accounts.forEach(x => {
+      const p = prevById.get(x.id);
+      if (!p || p === x || !p.config || !x.config) return;
+      let touched = false;
+      if (p.config.balanceAdjustment && !x.config.balanceAdjustment) { x.config.balanceAdjustment = true; touched = true; }
+      if (p.config.baseAmountManual && !x.config.baseAmountManual) { x.config.baseAmountManual = true; x.config.baseAmount = p.config.baseAmount; touched = true; }
+      if (p.config.baseBalanceManual && !x.config.baseBalanceManual) { x.config.baseBalanceManual = true; x.config.baseBalance = p.config.baseBalance; touched = true; }
+      if (p.config.orderMode && p.config.orderMode !== 'original' && x.config.orderMode !== p.config.orderMode) { x.config.orderMode = p.config.orderMode; touched = true; }
+      if (touched) BankbookConvert.convertAccount(x, D());
+    });
     return count;
   }
 
@@ -1001,11 +1016,17 @@
     }
     if (!changes.length) { setStatus('사전에 이미 같은 내용이 있습니다.'); return; }
     state.dictChanges.push(...changes);
+    // 반영 전 화면 결과(다시 판별한 결과와 비교해, 사전만으로 같은 결과가 나오는지 확인)
+    const beforeOut = JSON.stringify((a.output && a.output.sheet) || null);
     // 수기로 나눈 계좌는 규칙만 저장하고 다시 판별하지 않음(나눈 두 계좌가 중복되지 않게)
     const n = rebuildAfterDictionaryChange(a.manualSplit ? [] : [a.id]);
     const after = state.accounts.find(x => x.id === a.id);
     const st = after ? (STATUS[after.status] || {}).label : '';
-    setStatus(`사전 반영: ${changes.join(' / ')} — 계좌 ${n}개를 다시 판별했습니다. 이 계좌는 이제 "${st}".${confirmStatsText()} 팀에 공유하려면 "사전 파일 저장"을 누르세요.`);
+    // 잔액 보정 행(계좌마다 켜는 설정, 사전에 저장 안 됨)은 빼고 비교
+    const plain = s => JSON.stringify((JSON.parse(s) || []).filter(r => !/^\(잔액보정\)/.test(String(r[5] || ''))));
+    const changedAfter = after && !a.manualSplit && beforeOut !== 'null' && plain(beforeOut) !== plain(JSON.stringify((after.output && after.output.sheet) || null));
+    const warn = changedAfter ? ' ⚠ 사전만으로 다시 판별한 결과가 반영 전 화면 결과와 다릅니다 — 사전에 저장되지 않는 설정(행마다 고른 것, 기초잔액 직접 입력 등)이 있었을 수 있으니 결과를 확인하세요.' : '';
+    setStatus(`사전 반영: ${changes.join(' / ')} — 계좌 ${n}개를 다시 판별했습니다. 이 계좌는 이제 "${st}".${warn}${confirmStatsText()} 팀에 공유하려면 "사전 파일 저장"을 누르세요.`, !!changedAfter);
     renderDictInfo();
     render();
     if (state.disk) persistToDisk(`사전 반영(${changes.length}건, 이 계좌 "${st}")`, perm);

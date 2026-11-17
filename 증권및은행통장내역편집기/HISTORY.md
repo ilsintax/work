@@ -342,3 +342,13 @@
 - 변경 파일: engine/engine.js, engine/convert.js, engine/dictionary.js, dictionary/institutions.js, tools/check-publish.js, tests/run-baseline.js·run-new-formats.js(신규), tests/baseline-all.json(신규), tests/run-structure.js(공통 분류 비교 기준), package.json, 문서.
 - 백업: version/20261117_131504_증권인식보완전 (13/13), 사전 version/20261117_131818_사전가져오기전
 - 검증: `npm run test:all` 전부 통과(전체 기준값 31개 파일 동일, 판별 29/29, PASS 294, 브라우저 오류 0), check-publish 고객 정보 없음(샘플 31개 기준).
+- GitHub 업로드: ilsintax/work 커밋 cbbc108(12개 파일). 공개 전 검사(하위 폴더 샘플 포함)·업체명·계좌 직접 검색 통과. tests/baseline-all.json 은 .gitignore(샘플 파일명 포함).
+
+### 20261117-035 2026-11-17 (KST) 검토·시작·완료(사전 반영 시 맞춘 내역 초기화 수정·미래 규칙 정답 반영)
+- 사용자 요청: 26111701 폴더의 사용자 사전·미래 반영 내역이 현재 사전과 같은지(정답: 통장변환결과_20261117_1424), 사전 반영·자동 분류 때 맞춘 내역이 초기화되는 이유 검토 → "진행".
+- 결과: 사용자 사전 ≠ 현재 사전(분류 반대), 정답 재현에는 열 지정도 필요(어느 사전에도 없음). 초기화 원인 5가지(열 미저장, 저장 분류를 잔액 근거가 덮어씀, 열 변경 시 분류 초기화, 자동 분류 확인 없음, 반영 후 계좌별 설정 꺼짐) 수정. 사전 가져오기 도구의 예외 규칙 비교 누락 수정.
+- 사전: v30 → v32, 미래 나누기 규칙(열·분류)만 변경 — 다시 올리면 정답과 완전히 같음.
+- 변경 파일: engine/engine.js, engine/convert.js, engine/dictionary.js, index.html, dictionary/institutions.js, tools/import-dictionary.js, tools/check-publish.js, tests/run-baseline.js, tests/run-fx-mixed.js, tests/browser-check.js(14번), tests/baseline-all.json, 문서.
+- 백업: version/20261117_142958_반영초기화수정전 (14/14), 사전 version/20261117_143230_사전가져오기전
+- 검증: `npm run test:all` 전부 통과(전체 기준값 31개 파일 — 미래 샘플만 정답으로 의도 변경 후 갱신, 판별 29/29, PASS 298, 브라우저 오류 0), check-publish 고객 정보 없음.
+- 미반영: GitHub 업로드는 하지 않음(요청 시).

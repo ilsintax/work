@@ -91,6 +91,21 @@ const listDiff = (where, a, b) => {
     cp.forEach((q, i) => { if (!used.has(i)) removed.push(`${MK[m]} ${profName(c, q, i)}`); });
     B.forEach(k => listDiff(`${MK[m]} ${b.name} 공통 분류 ${BL[k]}`, (c.shared || {})[k], (b.shared || {})[k]));
     listDiff(`${MK[m]} ${b.name} 예외 규칙`, (c.exceptions || []).map(x => x.id), (b.exceptions || []).map(x => x.id));
+    // 같은 id 예외 규칙의 내용 변경(나누기 규칙의 열·분류·수수료 처리, 금액 규칙 등)
+    (b.exceptions || []).forEach(x => {
+      const o = (c.exceptions || []).find(y => y.id === x.id);
+      if (!o || JSON.stringify(o) === JSON.stringify(x)) return;
+      const parts = [];
+      const so = o.currencySplit || {}, sx = x.currencySplit || {};
+      ['base', 'foreign'].forEach(s => {
+        const lo = so[s] || {}, lx = sx[s] || {}, nm = s === 'base' ? '원화 쪽' : '외화 쪽';
+        if (JSON.stringify(lo.columns || null) !== JSON.stringify(lx.columns || null)) parts.push(`${nm} 열 ${JSON.stringify(lo.columns || {})} → ${JSON.stringify(lx.columns || {})}`);
+        B.forEach(k => { const a = new Set(lo[k] || []), bb = new Set(lx[k] || []); const plus = [...bb].filter(t => !a.has(t)), minus = [...a].filter(t => !bb.has(t)); if (plus.length || minus.length) parts.push(`${nm} ${BL[k]}${plus.length ? ` +${plus.join(',')}` : ''}${minus.length ? ` −${minus.join(',')}` : ''}`); });
+        if ((lo.inferredFeeMode || 'separate') !== (lx.inferredFeeMode || 'separate')) parts.push(`${nm} 수수료 처리 ${lo.inferredFeeMode || 'separate'} → ${lx.inferredFeeMode || 'separate'}`);
+      });
+      if (!parts.length) parts.push('세부 내용 변경');
+      changed.push(`${MK[m]} ${b.name} 예외 규칙 ${x.id}: ${parts.join(' / ')}`);
+    });
     if (JSON.stringify(c.specialRules || null) !== JSON.stringify(b.specialRules || null)) changed.push(`${MK[m]} ${b.name} 증권사 특수 규칙 변경`);
   });
 });
@@ -98,6 +113,11 @@ listDiff('은행 형식', current.bank.profiles.map(p => `${p.name}(${(p.columns
 listDiff('은행 이름 목록', current.bank.names, incoming.bank.names);
 listDiff('파일명 약칭', current.abbreviations.flatMap(a => a.keys.map(k => `${k}→${a.securities || a.bank}`)), incoming.abbreviations.flatMap(a => a.keys.map(k => `${k}→${a.securities || a.bank}`)));
 if (JSON.stringify(current.securities.keywordRules || null) !== JSON.stringify(incoming.securities.keywordRules || null)) changed.push('공통 키워드 규칙 변경');
+// 위 항목으로 잡히지 않은 차이도 놓치지 않는다(버전·저장 시각·변경 기록 제외)
+{
+  const body = d => { const x = JSON.parse(JSON.stringify(d)); delete x.version; delete x.updatedAt; delete x.changelog; return JSON.stringify(x); };
+  if (!added.length && !changed.length && !removed.length && body(current) !== body(incoming)) changed.push('세부 비교 항목 밖의 내용 변경(형식의 열·서명 등) — 반영 전 내용을 확인하세요');
+}
 
 const curV = current.version || 1, incV = incoming.version || 1;
 console.log(`가져올 파일: ${source}`);
