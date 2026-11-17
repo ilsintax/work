@@ -29,9 +29,12 @@ const publish = walk('');
 const sensitive = new Set();
 // 샘플 위치: samples/ 폴더(없으면 프로젝트 루트). 샘플이 0개면 민감 문자열을 모을 수 없어 검사가 무의미하므로 실패로 끝낸다.
 const SAMPLES = fs.existsSync(path.join(root, 'samples')) ? path.join(root, 'samples') : root;
-const samples = fs.readdirSync(SAMPLES).filter(f => /\.(xlsx|xls|csv)$/i.test(f));
+// 하위 폴더(예: samples/26111702샘플추가)의 샘플도 모두 포함 — 샘플은 계속 추가된다
+const walkS = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walkS(path.join(d, e.name)) : [path.join(d, e.name)]));
+const samples = (SAMPLES === root ? fs.readdirSync(root).map(x => path.join(root, x)) : walkS(SAMPLES)).filter(f => /\.(xlsx|xls|csv)$/i.test(f)).map(f => path.relative(SAMPLES, f));
 if (!samples.length) { console.log('샘플 파일을 찾지 못했습니다(samples/ 또는 루트) — 고객 정보 검사를 할 수 없습니다.'); process.exit(1); }
-samples.forEach(f => {
+samples.forEach(rel => {
+  const f = path.basename(rel);
   const acc = (f.match(/\(([^)]+)\)/) || [])[1];
   if (acc) sensitive.add(acc);
   // 파일명의 고객명·계좌번호 조각(기관 이름·일반 단어 제외)도 민감 문자열로
@@ -41,12 +44,20 @@ samples.forEach(f => {
   ((D0.bank && D0.bank.names) || []).forEach(x => inst.add(x));
   D0.abbreviations.forEach(a => a.keys.forEach(k => inst.add(k)));
   f.replace(/\.[^.]+$/, '').split(/[_()\s]+/).forEach(t => {
-    if (t.length >= 2 && !inst.has(t) && !/^(거래내역|잔고증명|\d{1,2}월|\d{2}년상반기|\d{2}년하반기|KB\d|키움해외|아이엠증권|한국투자증권)$/.test(t) && !/^\d{1,2}$/.test(t)) sensitive.add(t);
+    // 일반 단어·날짜·기간 표시(2026.10, 20261013, 3Q, 3분기 등)는 고객 정보가 아니므로 제외
+    if (t.length >= 2 && !inst.has(t) && !/^(거래내역|거래내역서|증권계좌|잔고증명|\d{1,2}월|\d{2}년상반기|\d{2}년하반기|KB\d|키움해외|아이엠증권|한국투자증권|\d분기|\d[QH])$/i.test(t)
+      && !/^\d{1,2}$/.test(t) && !/^\d{4,8}$/.test(t) && !/^\d{4}[.\-]\d{1,2}$/.test(t)) sensitive.add(t);
   });
-  E.analyzeFile(XLSX, new Uint8Array(fs.readFileSync(path.join(SAMPLES, f))), f, globalThis.BANKBOOK_DICTIONARY).forEach(r => {
+  E.analyzeFile(XLSX, new Uint8Array(fs.readFileSync(path.join(SAMPLES, rel))), f, globalThis.BANKBOOK_DICTIONARY).forEach(r => {
     const L = r.layout && r.layout.ok ? r.layout : null;
     (r.rows || []).slice(0, L ? L.dataStart : 10).forEach(row => (row || []).forEach((v, i) => {
-      if (/^(계좌명|고객명|계좌번호|계좌정보)$/.test(String(v || '').trim()) && row[i + 1]) sensitive.add(String(row[i + 1]).trim());
+      if (!/^(계좌명|고객명|계좌번호|계좌정보)$/.test(String(v || '').trim())) return;
+      // 값이 바로 옆 칸이 아닐 수 있음(병합 칸) → 오른쪽 첫 값. 계좌명은 앞부분(회사 이름)도 따로 넣는다
+      const val = String(row.slice(i + 1).find(x => String(x === undefined || x === null ? '' : x).trim()) || '').trim();
+      if (!val) return;
+      sensitive.add(val);
+      const head = val.split(/[\s(?]+/)[0];
+      if (head.length >= 4) sensitive.add(head);
     }));
     if (L && r.kind === 'bank') {
       const cp = L.header.indexOf('보낸분/받는분');

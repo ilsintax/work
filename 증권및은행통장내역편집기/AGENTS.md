@@ -76,6 +76,9 @@
    원화·외화가 섞인 파일을 사용자가 화면에서 나누고 "나누기 규칙을 사전에 반영"하면 그 형식의 예외 규칙(currencySplit.rowRule, classificationBasis balance)으로 저장된다(20261117-030).
    나누기 규칙에는 쪽마다 분류(base/foreign 의 depositTypes·withdrawalTypes·removalTypes), 양쪽 거래종류(bothTypes), 거래종류별 금액 열(base/foreign.amountByType: [{types, col}])을 함께 둘 수 있다. 외화 행이 없는 같은 양식 파일에는 그 예외를 쓰지 않는다(20261117-032).
    나누기 규칙 쪽마다 수수료 처리(base/foreign.inferredFeeMode, "included"일 때만 기록)도 저장한다. 저장 규칙으로 자동 분리된 계좌의 반영은 그 쪽 분류·수수료 처리만 갱신한다(20261117-033).
+   **사전 변경 원칙(사용자 지시 2026-11-17)**: 기본 사전(기존 형식·분류·증권사 공통 분류)은 이전 파일 결과에 영향이 없는 변경만 한다. 영향이 있을 수 있으면 예외 규칙(exceptions, 열 구성 일치 + 좁은 조건)으로 관리한다. 새 형식 추가 때 화면 반영이 증권사 공통 분류(shared)를 바꾸면 되돌리고 새 형식에만 기록한다.
+   **전체 샘플 기준값**: `node tests/run-baseline.js`(test:all 첫 단계)가 samples/ 아래 모든 파일(하위 폴더 포함)의 결과를 tests/baseline-all.json 과 비교한다. 이전 샘플 결과가 바뀌면 실패. 새 샘플은 "기준값 없음"으로 알림 → 결과를 확인한 뒤 `npm run baseline:update`. 변경 전후 비교는 `--engine=<백업 engine 폴더> --dict=<백업 사전> --out=<파일>`.
+   예외 규칙의 amountByType(거래종류별 금액 열, add = 더할 열)은 그 파일에 바꿀 행이 없으면 붙이지 않는다(판별 근거까지 기존과 동일).
    기존 specialRules.amountOverrideByTradeType(대신 전용 전처리, 포함 검색, 비용 그대로)과 amountByType(정확히 같은 거래종류, 그 열 = 실제 입출금액이라 그 행 비용 0)은 다르다 — 섞지 말 것.
    파일명에서 약칭을 배울 때 숫자 6자리 이상(날짜)·분기/반기 표시("3Q")는 배우지 않는다(업체명이 붙은 파일명 앞부분이 약칭으로 들어가는 것 방지).
    열 구성만 다른 새 양식(특수 처리 없음)은 그 증권사의 새 형식(profiles, 형식 이름 label·형식 지문 signature 포함)으로 기록한다(사례: cases/20261111_미래에셋_776_요약.txt).

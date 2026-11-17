@@ -274,15 +274,20 @@
     });
 
     const skippedRows = [];
+    const summaryRows = [];
+    // 내역서 끝 합계 줄(총입금액·총출금액·금액증감·합계·소계·총계): 첫 글자 칸이 이 말로 시작하면 거래가 아니므로 경고 없이 뺀다
+    const SUMMARY = /^(총입금액|총출금액|입금합계|출금합계|금액증감|합계|소계|총계|총합계)/;
     for (let r = dataStart; r < rows.length; r++) {
-      if (!covered.has(r) && !isBlankRow(rows[r])) skippedRows.push(r);
+      if (covered.has(r) || isBlankRow(rows[r])) continue;
+      const first = (rows[r] || []).find(v => !isBlank(v));
+      if (SUMMARY.test(norm(first))) summaryRows.push(r); else skippedRows.push(r);
     }
     if (skippedRows.length) warnings.push(`거래로 묶이지 않은 줄 ${skippedRows.length}개가 있습니다(합계·안내 문구 등). 확인이 필요합니다.`);
 
     return {
       ok: true, warnings, width, dateCol, stride, dataStart,
       titleRows, headerRows: mainRows.map(m => m.index).filter(x => x >= 0), continuationRows,
-      header, records, sourceRows, skippedRows
+      header, records, sourceRows, skippedRows, summaryRows
     };
   }
 
@@ -553,6 +558,11 @@
     return n.some(h => SEC_HINTS.tradeType.test(h)) && n.some(h => SEC_HINTS.amount.test(h)) &&
       n.some(h => /종목명|거래수량|^수량$|수수료/.test(h)) && !n.some(h => SEC_HINTS.balance.test(h) || /잔액|잔고$/.test(h) && !/유가/.test(h));
   }
+  // 주식 거래 표: 종목명·종목코드 중 하나 + 수량·단가 중 하나 + 수수료 열
+  function looksLikeStockTable(header) {
+    const n = header.map(norm);
+    return n.some(h => /^종목(명|코드)|^종목명/.test(h)) && n.some(h => /^(거래)?(수량|단가)$/.test(h)) && n.some(h => /수수료/.test(h));
+  }
   function looksLikeSecurities(header) {
     const n = header.map(norm);
     return n.some(h => SEC_HINTS.tradeType.test(h)) && n.some(h => SEC_HINTS.amount.test(h)) && n.some(h => SEC_HINTS.balance.test(h));
@@ -585,9 +595,12 @@
     result.layout = layout;
     if (!layout.ok) { result.messages.push(layout.error); return result; }
     result.messages.push(...layout.warnings, ...mergeNotes);
+    if ((layout.summaryRows || []).length) result.messages.push(`내역서 끝 합계 줄 ${layout.summaryRows.length}개(총입금액·총출금액 등)는 거래가 아니므로 뺐습니다.`);
     if (!layout.records.length) { result.messages.push('거래 행이 없습니다.'); return result; }
 
-    const meta = readTitleMeta(rows, layout.titleRows);
+    // 제목 정보(계좌번호 등): 헤더 바로 위 제목 줄 + 빈 줄로 떨어진 그 위 줄들까지(헤더 첫 줄 위 전부)
+    const aboveHeader = layout.headerRows.length ? Array.from({ length: layout.headerRows[0] }, (_, i) => i) : [];
+    const meta = readTitleMeta(rows, [...new Set([...layout.titleRows, ...aboveHeader])]);
     if (!result.account && meta.account) result.account = meta.account;
     if (result.file.account && meta.account && norm(meta.account).replace(/\D/g, '') !== norm(result.file.account).replace(/\D/g, '')
         && !norm(meta.account).replace(/\D/g, '').startsWith(norm(result.file.account).replace(/\D/g, ''))) {
@@ -602,7 +615,19 @@
     // 파일명이 은행만 가리키면(예: KB국민은행) 증권사 이름으로 쓰지 않는다
     const broker = chooseMarket(header, secName, dictionary, fromName.foreignHint);
     // 예외 규칙: 열 이름이 사례 파일과 모두 같을 때만
-    const exRule = broker.detected ? findException(dictionary, broker, header) : null;
+    let exRule = broker.detected ? findException(dictionary, broker, header) : null;
+    // 금액 규칙(amountByType)만 있는 예외: 이 파일에 그 규칙이 실제로 바꿀 행(그 거래종류 + 더할 값이 있는 행)이 없으면 붙이지 않는다
+    //  → 같은 열 구성의 기존 파일은 판별 근거·결과가 예외 추가 전과 완전히 같다
+    if (exRule && Array.isArray(exRule.amountByType) && !exRule.currencySplit && !exRule.classificationBasis) {
+      const tcol = broker.mappedColumns && broker.mappedColumns.tradeTypeCol;
+      const key = v => norm(v).replace(/\s+/g, '');
+      const hits = tcol !== undefined && exRule.amountByType.some(x => {
+        const types = new Set((x.types || []).map(key));
+        const add = (x.add || []).map(n => findHeader(header, [n])).filter(i => i >= 0);
+        return layout.records.some(rec => types.has(key(rec[tcol])) && (!add.length || add.some(i => Math.abs(parseAmount(rec[i]) || 0) > 0)));
+      });
+      if (!hits) exRule = null;
+    }
     if (exRule) {
       broker.exceptionRule = exRule;
       broker.basis = `${broker.basis} · 예외 규칙 "${exRule.label || exRule.id}"(사례 ${exRule.cases || 1}건, 열 이름 모두 일치)`;
@@ -611,7 +636,10 @@
     result.broker = broker;
     if (fromName.source && !nameHit) result.messages.push(fromName.source + ' — 기관을 확정하지 않았습니다.');
 
-    if (bank.complete && !hasDeposit && !broker.detected) {
+    // 증권 단서: 종목(명·코드) + 수량·단가 + 수수료 열이 함께 있으면 잔액 열 이름이 "잔액"이어도 은행이 아니다.
+    //  사용자가 기관 칸에서 증권사를 고른 경우도 증권으로 본다.
+    const secHint = looksLikeStockTable(header) || !!(pick && pick.kind === 'securities' && pick.name);
+    if (bank.complete && !hasDeposit && !broker.detected && !secHint) {
       result.kind = 'bank';
       result.columns = bank.map;
       result.bankProfile = bankProfile;
@@ -620,7 +648,7 @@
       result.basis = nameHit && nameHit.bank ? `${fromName.source} → ${nameHit.bank}, 열 구조 은행형` : '열 구조 은행형, 은행 이름 미확인';
       if (!result.institution) result.messages.push(`은행 이름을 파일명에서 찾지 못했습니다${profile ? ` (열 구조는 ${profile.name} 형식과 같음 — 확인 후 입력)` : ''}.`);
       if (nameHit && !nameHit.bank) result.messages.push(`파일명은 증권사(${nameHit.securities})인데 열 구조는 은행형입니다.`);
-    } else if (broker.detected || looksLikeSecurities(header) || secName || looksLikeSecuritiesNoBalance(header)) {
+    } else if (broker.detected || looksLikeSecurities(header) || secName || looksLikeSecuritiesNoBalance(header) || secHint) {
       result.kind = 'securities';
       result.basis = broker.basis;
       if (broker.detected) {
@@ -647,7 +675,7 @@
     }
 
     // 잔액 열이 없는 증권 파일: 잔액 검증 없이 입출금 구분 열·사전으로 분류(변환에서 처리)
-    if (result.kind === 'securities' && !(result.columns && result.columns.balanceCol !== undefined) && !header.some(h => SEC_HINTS.balance.test(norm(h)))) {
+    if (result.kind === 'securities' && !(result.columns && result.columns.balanceCol !== undefined) && !header.some(h => SEC_HINTS.balance.test(norm(h)) || /^(잔액|원화잔액)$/.test(norm(h)))) {
       result.noBalance = true;
       result.messages.push('이 파일에는 잔액(예수금) 열이 없습니다 — 잔액 검증 없이 입출금 구분 열·사전으로 분류합니다. 전월 말 잔액을 기초잔액에 넣으면 잔액이 계산됩니다.');
     }
@@ -821,6 +849,14 @@
     if (ccyIdx < 0) return [result];
     const ccyOf = rec => text(rec[ccyIdx]).trim().toUpperCase();
     const codes = [...new Set(result.layout.records.map(ccyOf).filter(Boolean))];
+    // 통화 열이 일부 행에만 차 있음(빈칸 = 원화 행, 예: NH 내역서): 계좌 전체를 그 외화로 정하지 않고 섞임으로 표시
+    const blankCcy = result.layout.records.filter(rec => !ccyOf(rec)).length;
+    if (codes.length === 1 && blankCcy && codes[0] !== 'KRW' && !(spec && spec.currencyCol)) {
+      result.messages.push(`통화 열에 ${codes[0]}(${result.layout.records.length - blankCcy}건)과 빈칸(${blankCcy}건, 원화로 보임)이 섞여 있습니다. 계좌 전체를 ${codes[0]}로 정하지 않았습니다 — 편집 화면 "원화·외화 나누기"로 나누세요.`);
+      if (!result.reviewReasons.includes('통화 혼재(분리 안 됨)')) result.reviewReasons.push('통화 혼재(분리 안 됨)');
+      result.status = 'review';
+      return [result];
+    }
     if (codes.length === 1) { result.currency = codes[0]; return [result]; }
     if (codes.length < 2) return [result];
     const block = msg => {

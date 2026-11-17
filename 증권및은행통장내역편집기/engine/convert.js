@@ -39,11 +39,16 @@
   function resolveAmountByType(account, det, header) {
     const keyOf = v => E.norm(v).replace(/\s+/g, '');
     const fromCfg = account.config && Array.isArray(account.config.amountByType) ? account.config.amountByType : null;
-    const src = fromCfg || (det && det.profile && Array.isArray(det.profile.amountByType) ? det.profile.amountByType : []);
+    //  예외 규칙(열 구성이 같은 파일만)에 적힌 amountByType 도 쓴다 — 기존 형식을 고치지 않고 좁게 적용할 때
+    const exAbt = det && det.exceptionRule && Array.isArray(det.exceptionRule.amountByType) ? det.exceptionRule.amountByType : [];
+    const src = fromCfg || [...(det && det.profile && Array.isArray(det.profile.amountByType) ? det.profile.amountByType : []), ...exAbt];
+    const idxOf = c => (typeof c === 'number' ? c : E.findHeader(header, Array.isArray(c) ? c : [c]));
     return src.map(x => {
-      const col = typeof x.col === 'number' ? x.col : E.findHeader(header, Array.isArray(x.col) ? x.col : [x.col]);
+      const col = idxOf(x.col);
       const types = (x.types || []).map(keyOf).filter(Boolean);
-      return col >= 0 && col < header.length && types.length ? { types, col, label: (x.types || []).join('·') } : null;
+      // add: 금액에 더할 열(예: 대신 재투자매도 = 거래금액 + 이자). add 가 있으면 그 행의 수수료·세금은 그대로 둔다
+      const add = (x.add || []).map(idxOf).filter(i => i >= 0 && i < header.length);
+      return col >= 0 && col < header.length && types.length ? { types, col, add, keepCosts: add.length > 0, label: (x.types || []).join('·') } : null;
     }).filter(Boolean);
   }
 
@@ -191,7 +196,7 @@
     const sheet = [OUTPUT_HEADER.slice()];
     const mismatches = [];
     flows.forEach(f => {
-      running += f.dep - f.wd;
+      running = Math.round((running + f.dep - f.wd) * 100) / 100; // 소수 금액 누적 오차 제거(정수 금액이면 변화 없음)
       sheet.push([f.date, f.dep, f.wd, running, f.balRaw === null ? '' : f.balRaw, f.memo]);
       if (f.balRaw !== null && Math.abs(running - f.balRaw) >= 1) mismatches.push({ row: sheet.length - 1, src: f.src, diff: f.balRaw - running, date: f.date });
     });
@@ -350,11 +355,15 @@
         const t = keyOf(r[phase3.tradeTypeCol]);
         const rule = abtRules.find(x => x.types.includes(t));
         if (!rule) return;
-        r[phase3.amountCol] = r[rule.col];
-        ['feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3'].forEach(k => { if (phase3[k] !== undefined) r[phase3[k]] = 0; });
+        if (rule.add.length) {
+          const extra = rule.add.reduce((s, i) => s + (E.parseAmount(r[i]) || 0), 0);
+          if (!extra) return; // 더할 값이 없으면 원래 금액 그대로(행을 바꾸지 않음)
+          r[phase3.amountCol] = Math.round(((E.parseAmount(r[rule.col]) || 0) + extra) * 100) / 100;
+        } else r[phase3.amountCol] = r[rule.col];
+        if (!rule.keepCosts) ['feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3'].forEach(k => { if (phase3[k] !== undefined) r[phase3[k]] = 0; });
         moved++;
       });
-      if (moved) notes.push(`거래종류별 금액 열 적용 ${moved}행: ${abtRules.map(x => `${x.label} → "${data[0][x.col]}"`).join(', ')}`);
+      if (moved) notes.push(`거래종류별 금액 열 적용 ${moved}행: ${abtRules.map(x => `${x.label} → "${data[0][x.col]}"${x.add.length ? ` + ${x.add.map(i => `"${data[0][i]}"`).join(' + ')}` : ''}`).join(', ')}`);
     }
     const hidden = addHiddenCostColumn(data, phase3, unit);
     if (hidden.details.length) notes.push(`정산금액과 차이 나는 숨은 비용 ${hidden.details.length}건(합계 ${roundTo(hidden.details.reduce((s, d) => s + d.amount, 0), unit).toLocaleString('ko-KR')})을 "(기타비용)" 출금 행으로 넣었습니다.`);
@@ -592,7 +601,8 @@
     const v = DT.verifyPhase5(split.kept, conf);
     sheet[0] = OUTPUT_HEADER.slice();
     // 외화 계좌: 입금·출금·잔액을 센트 단위로 반올림(누적 계산의 부동소수 오차 제거, 예: 312262.49999999994 → 312262.5)
-    if (isForeignCcy(account)) sheet.slice(1).forEach(r => [1, 2, 3].forEach(i => { if (typeof r[i] === 'number') r[i] = Math.round(r[i] * 100) / 100; }));
+    //  원화 계좌도 같은 처리(정수 금액이면 값 변화 없음, 소수 금액이 섞였을 때 49010248.489999995 같은 표시 방지)
+    sheet.slice(1).forEach(r => [1, 2, 3].forEach(i => { if (typeof r[i] === 'number') r[i] = Math.round(r[i] * 100) / 100; }));
     const projection = DT._buildPhase5Projection(split.kept, { ...conf, balanceAdjustmentMode: null });
 
     // 하루 단위 검증: 같은 날 안의 순서·합산 정산 때문에 생기는 중간 차이는 넘기고, 날짜별 마지막 잔액으로 판정한다.
@@ -776,7 +786,7 @@
         checkpointCount: cpCount, independentCheckpoints: independent, baseManual,
         isCorrect, legacyFinalCorrect: !!v.isCorrect, baseBalance: cfg.baseAmount,
         // 기말 잔액 표시는 기존 도구와 같이 "원본 잔액이 있는 마지막 행" 기준. 보정 행을 넣었으면 그 시점 잔액이 원본과 같아진다.
-        calculated: (c => (isForeignCcy(account) && typeof c === 'number' ? Math.round(c * 100) / 100 : c))(adjustRows ? v.original : v.calculated), original: v.original, diff: adjustRows ? 0 : (v.diff || 0),
+        calculated: (c => (typeof c === 'number' ? Math.round(c * 100) / 100 : c))(adjustRows ? v.original : v.calculated), original: v.original, diff: adjustRows ? 0 : (v.diff || 0),
         mismatchCount: dayMismatches.length, intradayDiffCount: intraday.length, mismatchRows, missingSide,
         firstMismatch: dayMismatches[0] ? { date: dayMismatches[0].date, diff: dayMismatches[0].diff } : null
       }

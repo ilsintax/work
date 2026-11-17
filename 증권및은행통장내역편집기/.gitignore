@@ -11,6 +11,7 @@ version/
 *.csv
 tests/expected.json
 tests/expected-convert.json
+tests/baseline-all.json
 
 # 예외 계좌 분석 보고서 (고객 데이터 포함, 로컬 전용)
 cases/

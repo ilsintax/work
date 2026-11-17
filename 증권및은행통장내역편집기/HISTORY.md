@@ -332,3 +332,13 @@
 - 변경: engine/engine.js(쪽 프로필 splitFeeMode, 잔액 기준 예외에서 사용), engine/dictionary.js(applyManualSplitRule 수수료 저장, applySplitSide 신규·applyAccount 분기, 검사), tests/run-fx-mixed.js(+6), tests/browser-check.js(13번).
 - 백업: version/20261117_124202_수수료처리저장전 (7/7)
 - 검증: `npm run test:all` 전부 통과(판별 29/29, PASS 278, 브라우저 오류 0), check-publish 고객 정보 없음, 사전 파일 변경 없음(v26).
+- GitHub 업로드: ilsintax/work 커밋 909838b(11개 파일, 032·033 변경 함께). 공개 전 검사: check-publish·새 샘플 기준 민감 문자열 검사 통과, 개발 문서의 고객 거래 금액·날짜는 일반 표현으로 바꾼 뒤 올림.
+
+### 20261117-034 2026-11-17 (KST) 검토·시작·완료(증권 인식 보완·대신 RP 이자·전체 샘플 기준값)
+- 사용자 요청: 추가 샘플(엑셀 인식 문제) 검토 → 단가 등이 이상한 문자로 보이는 부분 검토 → 공통/사전 구분·향후 정상 인식 방안 → "기본 사전은 이전에 영향 없는 것만, 영향 있으면 예외로" → "업로드 및 커밋" → "샘플은 계속 추가, 이전 통과 샘플에 영향 주면 안 됨".
+- 공통 변경: 증권 단서로 은행 오인 방지·기관 칸 증권사 선택 → 증권, 통화 열 일부 표시는 혼재로, 합계 줄 제외, 제목 줄 계좌번호, "잔액" 열 인정, 결과 0.01 반올림, 금액 열 더하기(add)·예외 규칙 금액 열(바꿀 행 없으면 미적용).
+- 사전: v26 → v30 추가만(NH 형식4, NH 나누기 예외, 대신 RP 이자 예외). NH 공통 분류는 그대로.
+- 이전 샘플 보호: tests/run-baseline.js·tests/baseline-all.json 신설(전체 샘플, test:all 첫 단계), 변경 전후 전체 비교 → 이전 샘플 29개 파일 동일. check-publish 하위 폴더 샘플 포함.
+- 변경 파일: engine/engine.js, engine/convert.js, engine/dictionary.js, dictionary/institutions.js, tools/check-publish.js, tests/run-baseline.js·run-new-formats.js(신규), tests/baseline-all.json(신규), tests/run-structure.js(공통 분류 비교 기준), package.json, 문서.
+- 백업: version/20261117_131504_증권인식보완전 (13/13), 사전 version/20261117_131818_사전가져오기전
+- 검증: `npm run test:all` 전부 통과(전체 기준값 31개 파일 동일, 판별 29/29, PASS 294, 브라우저 오류 0), check-publish 고객 정보 없음(샘플 31개 기준).

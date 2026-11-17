@@ -142,6 +142,10 @@
       });
       return owner;
     };
+    // 거래종류별 금액 열: [{ types: [거래종류], col: [열 이름], add?: [더할 열 이름] }]
+    const checkAbt = (a, w) => {
+      if (a !== undefined && !(Array.isArray(a) && a.every(x => x && isStrList(x.types || null) && x.types.length && isStrList(x.col || null) && x.col.length && (x.add === undefined || (isStrList(x.add) && x.add.length))))) errors.push(`${w} 은 [{ types: [거래종류], col: [열 이름], add?: [더할 열 이름] }] 형식이어야 합니다.`);
+    };
     // 통화 분리(currencySplit): 통화 열, 원화 쪽 금액·잔액 열, 분류 목록
     const checkSplit = (sp, where) => {
       if (sp === undefined) return;
@@ -162,8 +166,7 @@
       ['base', 'foreign'].forEach(s => {
         const fm = sp[s] && sp[s].inferredFeeMode;
         if (fm !== undefined && !['included', 'separate'].includes(fm)) errors.push(`${w}: ${s}.inferredFeeMode(수수료 처리)는 included 또는 separate 여야 합니다.`);
-        const a = sp[s] && sp[s].amountByType;
-        if (a !== undefined && !(Array.isArray(a) && a.every(x => x && isStrList(x.types || null) && x.types.length && isStrList(x.col || null) && x.col.length))) errors.push(`${w}: ${s}.amountByType 은 [{ types: [거래종류], col: [열 이름] }] 형식이어야 합니다.`);
+        checkAbt(sp[s] && sp[s].amountByType, `${w}: ${s}.amountByType`);
       });
     };
     const checkRules = (r, where) => {
@@ -195,6 +198,7 @@
             if (!x || !isStrList(x.signature) || x.signature.length < 3) errors.push(`${xw}: signature(사례 파일의 전체 열 이름)가 없습니다 — 열 이름이 모두 같을 때만 적용하므로 필수입니다.`);
             if (x && x.classificationBasis !== undefined && x.classificationBasis !== 'balance') errors.push(`${xw}: classificationBasis 는 'balance' 만 지원합니다.`);
             if (x) checkSplit(x.currencySplit, xw);
+            if (x) checkAbt(x.amountByType, `${xw}: amountByType`);
             if (x && !(x.cases >= 1)) warnings.push(`${xw}: 사례 수(cases)가 없습니다.`);
           });
         }
