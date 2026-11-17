@@ -459,24 +459,30 @@
       if (top) fxCurrency = top[0];
       rule = { col: ccyCol, op: 'equals', value: fxCurrency };
     } else rule = { col: amt, op: 'decimal', value: '' };
-    const fxAmt = find(/금액\(외\)|외화.*금액|금액.*외화/), fxBal = find(/외화.*(예수금|잔고|잔액)|(예수금|잔고|잔액).*\(외\)/);
+    const fxAmt = find(/금액\(외\)|외화.*금액|금액.*외화/), fxBal = find(/외화.*(예수금|잔고|잔액)|(예수금|잔고|잔액).*\(외\)|외환잔액/);
+    // 비용 열: 국내 사전으로 잡힌 계좌는 지금 쓰는 수수료·세금 열을 원화 쪽에도 쓰고, 외화 전용 비용 열((외))이 없으면 외화 쪽도 같은 열
+    const domestic = !a.broker || (a.broker.market || 'domestic') === 'domestic';
+    const fee = splitEffective(a, 'feeCol'), tax = splitEffective(a, 'taxCol'), ext = splitEffective(a, 'extraCostCol1');
+    const fxFee = find(/수수료\(외\)/), fxTax = find(/외국납부세|세금\(외\)/);
     return {
       fxCurrency, rule,
       // 원화 쪽은 (외)·외화가 없는 금액·잔액 열을 먼저(해외 사전으로 잡힌 계좌는 지금 금액 열이 외화 열일 수 있음)
-      base: { amountCol: (() => { const i = find(/^(거래금액|입출금액|거래대금|정산금액)$/); return i !== null ? i : amt; })(), balanceCol: (() => { const i = find(/^(예수금잔고|예수금|잔액|원화예수금|예수금잔액)$/); return i !== null ? i : bal; })() },
-      foreign: { amountCol: fxAmt !== null ? fxAmt : amt, balanceCol: fxBal !== null ? fxBal : bal, feeCol: find(/수수료\(외\)/), taxCol: find(/외국납부세|세금\(외\)/), settlementCol: find(/정산금액\(외\)/) },
+      base: { amountCol: (() => { const i = find(/^(거래금액|입출금액|거래대금|정산금액)$/); return i !== null ? i : amt; })(), balanceCol: (() => { const i = find(/^(예수금잔고|예수금|잔액|원화예수금|예수금잔액)$/); return i !== null ? i : bal; })(),
+        feeCol: domestic ? fee : null, taxCol: domestic ? tax : null, extraCostCol1: domestic ? ext : null },
+      foreign: { amountCol: fxAmt !== null ? fxAmt : amt, balanceCol: fxBal !== null ? fxBal : bal, feeCol: fxFee !== null ? fxFee : (domestic ? fee : null), taxCol: fxTax !== null ? fxTax : (domestic ? tax : null), extraCostCol1: domestic && fxFee === null ? ext : null, settlementCol: find(/정산금액\(외\)/) },
       overrides: {}
     };
   }
   // 규칙(과 원화·외화 금액이 함께 움직인 행 = 양쪽)으로 행마다 쪽을 정하고, 직접 바꾼 행(overrides)은 그대로 둔다
   function splitAssign(a, d) {
     const L = a.layout;
-    const nz = (rec, i) => i !== null && i !== undefined && Math.abs(BankbookEngine.parseAmount(rec[i]) || 0) > 0;
     const out = {};
+    const u = v => (v === null ? undefined : v);
     L.records.forEach((rec, i) => {
       const src = L.sourceRows[i];
       if (d.overrides[src]) { out[src] = d.overrides[src]; return; }
-      if (d.base.amountCol !== d.foreign.amountCol && nz(rec, d.base.amountCol) && nz(rec, d.foreign.amountCol)) { out[src] = 'both'; return; }
+      // 원화·외화 금액이 둘 다 있고 서로 다를 때만 환전 행(같은 금액을 두 열에 적은 행은 아님)
+      if (BankbookEngine.isExchangeRow(rec, u(d.base.amountCol), u(d.foreign.amountCol))) { out[src] = 'both'; return; }
       out[src] = BankbookEngine.ruleMatches(rec, d.rule.col, d.rule) ? 'foreign' : 'base';
     });
     return out;
@@ -511,23 +517,42 @@
         <div class="bb-grid">
           <div class="bb-field"><label>원화 쪽 금액 열</label>${sel('amountCol', 'base', false)}</div>
           <div class="bb-field"><label>원화 쪽 잔액 열</label>${sel('balanceCol', 'base', true)}</div>
+          <div class="bb-field"><label>원화 쪽 수수료</label>${sel('feeCol', 'base', true)}</div>
+          <div class="bb-field"><label>원화 쪽 세금</label>${sel('taxCol', 'base', true)}</div>
+          <div class="bb-field"><label>원화 쪽 기타 비용</label>${sel('extraCostCol1', 'base', true)}</div>
+        </div>
+        <div class="bb-grid">
           <div class="bb-field"><label>외화 쪽 금액 열</label>${sel('amountCol', 'foreign', false)}</div>
           <div class="bb-field"><label>외화 쪽 잔액 열</label>${sel('balanceCol', 'foreign', true)}</div>
           <div class="bb-field"><label>외화 쪽 수수료</label>${sel('feeCol', 'foreign', true)}</div>
           <div class="bb-field"><label>외화 쪽 세금</label>${sel('taxCol', 'foreign', true)}</div>
+          <div class="bb-field"><label>외화 쪽 기타 비용</label>${sel('extraCostCol1', 'foreign', true)}</div>
         </div>
+        ${splitAbtHtml(a, d, H)}
         <p class="bb-note">원화 ${cnt.base}행 · 외화 ${cnt.foreign}행 · 양쪽 ${cnt.both}행(원화·외화 금액이 함께 움직인 환전 등). 행마다 바꿀 수 있고, 바꾼 행은 * 표시. 잔액 열을 "(없음)"으로 두면 그쪽은 잔액 검증 없이(확인 필요) 거래종류로 분류합니다.</p>
         <div class="bb-table-wrap" style="max-height:320px"><table class="bb-table"><thead><tr><th>원본 행</th><th>일자</th><th>거래종류</th><th class="num">원화 금액</th><th class="num">외화 금액</th><th>나눌 쪽</th></tr></thead><tbody>${rows}</tbody></table></div>
         <p style="margin-top:8px"><button class="bb-btn" data-action="split-do">이대로 나누기</button></p>
       </div></div>`;
+  }
+  // 거래종류별 금액 열: 그 거래종류 행은 금액을 다른 열(비용을 뺀 실제 입출금액)에서 읽는다. 예: 환전 = 정산금액, 대출 상환 = 미수변제
+  function splitAbtHtml(a, d, H) {
+    const tcol = splitEffective(a, 'tradeTypeCol');
+    const types = tcol === null ? [] : [...new Set(a.layout.records.map(r => BankbookEngine.text(r[tcol]).trim()).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'ko'));
+    const nw = d.abtNew = d.abtNew || { side: 'base', type: types[0] || '', col: null };
+    const list = ['base', 'foreign'].flatMap(s => (d[s].amountByType || []).map((x, i) => `<li>${s === 'base' ? '원화' : '외화'} 쪽 · ${esc(x.types.join(', '))} → "${esc(H[x.col] || '')}" <button class="bb-btn secondary small" data-action="split-abt-del" data-side="${s}" data-i="${i}">빼기</button></li>`)).join('');
+    return `<div class="bb-field" style="margin-top:6px"><label>거래종류별 금액 열(선택) — 이 거래종류는 금액을 다른 열에서 읽음(그 열은 비용을 뺀 실제 금액으로 보고 수수료·세금은 0)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select class="bb-select" id="split-abt-side"><option value="base" ${nw.side === 'base' ? 'selected' : ''}>원화 쪽</option><option value="foreign" ${nw.side === 'foreign' ? 'selected' : ''}>외화 쪽</option></select>
+        <select class="bb-select" id="split-abt-type">${types.map(t => `<option ${t === nw.type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+        <select class="bb-select" id="split-abt-col">${columnOptions(H, nw.col, true)}</select>
+        <button class="bb-btn secondary small" data-action="split-abt-add">추가</button></div>
+      ${list ? `<ul class="bb-note" style="margin:4px 0 0 16px">${list}</ul>` : ''}</div>`;
   }
   function applySplit(a) {
     const d = state.splitDraft[a.id];
     if (!d) return;
     const assign = splitAssign(a, d);
     const plan = { fxCurrency: d.fxCurrency, assign, rule: d.rule.col !== null && d.rule.col !== undefined ? { ...d.rule } : null, base: { ...d.base }, foreign: { ...d.foreign }, overrides: { ...d.overrides } };
-    // 원화 쪽에는 외화 비용 열을 쓰지 않음
-    plan.base.feeCol = null; plan.base.taxCol = null;
     let parts;
     try { parts = BankbookConvert.manualSplit(a, D(), plan); } catch (e) { setStatus(`나누기 실패: ${e.message}`, true); return; }
     const idx = state.accounts.indexOf(a);
@@ -549,7 +574,32 @@
     render();
     setStatus(`나누기를 취소하고 원래 계좌 "${src.title}"로 되돌렸습니다.`);
   }
+  // 사전 규칙으로 자동으로 나뉜 계좌: 한 계좌로 되돌리고 저장된 규칙으로 나누기 화면을 연다(고친 뒤 다시 나누기 → 규칙 다시 반영)
+  function redoAutoSplit(a) {
+    let res;
+    try { res = BankbookConvert.unsplitAccount(a, D()); } catch (e) { setStatus(`다시 나누기 실패: ${e.message}`, true); return; }
+    const sibs = state.accounts.filter(x => x.fileName === a.fileName && x.sheetName === a.sheetName && x.splitCount > 1 && !x.manualSplit);
+    const idx = state.accounts.findIndex(x => sibs.includes(x));
+    state.accounts = state.accounts.filter(x => !sibs.includes(x));
+    state.accounts.splice(Math.max(0, idx), 0, res.account);
+    const d = splitDefaults(res.account);
+    if (res.draft) {
+      d.fxCurrency = res.draft.fxCurrency;
+      if (res.draft.rule.col !== null) d.rule = res.draft.rule;
+      ['base', 'foreign'].forEach(s => Object.entries(res.draft[s]).forEach(([k, v]) => { if (v !== null || k !== 'amountCol') d[s][k] = v; }));
+      d.overrides = { ...res.draft.overrides };
+    }
+    state.splitDraft[res.account.id] = d;
+    state.splitOpen = res.account.id;
+    state.selected = res.account.id;
+    render();
+    setStatus(`"${res.account.title}"을(를) 나누기 전 한 계좌로 되돌렸습니다. 저장된 규칙으로 나누기 화면을 열었으니 고친 뒤 "이대로 나누기" → 각 계좌 "이 나누기 규칙을 사전에 반영"하세요.`);
+  }
   function splitNoteHtml(a) {
+    if (!a.manualSplit && a.splitCount > 1 && a.rows) {
+      return `<div class="bb-splitnote"><b>사전 규칙으로 원화·외화를 나눈 계좌</b><span class="bb-note">${esc(a.basis && /나누기 규칙/.test(a.basis) ? '화면에서 저장한 나누기 규칙' : '사전의 통화 분리 규칙')}으로 자동으로 나뉘었습니다. 잘못 나뉘었으면 한 계좌로 되돌려 다시 나눌 수 있습니다.</span>
+        <button class="bb-btn secondary small" data-action="split-redo">다시 나누기</button></div>`;
+    }
     if (!a.manualSplit) return '';
     const p = a.manualSplit.plan || {};
     const opName = (SPLIT_OPS.find(o => o[0] === (p.rule || {}).op) || [])[1];
@@ -709,6 +759,9 @@
       else if (t.id === 'split-rule-col') d.rule.col = t.value === '' ? null : Number(t.value);
       else if (t.id === 'split-rule-op') d.rule.op = t.value;
       else if (t.id === 'split-rule-value') d.rule.value = t.value.trim();
+      else if (t.id === 'split-abt-side') d.abtNew.side = t.value;
+      else if (t.id === 'split-abt-type') d.abtNew.type = t.value;
+      else if (t.id === 'split-abt-col') d.abtNew.col = t.value === '' ? null : Number(t.value);
       else if (t.dataset.splitCol) { const [side, key] = t.dataset.splitCol.split('.'); d[side][key] = t.value === '' ? null : Number(t.value); }
       else if (t.dataset.splitRow) d.overrides[t.dataset.splitRow] = t.value;
       renderEditor(); return;
@@ -800,6 +853,19 @@
     if (btn.dataset.action === 'split-rule') { const d = state.splitDraft[a.id]; if (d) d.overrides = {}; renderEditor(); return; }
     if (btn.dataset.action === 'split-do') { applySplit(a); return; }
     if (btn.dataset.action === 'split-cancel') { cancelSplit(a); return; }
+    if (btn.dataset.action === 'split-redo') { redoAutoSplit(a); return; }
+    if (btn.dataset.action === 'split-abt-add' || btn.dataset.action === 'split-abt-del') {
+      const d = state.splitDraft[a.id]; if (!d) return;
+      if (btn.dataset.action === 'split-abt-del') { d[btn.dataset.side].amountByType.splice(Number(btn.dataset.i), 1); renderEditor(); return; }
+      const nw = d.abtNew || {};
+      if (!nw.type || nw.col === null || nw.col === undefined) { setStatus('거래종류와 금액 열을 고른 뒤 "추가"를 누르세요.', true); return; }
+      const list = d[nw.side].amountByType = d[nw.side].amountByType || [];
+      list.forEach(x => { x.types = x.types.filter(t => t !== nw.type); });
+      const same = list.find(x => x.col === nw.col);
+      if (same) same.types.push(nw.type); else list.push({ types: [nw.type], col: nw.col });
+      d[nw.side].amountByType = list.filter(x => x.types.length);
+      renderEditor(); return;
+    }
     if (btn.dataset.action === 'memo-tab') { state.memoTab = Number(btn.dataset.col); state.memoFilter = ''; renderEditor(); return; }
     if (btn.dataset.action === 'memo-toggle') {
       const ci = Number(btn.dataset.col), v = btn.dataset.val;

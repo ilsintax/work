@@ -516,8 +516,10 @@
       const profile0 = broker.detected ? (broker.profile || {}) : {};
       const common0 = (((dictionary || {}).securities || {}).keywordRules) || null;
       const own0 = entry && entry.keywordRules;
-      return { market, entry, depositTypes: [], withdrawalTypes: [], removalTypes: [], specialRules: profile0.specialRules || (entry && entry.specialRules) || null,
-        inferredFeeMode: null, sharedAdded: [], keywordRules: common0 || own0 ? { ...(common0 || {}), ...(own0 || {}) } : null, balanceBasis: true, memo: profile0.memo || null };
+      // 원화·외화 나누기 규칙에 쪽마다 분류가 저장돼 있으면 그 목록을 먼저 쓴다(그래도 잔액 근거가 한 방향이면 잔액이 고침)
+      const st = profile0.splitSideTypes ? profile0 : null;
+      return { market, entry, depositTypes: st ? [...(st.depositTypes || [])] : [], withdrawalTypes: st ? [...(st.withdrawalTypes || [])] : [], removalTypes: st ? [...(st.removalTypes || [])] : [], specialRules: profile0.specialRules || (entry && entry.specialRules) || null,
+        inferredFeeMode: profile0.splitFeeMode || null, sharedAdded: [], keywordRules: common0 || own0 ? { ...(common0 || {}), ...(own0 || {}) } : null, balanceBasis: true, memo: profile0.memo || null };
     }
     const profile = broker && broker.detected ? (broker.profile || {}) : {};
     const specialRules = profile.specialRules || (entry && entry.specialRules) || null;
@@ -717,6 +719,13 @@
       default: return false;
     }
   }
+  // 환전 행 판단: 원화 금액 열과 외화 금액 열이 둘 다 0이 아니고 금액이 서로 다를 때만.
+  //  같은 금액이 두 열에 똑같이 적힌 행(예: 미래에셋 "외화매도원화입금"은 외화입출금액 열에도 원화 금액을 적음)은 환전 행이 아니다.
+  function isExchangeRow(rec, baseAmountCol, fxAmountCol) {
+    if (baseAmountCol === undefined || fxAmountCol === undefined || baseAmountCol === fxAmountCol) return false;
+    const a = Math.abs(parseAmount(rec[baseAmountCol]) || 0), b = Math.abs(parseAmount(rec[fxAmountCol]) || 0);
+    return a > 0 && b > 0 && Math.abs(a - b) > 0.005;
+  }
   // 외화로 보이는 신호: 금액·잔액의 소수점(센트), 열 이름의 외화 표시
   function foreignSignals(layout, cols) {
     const out = { decimalCount: 0, valueCount: 0, headerHints: [] };
@@ -775,14 +784,36 @@
         return [result];
       }
       const baseCcy = String(spec.baseCurrency || 'KRW').toUpperCase(), fxCcy = String(spec.foreignCurrency || 'USD').toUpperCase();
+      const bothKeys = new Set((spec.bothTypes || []).map(t => norm(t).replace(/\s+/g, '')).filter(Boolean));
+      // 쪽마다 저장된 분류(입금·출금·제거 목록)가 있으면 그 쪽의 분류로 쓴다(잔액 기준 분류보다 먼저, 잔액 근거가 한 방향으로 분명하면 잔액이 고침)
+      const sideProfile = side => {
+        const s = spec[side] || {};
+        const hasTypes = [s.depositTypes, s.withdrawalTypes, s.removalTypes].some(x => Array.isArray(x) && x.length);
+        const abt = Array.isArray(s.amountByType) && s.amountByType.length ? s.amountByType : null;
+        const fee = s.inferredFeeMode === 'included' ? 'included' : null; // 수수료 처리 "거래금액에 포함"(없으면 자동 추정)
+        if (!hasTypes && !abt && !fee) return null;
+        return { ...(result.broker.profile || {}), ...(hasTypes ? { depositTypes: [...(s.depositTypes || [])], withdrawalTypes: [...(s.withdrawalTypes || [])], removalTypes: [...(s.removalTypes || [])], splitSideTypes: true } : {}), ...(abt ? { amountByType: abt } : {}), ...(fee ? { splitFeeMode: fee } : {}) };
+      };
+      // 행 배정: 원화·외화 금액이 함께 움직인 행(환전 등)은 양쪽 모두.
+      //  사전에 "양쪽 거래종류(bothTypes)"가 있으면 그 거래종류도 양쪽(원화·외화 금액이 같은 열에 있는 증권사의 환전 행)
+      const sideOf = rec => {
+        if (isExchangeRow(rec, baseCols.amountCol, fxCols.amountCol)) return 'both';
+        if (bothKeys.size && baseCols.tradeTypeCol !== undefined && bothKeys.has(norm(rec[baseCols.tradeTypeCol]).replace(/\s+/g, ''))) return 'both';
+        return ruleMatches(rec, ci, spec.rowRule) ? 'foreign' : 'base';
+      };
+      // 외화 행이 하나도 없는 파일(같은 양식의 원화 전용 파일): 나누기 규칙이 든 예외를 쓰지 않고 원래 형식대로 처리
+      if (ex && ex.currencySplit === spec && !result.layout.records.some(rec => sideOf(rec) !== 'base')) {
+        delete result.broker.exceptionRule;
+        const tag = ` · 예외 규칙 "${ex.label || ex.id}"`;
+        const strip = s => (typeof s === 'string' && s.includes(tag) ? s.slice(0, s.indexOf(tag)) : s);
+        result.broker.basis = strip(result.broker.basis);
+        result.basis = strip(result.basis);
+        result.messages = (result.messages || []).filter(m => !/^예외 규칙 적용: /.test(m));
+        result.messages.push('같은 양식의 원화·외화 나누기 규칙이 있지만 외화 거래가 없어 나누지 않고 원래 형식대로 처리했습니다.');
+        return [result];
+      }
       const parts = splitBySides(result, {
-        baseCcy, fxCcy, baseCols, fxCols, note: '사전의 나누기 규칙으로',
-        // 원화·외화 금액이 함께 움직인 행(환전 등)은 양쪽 모두
-        sideOf: rec => {
-          const nz0 = idx => idx !== undefined && Math.abs(parseAmount(rec[idx]) || 0) > 0;
-          if (baseCols.amountCol !== fxCols.amountCol && nz0(baseCols.amountCol) && nz0(fxCols.amountCol)) return 'both';
-          return ruleMatches(rec, ci, spec.rowRule) ? 'foreign' : 'base';
-        }
+        baseCcy, fxCcy, baseCols, fxCols, note: '사전의 나누기 규칙으로', baseProfile: sideProfile('base'), fxProfile: sideProfile('foreign'), sideOf
       });
       return parts.length ? parts : [result];
     }
@@ -866,7 +897,7 @@
   const api = {
     text, norm, isBlankRow, isNumericCell, parseAmount, parseDateCell,
     readWorkbook, parseFileName, resolveAbbreviation, detectLayout, mapBankColumns, findBankProfile, findHeader, headerKey, detectBroker, evaluateProfiles, decideBroker, chooseMarket, brokerEntry, brokerProcessing, institutionsFromName,
-    analyzeSheet, analyzeFile, splitByCurrency, splitBySides, ruleMatches, foreignSignals, findException, sameHeaderSet,
+    analyzeSheet, analyzeFile, splitByCurrency, splitBySides, ruleMatches, isExchangeRow, foreignSignals, findException, sameHeaderSet,
     isPatternType, patternPrefix, looksLikeCounterparty, generalizeType, expandTypePatterns
   };
   root.BankbookEngine = api;

@@ -44,6 +44,8 @@
     const abbr = account.file && account.file.abbr;
     const inst = (account.institution || '').trim();
     if (!abbr || !inst) return;
+    // 날짜(숫자 6자리 이상)가 섞였거나 분기·반기 표시("3Q", "1H")뿐인 값은 약칭이 아니므로 배우지 않는다(파일명 앞부분을 약칭으로 잘못 읽은 경우)
+    if (/\d{6,}/.test(abbr) || /^\d[QH]$/i.test(String(abbr).trim())) return;
     const field = account.kind === 'bank' ? 'bank' : 'securities';
     const hit = E.resolveAbbreviation(abbr, dict);
     if (hit && hit[field] === inst) return;
@@ -154,6 +156,15 @@
       if (!isStrList(bc.amountCol || []) || !(bc.amountCol || []).length || (!rr && (!isStrList(bc.balanceCol || []) || !(bc.balanceCol || []).length))) errors.push(`${w}: base.columns 에 원화 쪽 amountCol${rr ? '' : '·balanceCol'} 이 있어야 합니다.`);
       Object.entries({ ...bc, ...((sp.foreign && sp.foreign.columns) || {}) }).forEach(([k, v]) => { if (!isStrList(v) || !v.length) errors.push(`${w}: 열 ${k} 의 이름 목록이 비었거나 잘못됐습니다.`); });
       if (sp.base) checkBuckets(sp.base, `${w} 원화 쪽`);
+      if (sp.foreign) checkBuckets(sp.foreign, `${w} 외화 쪽`);
+      // 양쪽 거래종류(bothTypes): 원화·외화 금액이 같은 열에 있는 증권사의 환전 행 / 거래종류별 금액 열(amountByType)
+      if (sp.bothTypes !== undefined && (!isStrList(sp.bothTypes) || !sp.bothTypes.length)) errors.push(`${w}: bothTypes(양쪽에 넣을 거래종류)는 글자 목록이어야 합니다.`);
+      ['base', 'foreign'].forEach(s => {
+        const fm = sp[s] && sp[s].inferredFeeMode;
+        if (fm !== undefined && !['included', 'separate'].includes(fm)) errors.push(`${w}: ${s}.inferredFeeMode(수수료 처리)는 included 또는 separate 여야 합니다.`);
+        const a = sp[s] && sp[s].amountByType;
+        if (a !== undefined && !(Array.isArray(a) && a.every(x => x && isStrList(x.types || null) && x.types.length && isStrList(x.col || null) && x.col.length))) errors.push(`${w}: ${s}.amountByType 은 [{ types: [거래종류], col: [열 이름] }] 형식이어야 합니다.`);
+      });
     };
     const checkRules = (r, where) => {
       if (!r) return;
@@ -432,6 +443,41 @@
       base: { columns: cols('base') }, foreign: { columns: cols('foreign') }
     };
     if (!spec.rowRule.col) throw new Error('규칙에 쓴 열을 찾지 못했습니다.');
+    // 거래종류별 금액 열(쪽마다): 열 번호 → 열 이름
+    ['base', 'foreign'].forEach(s => {
+      const a = ((plan[s] || {}).amountByType || []).map(x => ({ types: [...(x.types || [])], col: nameOf(x.col) })).filter(x => x.types.length && x.col);
+      if (a.length) spec[s].amountByType = a;
+    });
+    // 양쪽 거래종류: 원본에서 "양쪽"으로 나눈 행 중 금액만으로는 환전 행으로 알 수 없는 행의 거래종류(그 거래종류의 모든 행이 양쪽일 때만)
+    const srcL = src.layout;
+    const tcol = (src.config && src.config.columnOverrides && src.config.columnOverrides.tradeTypeCol !== undefined) ? src.config.columnOverrides.tradeTypeCol : ((src.output && src.output.mapping) || {}).tradeTypeCol;
+    if (srcL && srcL.records && tcol !== undefined && plan.assign) {
+      const bySide = new Map();
+      srcL.records.forEach((rec, i) => {
+        const t = E.text(rec[tcol]).trim();
+        if (!t) return;
+        const side = plan.assign[srcL.sourceRows[i]] || 'base';
+        const auto = E.isExchangeRow(rec, (plan.base || {}).amountCol ?? undefined, (plan.foreign || {}).amountCol ?? undefined);
+        const e = bySide.get(t) || { both: 0, other: 0 };
+        if (side === 'both' && !auto) e.both++; else if (side !== 'both') e.other++;
+        bySide.set(t, e);
+      });
+      const both = [...bySide.entries()].filter(([, e]) => e.both && !e.other).map(([t]) => t).sort();
+      if (both.length) spec.bothTypes = both;
+    }
+    // 이 쪽의 현재 분류(사용자가 고친 것 포함)를 그 쪽 분류로 저장. 다른 쪽 분류는 이미 저장된 것을 유지(행 규칙이 같을 때)
+    const side = account.manualSplit && account.manualSplit.side === 'foreign' ? 'foreign' : 'base';
+    const cls = account.config.classification || {};
+    const lists = { depositTypes: [...(cls.depositTypes || [])].sort(), withdrawalTypes: [...(cls.withdrawalTypes || [])].sort(), removalTypes: [...(cls.valuesToRemove || [])].sort() };
+    if (lists.depositTypes.length || lists.withdrawalTypes.length) Object.assign(spec[side], lists);
+    // 수수료 처리: "거래금액에 포함"일 때만 적는다(없으면 "별도 출금 행" 또는 자동 추정) — 일반 형식과 같은 방식
+    if (cls.inferredFeeMode === 'included') spec[side].inferredFeeMode = 'included';
+    const old = ex && ex.currencySplit;
+    const other = side === 'base' ? 'foreign' : 'base';
+    if (old && JSON.stringify(old.rowRule) === JSON.stringify(spec.rowRule) && old[other]) {
+      ['depositTypes', 'withdrawalTypes', 'removalTypes'].forEach(k => { if (old[other][k]) spec[other][k] = [...old[other][k]]; });
+      if (old[other].inferredFeeMode) spec[other].inferredFeeMode = old[other].inferredFeeMode;
+    }
     const before = JSON.stringify(ex || null);
     if (!ex) {
       ex = { id: `manual-split-${slug(broker.name + signature.join('')).slice(7, 19)}`, label: `${broker.name} 원화·외화 나누기 규칙(화면에서 저장)`, cases: 1, source: '화면 원화·외화 나누기', signature, classificationBasis: 'balance', currencySplit: spec };
@@ -439,16 +485,46 @@
     } else { ex.currencySplit = spec; ex.classificationBasis = 'balance'; }
     if (JSON.stringify(ex) !== before) {
       const opName = { equals: '같음', contains: '포함', decimal: '소수점 있음', nonzero: '0 아님' }[rule.op];
-      changes.push(`${MARKET_LABEL[market]} ${broker.name}: 원화·외화 나누기 규칙 저장 — "${spec.rowRule.col[0]}" ${opName}${rule.value ? ` "${rule.value}"` : ''} → ${spec.foreignCurrency}(열 이름이 모두 같은 파일에만, 분류는 잔액 기준)`);
+      const extra = [
+        spec[side].depositTypes ? `${side === 'base' ? '원화' : '외화'} 쪽 분류(입금 ${spec[side].depositTypes.length}·출금 ${spec[side].withdrawalTypes.length}·제거 ${spec[side].removalTypes.length}${spec[side].inferredFeeMode === 'included' ? '·수수료 거래금액에 포함' : ''})` : '',
+        spec.bothTypes ? `양쪽 거래종류 ${spec.bothTypes.join(', ')}` : '',
+        ['base', 'foreign'].flatMap(s => (spec[s].amountByType || []).map(x => `${x.types.join('·')} 금액 = "${x.col[0]}"`)).join(', ')
+      ].filter(Boolean).join(' · ');
+      changes.push(`${MARKET_LABEL[market]} ${broker.name}: 원화·외화 나누기 규칙 저장 — "${spec.rowRule.col[0]}" ${opName}${rule.value ? ` "${rule.value}"` : ''} → ${spec.foreignCurrency}(열 이름이 모두 같은 파일에만${extra ? ` · ${extra}` : ''}, 잔액 근거가 분명하면 잔액이 분류를 고침)`);
     }
     const overridden = Object.keys(plan.overrides || {}).length;
     if (overridden) changes.push(`행마다 직접 바꾼 ${overridden}행은 규칙에 저장되지 않았습니다(다음 파일에서는 규칙대로만 나뉨)`);
   }
 
+  // 저장된 나누기 규칙으로 자동으로 나뉜 계좌: 그 쪽(원화/외화)의 분류·수수료 처리만 규칙에 갱신한다(나누는 방법·열은 그대로)
+  function applySplitSide(dict, account, changes) {
+    const b = account.broker || {};
+    const exr = b.exceptionRule;
+    const market = b.market || 'domestic';
+    const broker = (dict.securities[market] || []).find(x => x.id === b.brokerId) || (dict.securities[market] || []).find(x => x.name === b.name);
+    const ex = broker && (broker.exceptions || []).find(x => x.id === exr.id);
+    if (!ex || !ex.currencySplit) throw new Error('이 계좌를 나눈 규칙을 사전에서 찾지 못했습니다. "다시 나누기"로 나눈 뒤 반영하세요.');
+    const side = account.currencySide === 'foreign' ? 'foreign' : 'base';
+    const target = ex.currencySplit[side] = ex.currencySplit[side] || { columns: {} };
+    const cls = account.config.classification || {};
+    const before = JSON.stringify([target.depositTypes || [], target.withdrawalTypes || [], target.removalTypes || [], target.inferredFeeMode || 'separate']);
+    if ((cls.depositTypes || []).length || (cls.withdrawalTypes || []).length) {
+      target.depositTypes = [...(cls.depositTypes || [])].sort();
+      target.withdrawalTypes = [...(cls.withdrawalTypes || [])].sort();
+      target.removalTypes = [...(cls.valuesToRemove || [])].sort();
+    }
+    if (cls.inferredFeeMode === 'included') target.inferredFeeMode = 'included'; else delete target.inferredFeeMode;
+    if (JSON.stringify([target.depositTypes || [], target.withdrawalTypes || [], target.removalTypes || [], target.inferredFeeMode || 'separate']) !== before) {
+      changes.push(`${MARKET_LABEL[market]} ${broker.name}: 원화·외화 나누기 규칙의 ${side === 'base' ? '원화' : '외화'} 쪽 갱신 — 분류(입금 ${(target.depositTypes || []).length}·출금 ${(target.withdrawalTypes || []).length}·제거 ${(target.removalTypes || []).length}) · 수수료 ${target.inferredFeeMode === 'included' ? '거래금액에 포함' : '별도 출금 행'}`);
+    }
+  }
+
   function applyAccount(dict, account, opts) {
     if (!account || !account.config || !account.layout || !account.layout.ok) throw new Error('변환이 끝난 계좌만 반영할 수 있습니다.');
     const changes = [];
+    const exr = account.broker && account.broker.exceptionRule;
     if (account.manualSplit) applyManualSplitRule(dict, account, changes);
+    else if (account.kind === 'securities' && account.splitCount > 1 && account.currencySide && exr && exr.currencySplit && exr.currencySplit.rowRule) applySplitSide(dict, account, changes);
     else if (account.kind === 'bank') applyBank(dict, account, changes);
     else if (account.kind === 'securities') applySecurities(dict, account, changes, opts);
     else throw new Error('은행/증권 유형이 정해지지 않은 계좌입니다.');

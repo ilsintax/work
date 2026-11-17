@@ -34,6 +34,19 @@
     return pairs;
   }
 
+  // 거래종류별 금액 열 규칙 → [{ types: [정규화한 거래종류], col: 열 번호, label }]
+  //  화면 지정(account.config.amountByType: [{ types, col: 번호 }])이 사전(형식·나누기 규칙 쪽의 amountByType: [{ types, col: [열 이름] }])보다 우선
+  function resolveAmountByType(account, det, header) {
+    const keyOf = v => E.norm(v).replace(/\s+/g, '');
+    const fromCfg = account.config && Array.isArray(account.config.amountByType) ? account.config.amountByType : null;
+    const src = fromCfg || (det && det.profile && Array.isArray(det.profile.amountByType) ? det.profile.amountByType : []);
+    return src.map(x => {
+      const col = typeof x.col === 'number' ? x.col : E.findHeader(header, Array.isArray(x.col) ? x.col : [x.col]);
+      const types = (x.types || []).map(keyOf).filter(Boolean);
+      return col >= 0 && col < header.length && types.length ? { types, col, label: (x.types || []).join('·') } : null;
+    }).filter(Boolean);
+  }
+
   // ---------------------------------------------------------------- 4단계: 순서 복원(잔액 연결)
   // 위→아래·아래→위가 섞인 파일을 잔액이 이어지도록 다시 줄 세운다. 분류 없이 "|잔액 변화| = 금액(±비용)"만 본다.
   //  1) 날짜순(같은 날은 원래 순서) 2) 날마다 그대로/뒤집기 중 잔액이 더 잘 이어지는 쪽
@@ -327,6 +340,22 @@
       return { sheet: null, error: `증권 필수 열을 찾지 못했습니다: ${missing.map(k => ({ dateCol: '일자', tradeTypeCol: '거래종류', amountCol: '거래금액', balanceCol: '잔액' }[k])).join(', ')}. 열 지정에서 선택하세요.`, mapping: phase3 };
     }
     const unit = toleranceOf(account);
+    // 거래종류별 금액 열(사전 amountByType 또는 화면에서 나눌 때 지정): 그 거래종류 행은 금액을 다른 열에서 읽는다.
+    //  그 열은 비용을 뺀 실제 입출금액으로 보고, 그 행의 수수료·세금 열은 0으로 둔다. 예: 한국투자 환전 = 정산금액, 주식담보대출매도상환 = 미수변제
+    const abtRules = resolveAmountByType(account, det, data[0]);
+    if (abtRules.length && phase3.amountCol !== undefined && phase3.tradeTypeCol !== undefined) {
+      const keyOf = v => E.norm(v).replace(/\s+/g, '');
+      let moved = 0;
+      data.slice(1).forEach(r => {
+        const t = keyOf(r[phase3.tradeTypeCol]);
+        const rule = abtRules.find(x => x.types.includes(t));
+        if (!rule) return;
+        r[phase3.amountCol] = r[rule.col];
+        ['feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3'].forEach(k => { if (phase3[k] !== undefined) r[phase3[k]] = 0; });
+        moved++;
+      });
+      if (moved) notes.push(`거래종류별 금액 열 적용 ${moved}행: ${abtRules.map(x => `${x.label} → "${data[0][x.col]}"`).join(', ')}`);
+    }
     const hidden = addHiddenCostColumn(data, phase3, unit);
     if (hidden.details.length) notes.push(`정산금액과 차이 나는 숨은 비용 ${hidden.details.length}건(합계 ${roundTo(hidden.details.reduce((s, d) => s + d.amount, 0), unit).toLocaleString('ko-KR')})을 "(기타비용)" 출금 행으로 넣었습니다.`);
     if (hidden.combined) notes.push(`같은 날 여러 건을 한 번에 정산한 거래 ${hidden.combined}묶음 — 그날 마지막 잔액으로 검증합니다.`);
@@ -857,6 +886,9 @@
       a.config.columnOverrides = {};
       SEC_MAP_KEYS.forEach(k => { a.config.columnOverrides[k] = cols[k]; });
       a.noBalance = cols.balanceCol === undefined;
+      // 거래종류별 금액 열(그 쪽에서 이 거래종류는 다른 열의 금액을 씀): [{ types: [거래종류], col: 열 번호 }]
+      const abt = ((p.currencySide === 'base' ? plan.base : plan.foreign) || {}).amountByType;
+      if (Array.isArray(abt) && abt.length) a.config.amountByType = abt.filter(x => x && Array.isArray(x.types) && x.types.length && typeof x.col === 'number').map(x => ({ types: [...x.types], col: x.col }));
       a.title = `${baseTitle} [${p.currency}]`;
       a.id = `${account.id}|${p.currency}`;
       a.include = account.include;
@@ -865,6 +897,42 @@
       Object.defineProperty(a, 'splitSource', { value: account, enumerable: false, writable: true });
       return convertAccount(a, dictionary);
     });
+  }
+
+  // 사전 규칙으로 자동으로 나뉜 계좌(splitCount > 1)를 나누기 전 한 계좌로 되돌리고, 저장된 나누기 규칙을 화면 초안(열 번호)으로 바꿔 준다.
+  //  → 화면에서 "다시 나누기": 이 초안으로 나누기 패널을 열어 고친 뒤 다시 나누고, 규칙을 사전에 다시 반영할 수 있다.
+  function unsplitAccount(account, dictionary) {
+    if (!account || !account.rows || !(account.splitCount > 1) || account.manualSplit) throw new Error('사전 규칙으로 자동으로 나뉜 계좌만 다시 나눌 수 있습니다.');
+    const r = E.analyzeSheet({ fileName: account.fileName, sheetName: account.sheetName, rows: account.rows, dictionary, readWarnings: account.readWarnings || [], pick: account.pick || null, merges: account.merges || [] });
+    r.format = account.format;
+    r.readWarnings = account.readWarnings;
+    Object.defineProperty(r, 'rows', { value: account.rows, enumerable: false, writable: true });
+    const one = createAccount(r, 1);
+    one.title = String(account.title || '').replace(/ \[[A-Z]{3}\]$/, '');
+    one.id = `${String(account.id).replace(/\|[A-Z]{3}$/, '')}|합침`;
+    one.include = account.include;
+    convertAccount(one, dictionary);
+    const ex = account.broker && account.broker.exceptionRule;
+    const spec = (ex && ex.currencySplit) || null;
+    let draft = null;
+    if (spec && spec.rowRule && one.layout && one.layout.ok) {
+      const H = one.layout.header;
+      const idx = names => { const i = E.findHeader(H, Array.isArray(names) ? names : [names]); return i >= 0 ? i : null; };
+      const side = s => {
+        const c = (spec[s] || {}).columns || {};
+        const o = {};
+        ['amountCol', 'balanceCol', 'feeCol', 'taxCol', 'extraCostCol1'].forEach(k => { o[k] = c[k] ? idx(c[k]) : null; });
+        const abt = ((spec[s] || {}).amountByType || []).map(x => ({ types: [...(x.types || [])], col: idx(x.col) })).filter(x => x.col !== null);
+        if (abt.length) o.amountByType = abt;
+        return o;
+      };
+      const tcol = ((one.output && one.output.mapping) || {}).tradeTypeCol;
+      const bothKeys = new Set((spec.bothTypes || []).map(t => E.norm(t).replace(/\s+/g, '')));
+      const overrides = {};
+      if (bothKeys.size && tcol !== undefined) one.layout.records.forEach((rec, i) => { if (bothKeys.has(E.norm(rec[tcol]).replace(/\s+/g, ''))) overrides[one.layout.sourceRows[i]] = 'both'; });
+      draft = { fxCurrency: String(spec.foreignCurrency || 'USD').toUpperCase(), rule: { col: idx(spec.rowRule.col), op: spec.rowRule.op, value: spec.rowRule.value || '' }, base: side('base'), foreign: side('foreign'), overrides };
+    }
+    return { account: one, draft };
   }
 
   // 사전이 바뀐 뒤 같은 원본으로 다시 판별·변환한다. 계좌명·저장 여부·id 는 유지.
@@ -954,7 +1022,7 @@
     return wb;
   }
 
-  const api = { manualSplit, SEC_MAP_KEYS, OUTPUT_HEADER, normalizeCell, createAccount, convertAccount, rebuildAccount, rebuildAccounts, buildAccounts, buildWorkbook, safeSheetName };
+  const api = { manualSplit, unsplitAccount, SEC_MAP_KEYS, OUTPUT_HEADER, normalizeCell, createAccount, convertAccount, rebuildAccount, rebuildAccounts, buildAccounts, buildWorkbook, safeSheetName };
   root.BankbookConvert = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
