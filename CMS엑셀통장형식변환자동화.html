@@ -720,6 +720,9 @@
         }
     };
 
+    // 결과 통장 제목: 증권및은행통장내역편집기(engine/convert.js OUTPUT_HEADER)와 같게 (사용자 요청 2026-11-18)
+    const BANKBOOK_HEADER = ['결제일', '입금', '출금', '잔액', '(참고용)잔액', '의뢰인/수취인'];
+
     // --- 4. 데이터 변환 로직 (Data Transformer) ---
     const DataTransformer = {
         hasMeaningfulValue(value) {
@@ -846,16 +849,17 @@
             });
 
             // 최종 형식으로 변환 및 잔액 계산
-            const finalTable = [['날짜', '입금', '출금', '잔액', '거래처', '적요']];
+            // 제목·형식은 증권및은행통장내역편집기(수지라 업로드 형식)와 같게: 결제일은 'YYYY-MM-DD' 글자, (참고용)잔액은 원본 잔액이 없어 빈칸
+            const finalTable = [BANKBOOK_HEADER.slice()];
             let balance = 0;
             allEntries.forEach(entry => {
                 balance = balance + entry.deposit - entry.withdrawal;
                 finalTable.push([
-                    entry.date,
+                    entry.date ? this.formatDateKey(entry.date) : '',
                     entry.deposit,
                     entry.withdrawal,
                     balance,
-                    entry.client,
+                    '',
                     entry.memo
                 ]);
             });
@@ -875,7 +879,7 @@
             const ws = XLSX.utils.aoa_to_sheet(ws_data);
 
             // 열 너비 설정
-            ws['!cols'] = [ {wch:12}, {wch:15}, {wch:15}, {wch:15}, {wch:20}, {wch:30} ];
+            ws['!cols'] = [ {wch:12}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:40} ];
 
             // 셀 서식 적용
             for (let R = 1; R < ws_data.length; ++R) {
@@ -922,10 +926,11 @@
             const wb = XLSX.utils.book_new();
             const res = state.profileResult;
 
-            const st = res.statement.map((row, i) => (i === 0 ? row : [toDate(row[0]), ...row.slice(1)]));
-            const ws1 = XLSX.utils.aoa_to_sheet(st, { cellDates: false });
-            ws1['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 40 }];
-            setFormats(ws1, st, [0], [1, 2, 3]);
+            // 통장 시트: 편집기와 같은 제목·형식(결제일 글자, 금액 숫자)
+            const st = res.statement;
+            const ws1 = XLSX.utils.aoa_to_sheet(st);
+            ws1['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 40 }];
+            setFormats(ws1, st, [], [1, 2, 3, 4]);
             XLSX.utils.book_append_sheet(wb, ws1, '통장형식_변환결과');
 
             const rc = [['구분', '정산예정일', '은행입금일', '출금일', '성공건수', '성공금액', '실패건수', '규칙수수료(부가세포함)', '예상입금', '은행입금', '실제수수료(차액)', '차이(실제-규칙)', '상태']]
@@ -1308,11 +1313,11 @@
             });
 
             entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.order - b.order) || (a.seq - b.seq)));
-            const statement = [['날짜', '입금', '출금', '잔액', '거래처', '적요']];
+            const statement = [BANKBOOK_HEADER.slice()];
             let balance = opening;
             for (const e of entries) {
                 balance += e.deposit - e.withdrawal;
-                statement.push([e.date, e.deposit, e.withdrawal, balance, e.client, e.memo]);
+                statement.push([e.date, e.deposit, e.withdrawal, balance, '', e.memo]);
             }
             const closingUnsettled = balance;
             // 기말 잔액 검산: 기간 안에서 출금됐지만 정산이 기간 뒤인 금액과 같아야 함
