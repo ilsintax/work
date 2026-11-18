@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>CMS 엑셀 통장형식 변환 자동화</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <!-- SheetJS 공식 CDN, 버전 고정(0.20.3). 버전 없는 unpkg 주소는 예전 0.18.5가 와서 결과가 바뀔 수 있어 교체(2026-11-18) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
     <style>
         body { font-family: 'Noto Sans KR', sans-serif; }
@@ -78,6 +79,19 @@
                 selectingKey: null, // columnMap의 key
                 feeLogic: null, // 'deduct' or 'full'
                 finalData: [],
+                // 사전 자동 인식(더빌 등) 경로
+                detection: null,      // { profile, headerRowIndex, colIdx }
+                records: [],
+                recordErrors: [],
+                recordSummary: null,
+                bankFileName: null,
+                bankResult: null,     // { deposits, sheetsHit, sheetsScanned }
+                openingBalanceText: '',
+                openingEdited: false, // 사용자가 직접 고쳤으면 자동 제안으로 덮어쓰지 않음
+                openingSource: '',
+                periodStart: '',
+                periodEnd: '',
+                profileResult: null,  // buildStatement 결과
             };
             this.notify(); // 초기화 후 UI를 다시 렌더링하도록 알림
         },
@@ -105,6 +119,7 @@
             let html = '';
             switch (state.currentPhase) {
                 case 'upload': html = this.renderUploadView(); break;
+                case 'profile_setup': html = this.renderProfileSetupView(state); break;
                 case 'header_select': html = this.renderHeaderSelectView(state); break;
                 case 'status_col_select': html = this.renderStatusColSelectView(state); break;
                 case 'status_classify': html = this.renderStatusClassifyView(state); break;
@@ -151,8 +166,125 @@
                 <div id="drop-zone" class="flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-lg bg-white cursor-pointer hover:bg-slate-100 transition">
                     <svg class="w-12 h-12 mb-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                     <span class="text-slate-600 font-medium text-lg">클릭 또는 드래그하여 XLSX/XLS 파일 업로드</span>
+                    <span class="text-slate-500 text-sm mt-2">더빌 '출금결과조회' 파일은 형식을 자동으로 인식합니다. 그 밖의 형식은 아래 단계를 직접 지정합니다.</span>
                     <input id="file-input" type="file" accept=".xlsx,.xls" class="hidden"/>
                 </div>`;
+        },
+        fmt(n) {
+            return (n === '' || n === null || n === undefined) ? '' : Number(n).toLocaleString('ko-KR');
+        },
+        renderProfileSetupView(state) {
+            const det = state.detection;
+            const s = state.recordSummary;
+            const statusRows = Object.entries(s.statusCounts).map(([st, v]) =>
+                `<tr><td>${this.escapeHTML(st)}</td><td class="text-right">${v.count}</td><td>${v.success ? '<span class="text-green-700 font-semibold">성공(입금 처리)</span>' : '<span class="text-red-600">실패(수수료만)</span>'}</td></tr>`).join('');
+            const errHtml = state.recordErrors.length ? `
+                <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-r-lg text-sm">
+                    <strong class="text-red-700">읽지 못한 칸이 ${state.recordErrors.length}건 있습니다.</strong> 원본 파일을 확인해 주세요. (0으로 바꾸지 않았습니다)
+                    <ul class="list-disc list-inside mt-2">${state.recordErrors.slice(0, 10).map(e => `<li>${e.rowNo}행 ${this.escapeHTML(e.clientName)}: ${this.escapeHTML(e.fields)}</li>`).join('')}</ul>
+                </div>` : '';
+            const footerHtml = s.footerCheck ? `<div class="p-3 rounded-lg text-sm ${s.footerCheck.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700 font-semibold'}">
+                    파일 하단 합계 행(${s.footerCheck.rowNo}행) ${this.fmt(s.footerCheck.footerAmount)}원 ${s.footerCheck.ok ? '= 읽은 금액 합계 (일치)' : '≠ 읽은 금액 합계 ' + this.fmt(s.footerCheck.sum) + '원 — 빠지거나 잘못 읽은 행이 있는지 확인하세요'}</div>` : '';
+            const br = state.bankResult;
+            const bankUse = det.profile.bankUse;
+            const bankInfo = !br ? '<span class="text-amber-800">은행 파일 없음 — 파일의 수수료 칸으로만 계산하며, 실제 입금과 맞는지는 검증되지 않습니다.</span>'
+                : (br.deposits.length
+                    ? `<span class="text-green-700 font-semibold">${this.escapeHTML(state.bankFileName)}</span> — 더빌 입금 ${br.deposits.length}건 (${br.sheetsHit.map(h => this.escapeHTML(h.sheet) + ' ' + h.count + '건').join(', ')}), 기간 ${br.deposits[0].date} ~ ${br.deposits[br.deposits.length - 1].date}`
+                    : `<span class="text-red-600 font-semibold">${this.escapeHTML(state.bankFileName)}에서 '${this.escapeHTML(det.profile.bankKeywords.join(', '))}' 입금을 찾지 못했습니다.</span> (읽은 시트: ${br.sheetsScanned.map(x => this.escapeHTML(x)).join(', ') || '날짜·입금 열이 있는 시트 없음'})`);
+            return `
+                <div class="space-y-6">
+                    <header>
+                        <h1 class="text-3xl font-bold text-slate-900">자동 인식: ${this.escapeHTML(det.profile.name)}</h1>
+                        <p class="text-slate-600 mt-2">${this.escapeHTML(state.fileName)} — 제목 행(${det.headerRowIndex + 1}행)·열·출금 성공 분류를 사전으로 자동 지정했습니다.</p>
+                    </header>
+                    ${errHtml}
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">출금일 범위</div><div class="font-bold">${s.minDate || '-'} ~ ${s.maxDate || '-'}</div></div>
+                        <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">출금 성공</div><div class="font-bold">${s.okCount}건 · ${this.fmt(s.okAmount)}원</div></div>
+                        <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">출금 실패</div><div class="font-bold">${s.failCount}건${det.profile.failFeeDeducted && s.feeMode !== 'none' ? ' (수수료만 차감)' : ''}</div></div>
+                        <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">입금 방식 (수수료 칸으로 판단)</div><div class="font-bold text-sm">${this.escapeHTML(CmsEngine.feeModeLabel(det.profile, s))}</div></div>
+                    </div>
+                    ${footerHtml}
+                    <div class="p-4 bg-white border rounded-lg space-y-4">
+                        ${bankUse === 'none' ? `<p class="text-sm text-slate-600">이 형식은 출금액이 그대로 입금되고 수수료는 연계계좌에서 따로 빠지므로 <strong>은행 파일이 필요 없습니다.</strong></p>` : `
+                        <div class="p-3 rounded-lg ${br && br.deposits.length ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-300'}">
+                            <label class="font-semibold block mb-1">① 입금 통장 거래내역 <span class="text-amber-700">(강력 권장)</span></label>
+                            <p class="text-sm text-slate-600 mb-2">같은 ${this.escapeHTML(det.profile.name.split(' ')[0])}라도 업체 계약에 따라 수수료를 빼고 입금되기도, 출금액 그대로 입금되기도 합니다. 통장변환결과 엑셀이나 은행 거래내역을 올리면 '${this.escapeHTML(det.profile.bankKeywords.join(', '))}' 입금을 찾아 정산일별로 맞추고, 실제 입금 차액을 수수료로 계산·검증합니다.</p>
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <button id="bank-pick-btn" class="px-4 py-2 bg-slate-700 text-white rounded-md hover:bg-slate-800">은행 파일 선택</button>
+                                ${br ? '<button id="bank-clear-btn" class="px-3 py-2 bg-slate-200 rounded-md hover:bg-slate-300 text-sm">은행 파일 빼기</button>' : ''}
+                                <span class="text-sm">${bankInfo}</span>
+                            </div>
+                        </div>`}
+                        <input id="bank-file-input" type="file" accept=".xlsx,.xls,.csv" class="hidden"/>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label for="period-start-input" class="font-semibold block mb-1">② 장부 기간 첫날</label>
+                                <input id="period-start-input" type="date" class="w-full border rounded-md px-3 py-2" value="${this.escapeAttribute(state.periodStart)}"/>
+                                <p class="text-xs text-slate-500 mt-1">CMS를 장부 시작보다 한 달 앞부터 받았을 때 입력하면, 그 전 출금분의 미정산액(기초 잔액)을 정확히 계산합니다. 비우면 파일 전체.</p>
+                            </div>
+                            <div>
+                                <label for="opening-input" class="font-semibold block mb-1">③ 기초 미정산 잔액(전기이월, 원)</label>
+                                <div class="flex gap-2">
+                                    <input id="opening-input" type="text" inputmode="numeric" class="w-full border rounded-md px-3 py-2" placeholder="0" value="${this.escapeAttribute(state.openingBalanceText)}"/>
+                                    ${state.openingEdited ? '<button id="opening-auto-btn" class="px-2 py-1 bg-slate-200 rounded-md hover:bg-slate-300 text-xs whitespace-nowrap">자동값</button>' : ''}
+                                </div>
+                                <p class="text-xs mt-1 ${state.openingEdited ? 'text-indigo-700' : 'text-slate-500'}">${state.openingEdited ? '직접 입력한 값입니다.' : '자동: ' + this.escapeHTML(state.openingSource)} 작년 장부 CMS 계정 기말 잔액과 다르면 장부 값으로 고쳐 주세요(차액은 첫 정산의 CMS수수료로 처리).</p>
+                            </div>
+                            <div>
+                                <label for="period-end-input" class="font-semibold block mb-1">④ 장부 기간 마지막 날</label>
+                                <input id="period-end-input" type="date" class="w-full border rounded-md px-3 py-2" value="${this.escapeAttribute(state.periodEnd)}"/>
+                                <p class="text-xs text-slate-500 mt-1">이 날 뒤의 정산(예: 9/30 출금분의 10/2 정산)은 넣지 않고 '기말 미정산'으로 남깁니다. 다음 기간의 기초 잔액이 됩니다.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <details class="p-4 bg-white border rounded-lg">
+                        <summary class="font-semibold cursor-pointer">출금 상태 자동 분류 보기 (${Object.keys(s.statusCounts).length}종)</summary>
+                        <table class="preview-table mt-3"><thead><tr><th>상태</th><th>건수</th><th>처리</th></tr></thead><tbody>${statusRows}</tbody></table>
+                    </details>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <button id="profile-convert-btn" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300" ${state.recordErrors.length ? 'disabled' : ''}>통장형식으로 변환</button>
+                        <button id="profile-skip-btn" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">자동 인식 쓰지 않고 직접 지정</button>
+                        <button id="reset-btn" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">처음부터 다시하기</button>
+                    </div>
+                </div>`;
+        },
+        renderProfileResult(state) {
+            const r = state.profileResult;
+            const c = r.counts;
+            const statusClass = st => st.startsWith('일치') || st === '전기이월 정산' ? 'text-green-700'
+                : (st.startsWith('불일치') || st.startsWith('확인 필요') || st.startsWith('은행에만') || st.startsWith('은행 입금 못')) ? 'text-red-600 font-semibold' : 'text-amber-700';
+            const rows = r.recon.map(x => `<tr>
+                <td>${this.escapeHTML(x.kind)}</td><td>${x.sd}</td><td>${x.bankDate}</td><td class="whitespace-normal">${this.escapeHTML(x.wds)}</td>
+                <td class="text-right">${x.okCount}</td><td class="text-right">${this.fmt(x.okAmount)}</td><td class="text-right">${x.failCount}</td>
+                <td class="text-right">${this.fmt(x.ruleFee)}</td><td class="text-right">${this.fmt(x.ruleNet)}</td><td class="text-right">${this.fmt(x.bankAmount)}</td>
+                <td class="text-right">${this.fmt(x.actualFee)}</td><td class="text-right">${this.fmt(x.diff)}</td><td class="${statusClass(x.status)}">${this.escapeHTML(x.status)}</td></tr>`).join('');
+            const cc = r.closingCheck;
+            const closingHtml = cc.diff === 0
+                ? `<div class="p-3 rounded-lg text-sm bg-green-50 text-green-800">기말 잔액 검산 일치: 기말 미정산 ${this.fmt(cc.actual)}원 = 장부 기간 안 출금 중 기간 뒤 정산분 ${this.fmt(cc.expected)}원</div>`
+                : `<div class="p-3 rounded-lg text-sm bg-red-50 text-red-700 font-semibold">기말 잔액 검산 차이 ${this.fmt(cc.diff)}원: 기말 ${this.fmt(cc.actual)}원 / 기간 뒤 정산분 ${this.fmt(cc.expected)}원.
+                    ${r.priorMode ? `기초 잔액 입력값과 전기 출금분 계산값(${this.fmt(r.priorOpening)}원)의 차이입니다. 작년 장부 이월액이 맞는지 확인하세요.` : '기초 잔액의 이월분 정산을 은행에서 찾지 못했거나 은행 파일이 없을 때 생깁니다. 이월분 정산은 장부에서 직접 처리하거나 은행 파일을 올리세요.'}</div>`;
+            const problems = c.mismatched + c.bankOnly + r.recon.filter(x => /못 찾음|확인 필요/.test(x.status)).length + (cc.diff !== 0 ? 1 : 0);
+            return `
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    ${state.detection.profile.bankUse === 'none'
+                        ? `<div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">통장대체(입금일 수)</div><div class="text-xl font-bold">${r.groupCount - c.outOfPeriod}일</div></div>`
+                        : `<div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">은행 입금과 일치</div><div class="text-xl font-bold text-green-700">${c.matched} / ${r.groupCount - c.outOfPeriod}</div></div>`}
+                    <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">불일치·확인 필요</div><div class="text-xl font-bold ${problems ? 'text-red-600' : 'text-slate-800'}">${problems}</div></div>
+                    ${state.detection.profile.bankUse === 'none'
+                        ? `<div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">입금 방식</div><div class="text-sm font-bold">출금액 그대로 입금 (대조 불필요)</div></div>`
+                        : `<div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">규칙으로 계산(은행자료 없음)</div><div class="text-xl font-bold ${c.noBank ? 'text-amber-700' : ''}">${c.noBank}</div></div>`}
+                    <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">기말 미정산 잔액</div><div class="text-xl font-bold">${this.fmt(r.closingUnsettled)}원</div></div>
+                    <div class="p-4 bg-white border rounded-lg"><div class="text-xs text-slate-500">기간 밖 정산(미작성)</div><div class="text-xl font-bold">${c.outOfPeriod}건</div></div>
+                </div>
+                ${closingHtml}
+                <details class="p-4 bg-white border rounded-lg" ${problems ? 'open' : ''}>
+                    <summary class="font-semibold cursor-pointer">정산일별 은행 대사 (${r.recon.length}건) — 실제 수수료 = 성공 출금 합계 − 은행 입금</summary>
+                    <div class="overflow-x-auto mt-3"><table class="preview-table"><thead><tr>
+                        <th>구분</th><th>정산예정일</th><th>은행입금일</th><th>출금일</th><th>성공</th><th>성공금액</th><th>실패</th>
+                        <th>규칙 수수료</th><th>예상 입금</th><th>은행 입금</th><th>실제 수수료</th><th>차이</th><th>상태</th>
+                    </tr></thead><tbody>${rows}</tbody></table></div>
+                </details>`;
         },
         renderHeaderSelectView(state) {
             const tableHTML = this.generateTableHTML(state.rawData.slice(0, 30), {
@@ -263,7 +395,10 @@
                      <div class="flex items-center space-x-3">
                         <button id="download-excel-btn" class="px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 text-lg">엑셀 저장</button>
                         <button id="reset-btn" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">처음부터 다시하기</button>
+                        ${state.profileResult ? '<button id="back-setup-btn" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">설정으로 돌아가기</button>' : ''}
                     </div>
+                    ${state.profileResult ? this.renderProfileResult(state) : ''}
+                    ${state.profileResult ? `<p class="text-sm text-slate-500">엑셀 저장 시 시트 3개: 통장형식_변환결과 / 정산대사 / 출금실패내역. 적요는 전년도 장부 방식(회원명 / 사업자번호, ${this.escapeHTML(state.detection.profile.memo.fee)}, ${this.escapeHTML(state.detection.profile.memo.transfer)}).</p>` : ''}
                     <div class="overflow-x-auto border rounded-lg bg-white shadow-sm">
                        ${tableHTML}
                     </div>
@@ -354,6 +489,19 @@
                         fileInput.onchange = (e) => AppController.handleFile(e.target.files[0]);
                     }
                     break;
+                case 'profile_setup': {
+                    const bankInput = document.getElementById('bank-file-input');
+                    document.getElementById('bank-pick-btn')?.addEventListener('click', () => bankInput?.click());
+                    if (bankInput) bankInput.onchange = (e) => { AppController.handleBankFile(e.target.files[0]); e.target.value = ''; };
+                    document.getElementById('bank-clear-btn')?.addEventListener('click', () => AppController.refreshOpening({ bankResult: null, bankFileName: null }));
+                    document.getElementById('opening-input')?.addEventListener('change', (e) => AppState.setState({ openingBalanceText: e.target.value, openingEdited: true }));
+                    document.getElementById('opening-auto-btn')?.addEventListener('click', () => AppController.refreshOpening({ openingEdited: false }));
+                    document.getElementById('period-start-input')?.addEventListener('change', (e) => AppController.refreshOpening({ periodStart: e.target.value }));
+                    document.getElementById('period-end-input')?.addEventListener('change', (e) => AppState.setState({ periodEnd: e.target.value }));
+                    document.getElementById('profile-convert-btn')?.addEventListener('click', () => AppController.runProfileConvert());
+                    document.getElementById('profile-skip-btn')?.addEventListener('click', () => AppController.skipProfile());
+                    break;
+                }
                 case 'header_select':
                     document.querySelectorAll('.selectable-row').forEach(row =>
                         row.onclick = (e) => AppController.handleHeaderSelect(parseInt(e.currentTarget.dataset.rowIndex, 10))
@@ -383,6 +531,7 @@
                     break;
                 case 'final_preview':
                     document.getElementById('download-excel-btn')?.addEventListener('click', () => AppController.downloadExcel());
+                    document.getElementById('back-setup-btn')?.addEventListener('click', () => AppState.setState({ currentPhase: 'profile_setup' }));
                     break;
             }
         },
@@ -390,20 +539,107 @@
 
     // --- 3. 컨트롤러 (Controller / Actions) ---
     const AppController = {
-        handleFile(file) {
+        showReadError(file, error) {
+            console.error('파일 읽기 오류', file && file.name, error);
+            const name = UIRenderer.escapeHTML(file ? file.name : '');
+            UIRenderer.showModal('오류',
+                `"${name}" 파일을 읽지 못했습니다.<br><br>원인: ${UIRenderer.escapeHTML(error && error.message ? error.message : String(error))}<br><br>` +
+                `확인할 점: ① 엑셀에서 열려 있으면 닫고 다시 올리기 ② 암호가 걸린 파일이면 암호를 풀고 저장 ③ 엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)'로 저장 후 올리기` +
+                (typeof XLSX === 'undefined' ? '<br><br><strong>엑셀 읽기 프로그램(SheetJS)을 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침하세요.</strong>' : ''),
+                [{ text: '확인', className: 'bg-indigo-600 text-white' }]);
+        },
+        readWorkbook(file, onWorkbook) {
             if (!file) return;
+            if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
+                this.showReadError(file, new Error('엑셀(.xlsx, .xls) 또는 .csv 파일만 올릴 수 있습니다.'));
+                return;
+            }
             const reader = new FileReader();
+            reader.onerror = () => this.showReadError(file, reader.error || new Error('파일을 열 수 없습니다(다른 프로그램이 사용 중일 수 있음).'));
             reader.onload = (event) => {
                 try {
-                    const data = new Uint8Array(event.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null });
-                    AppState.setState({ rawData, fileName: file.name, currentPhase: 'header_select' });
+                    if (typeof XLSX === 'undefined') throw new Error('SheetJS 라이브러리가 로드되지 않았습니다.');
+                    const workbook = XLSX.read(new Uint8Array(event.target.result), { type: 'array' });
+                    if (!workbook.SheetNames.length) throw new Error('시트가 없습니다.');
+                    onWorkbook(workbook);
                 } catch (error) {
-                    UIRenderer.showModal('오류', "엑셀 파일을 읽는 중 오류가 발생했습니다: " + error.message, [{ text: '확인', className: 'bg-indigo-600 text-white'}]);
+                    this.showReadError(file, error);
                 }
             };
             reader.readAsArrayBuffer(file);
+        },
+        handleFile(file) {
+            this.readWorkbook(file, (workbook) => {
+                const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null });
+                if (!rawData.length) throw new Error('첫 시트에 데이터가 없습니다.');
+                // 사전 자동 인식: 맞으면 자동 경로, 아니면 기존 수동 단계
+                const detection = CmsEngine.detectProfile(rawData);
+                if (detection) {
+                    const { records, errors, footers } = CmsEngine.buildRecords(rawData, detection);
+                    const recordSummary = CmsEngine.summarizeRecords(records, footers);
+                    const sug = CmsEngine.suggestOpening(records, { periodStart: '', bankDeposits: null });
+                    AppState.setState({
+                        rawData, fileName: file.name, detection, records, recordErrors: errors, recordSummary,
+                        periodStart: '', periodEnd: recordSummary.maxDate || '', bankResult: null, bankFileName: null,
+                        openingEdited: false, openingBalanceText: sug.amount ? sug.amount.toLocaleString('ko-KR') : '', openingSource: sug.source,
+                        profileResult: null, currentPhase: 'profile_setup'
+                    });
+                } else {
+                    AppState.setState({ rawData, fileName: file.name, detection: null, currentPhase: 'header_select' });
+                }
+            });
+        },
+        handleBankFile(file) {
+            this.readWorkbook(file, (workbook) => {
+                const { detection } = AppState.getState();
+                const bankResult = CmsEngine.extractBankDeposits(workbook, detection.profile.bankKeywords);
+                this.refreshOpening({ bankResult, bankFileName: file.name });
+            });
+        },
+        // 기초 잔액 자동 제안 갱신 (사용자가 직접 고친 값은 유지)
+        refreshOpening(patch) {
+            const next = { ...AppState.getState(), ...patch };
+            const sug = CmsEngine.suggestOpening(next.records, {
+                periodStart: next.periodStart || '',
+                bankDeposits: next.bankResult ? next.bankResult.deposits : null
+            });
+            const extra = { openingSource: sug.source };
+            if (!next.openingEdited) extra.openingBalanceText = sug.amount ? sug.amount.toLocaleString('ko-KR') : '';
+            AppState.setState({ ...patch, ...extra });
+        },
+        skipProfile() {
+            AppState.setState({ detection: null, profileResult: null, currentPhase: 'header_select' });
+        },
+        runProfileConvert(skipBankWarning) {
+            const state = AppState.getState();
+            if (!skipBankWarning && state.detection.profile.bankUse === 'recommended' && !(state.bankResult && state.bankResult.deposits.length)) {
+                UIRenderer.showModal('입금 통장 없이 변환할까요?',
+                    `입금 통장 파일이 없어 <strong>파일의 수수료 칸만으로</strong> CMS수수료·통장대체를 계산합니다.<br>` +
+                    `현재 판단: ${UIRenderer.escapeHTML(CmsEngine.feeModeLabel(state.detection.profile, state.recordSummary))}<br><br>` +
+                    `업체 계약에 따라 실제 입금과 다를 수 있으니, 가능하면 입금 통장(통장변환결과 등)을 함께 올려 검증하세요.`,
+                    [
+                        { text: '은행 파일 선택', className: 'bg-slate-700 text-white', onClick: () => document.getElementById('bank-file-input')?.click() },
+                        { text: '은행 없이 진행', className: 'bg-amber-600 text-white', onClick: () => this.runProfileConvert(true) }
+                    ]);
+                return;
+            }
+            let opening = null;
+            const t = String(state.openingBalanceText || '').trim();
+            if (t !== '') {
+                opening = CmsEngine.toAmount(t);
+                if (opening === null || opening < 0) {
+                    UIRenderer.showModal('확인 필요', '기초 미정산 잔액은 숫자로 입력해 주세요. (예: 1,000,000)', [{ text: '확인', className: 'bg-indigo-600 text-white' }]);
+                    return;
+                }
+            }
+            const result = CmsEngine.buildStatement(state.records, {
+                profile: state.detection.profile,
+                bankDeposits: state.bankResult ? state.bankResult.deposits : null,
+                openingBalance: opening,
+                periodStart: state.periodStart || null,
+                periodEnd: state.periodEnd || null
+            });
+            AppState.setState({ profileResult: result, finalData: result.statement, currentPhase: 'final_preview' });
         },
         handleHeaderSelect(rowIndex) {
             AppState.setState({ headerRowIndex: rowIndex });
@@ -475,8 +711,12 @@
             }
         },
         downloadExcel() {
-            const { finalData, fileName } = AppState.getState();
-            DataTransformer.downloadAsExcel(finalData, fileName);
+            const state = AppState.getState();
+            if (state.profileResult) {
+                DataTransformer.downloadProfileExcel(state);
+                return;
+            }
+            DataTransformer.downloadAsExcel(state.finalData, state.fileName);
         }
     };
 
@@ -659,8 +899,447 @@
             XLSX.utils.book_append_sheet(wb, ws, "통장형식_변환결과");
             const finalFileName = this.buildDownloadFileName(originalFileName);
             XLSX.writeFile(wb, finalFileName);
+        },
+        // 사전 자동 경로 결과: 통장형식 + 정산대사 + 출금실패내역 (날짜는 실제 날짜 셀, 금액은 숫자 셀)
+        buildProfileWorkbook(state) {
+            const toDate = key => {
+                if (!key) return '';
+                const [y, m, d] = key.split('-').map(Number);
+                return new Date(y, m - 1, d);
+            };
+            const setFormats = (ws, rows, dateCols, numCols) => {
+                for (let R = 1; R < rows.length; R++) {
+                    for (const C of dateCols) {
+                        const cell = ws[XLSX.utils.encode_cell({ c: C, r: R })];
+                        if (cell && cell.t === 'n') cell.z = 'yyyy-mm-dd';
+                    }
+                    for (const C of numCols) {
+                        const cell = ws[XLSX.utils.encode_cell({ c: C, r: R })];
+                        if (cell && cell.t === 'n') cell.z = '#,##0';
+                    }
+                }
+            };
+            const wb = XLSX.utils.book_new();
+            const res = state.profileResult;
+
+            const st = res.statement.map((row, i) => (i === 0 ? row : [toDate(row[0]), ...row.slice(1)]));
+            const ws1 = XLSX.utils.aoa_to_sheet(st, { cellDates: false });
+            ws1['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 40 }];
+            setFormats(ws1, st, [0], [1, 2, 3]);
+            XLSX.utils.book_append_sheet(wb, ws1, '통장형식_변환결과');
+
+            const rc = [['구분', '정산예정일', '은행입금일', '출금일', '성공건수', '성공금액', '실패건수', '규칙수수료(부가세포함)', '예상입금', '은행입금', '실제수수료(차액)', '차이(실제-규칙)', '상태']]
+                .concat(res.recon.map(x => [x.kind, toDate(x.sd), toDate(x.bankDate), x.wds, x.okCount, x.okAmount, x.failCount, x.ruleFee, x.ruleNet, x.bankAmount, x.actualFee, x.diff, x.status]));
+            const ws2 = XLSX.utils.aoa_to_sheet(rc);
+            ws2['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 8 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 30 }];
+            setFormats(ws2, rc, [1, 2], [5, 7, 8, 9, 10, 11]);
+            XLSX.utils.book_append_sheet(wb, ws2, '정산대사');
+
+            const fails = state.records.filter(r => !r.success);
+            const fr = [['엑셀행', '출금일', '회원명', '사업자번호', '납부금액', '수수료', '상태', '수수료 차감 정산일', '비고']]
+                .concat(fails.map(r => [r.rowNo, toDate(r.withdrawalDate), r.clientName, r.bizNo, r.amount, r.fee, r.status, toDate(r.assignedSettlement), r.failAssignNote || '']));
+            const ws3 = XLSX.utils.aoa_to_sheet(fr);
+            ws3['!cols'] = [{ wch: 7 }, { wch: 12 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 30 }, { wch: 14 }, { wch: 30 }];
+            setFormats(ws3, fr, [1, 7], [4, 5]);
+            // 사업자번호는 문자열 유지
+            for (let R = 1; R < fr.length; R++) {
+                const cell = ws3[XLSX.utils.encode_cell({ c: 3, r: R })];
+                if (cell) { cell.t = 's'; cell.v = String(fr[R][3]); cell.z = '@'; }
+            }
+            XLSX.utils.book_append_sheet(wb, ws3, '출금실패내역');
+            return wb;
+        },
+        downloadProfileExcel(state) {
+            const wb = this.buildProfileWorkbook(state);
+            XLSX.writeFile(wb, this.buildDownloadFileName(state.fileName));
         }
     };
+
+    // --- 5. CMS 형식 사전 + 자동 변환·은행 대사 엔진 (화면과 분리: Node 검증 가능) ---
+    // 사전(CMS_PROFILES)에 열 이름이 "완전히 일치"하는 형식만 자동 처리한다. 맞지 않으면 기존 수동 단계로 진행.
+    const CMS_PROFILES = [
+        {
+            id: 'thebill',
+            name: '더빌 출금결과조회',
+            requiredHeaders: ['출금일', '정산예정일', '회원명', '납부금액', '수수료', '상태'],
+            columns: {
+                withdrawalDate: '출금일', settlementDate: '정산예정일', clientName: '회원명',
+                amount: '납부금액', fee: '수수료', status: '상태', bizNo: '사업자번호'
+            },
+            isSuccess: status => /^\s*출금성공/.test(String(status ?? '')),
+            // 실제 입금 통장 '더빌이체' 정산 118건(2026-01~09) 대사로 확인한 규칙:
+            // 은행 입금액 = 성공 출금 합계 − (성공 수수료 + 실패 수수료) × 1.1(부가세)
+            // 같은 더빌이라도 업체(계약)에 따라 수수료 칸이 0원이면 출금액 그대로 입금(2026-11-18 상반기 파일 738건 모두 0원)
+            feeVatRate: 0.1,
+            failFeeDeducted: true,
+            bankUse: 'recommended', // 수수료 차감 여부가 업체마다 달라 입금 통장 대조를 강력 권장
+            bankKeywords: ['더빌'],
+            memo: { fee: 'CMS수수료', transfer: '통장대체', feeClient: '더빌', transferClient: '통장대체' }
+        },
+        {
+            id: 'semusa_cms',
+            name: '세무사CMS 출금내역',
+            requiredHeaders: ['예정일', '출금일', '회원명', '신청금액', '출금금액', '출금상태'],
+            // 예정일에 고객 계좌에서 빠지고 출금일에 입금(사용자 확인 2026-11-18). 정상 성공은 예정일=출금일,
+            // 재출금 성공은 출금일이 실제 재출금일 → 회원별 입금·통장대체 모두 출금일 기준
+            columns: {
+                withdrawalDate: '출금일', settlementDate: '출금일', clientName: '회원명',
+                amount: '출금금액', status: '출금상태', bizNo: '세금계산서 사업자번호'
+            },
+            isSuccess: status => /성공/.test(String(status ?? '')),
+            // 출금액 그대로 입금, 수수료는 연계계좌에서 따로 빠짐 → 수수료 줄 없음, 은행 대조 불필요
+            feeVatRate: 0,
+            failFeeDeducted: false,
+            bankUse: 'none',
+            bankKeywords: [],
+            memo: { fee: 'CMS수수료', transfer: '통장대체', feeClient: '세무사CMS', transferClient: '통장대체' }
+        }
+    ];
+
+    const CmsEngine = {
+        normHeader(v) {
+            return String(v ?? '').replace(/\s+/g, '').trim();
+        },
+        // 1) 형식 자동 인식: 앞 30행에서 사전의 필수 열 이름이 모두 있는 행을 찾는다
+        detectProfile(rawData) {
+            for (const profile of CMS_PROFILES) {
+                const need = profile.requiredHeaders.map(h => this.normHeader(h));
+                const limit = Math.min(rawData.length, 30);
+                for (let r = 0; r < limit; r++) {
+                    const cells = (rawData[r] || []).map(c => this.normHeader(c));
+                    if (!need.every(h => cells.includes(h))) continue;
+                    const colIdx = {};
+                    for (const [key, name] of Object.entries(profile.columns)) {
+                        colIdx[key] = cells.indexOf(this.normHeader(name));
+                    }
+                    return { profile, headerRowIndex: r, colIdx };
+                }
+            }
+            return null;
+        },
+        // 날짜 → 'YYYY-MM-DD' (엑셀 날짜 숫자, Date, 20260105, 2026-01-05, 2026.01.05, 2026/1/5, 시간 포함 허용). 실패 시 null
+        toDateKey(value) {
+            if (value === null || value === undefined || String(value).trim() === '') return null;
+            const pad = n => String(n).padStart(2, '0');
+            const valid = (y, m, d) => {
+                const dt = new Date(y, m - 1, d);
+                return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+            };
+            if (value instanceof Date) {
+                return isNaN(value.getTime()) ? null : `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+            }
+            if (typeof value === 'number') {
+                if (value >= 19000101 && value <= 29991231 && Number.isInteger(value)) {
+                    const y = Math.floor(value / 10000), m = Math.floor(value / 100) % 100, d = value % 100;
+                    return valid(y, m, d) ? `${y}-${pad(m)}-${pad(d)}` : null;
+                }
+                if (value > 20000 && value < 80000 && typeof XLSX !== 'undefined' && XLSX.SSF) {
+                    const p = XLSX.SSF.parse_date_code(value);
+                    return p && valid(p.y, p.m, p.d) ? `${p.y}-${pad(p.m)}-${pad(p.d)}` : null;
+                }
+                return null;
+            }
+            const s = String(value).trim().replace(/^'+/, '');
+            let m = s.match(/^(\d{4})(\d{2})(\d{2})(?:\.0+)?(?:\s|$)/);
+            if (!m) m = s.match(/^(\d{4})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})\.?(?:\s|$|[T(])/);
+            if (!m) return null;
+            const y = +m[1], mo = +m[2], d = +m[3];
+            return valid(y, mo, d) ? `${y}-${pad(mo)}-${pad(d)}` : null;
+        },
+        // 금액 → 정수(원). "440,000", "1,234,567.", 숫자 허용. 빈칸은 0, 해석 실패는 null (0으로 바꾸지 않음)
+        toAmount(value) {
+            if (value === null || value === undefined) return 0;
+            if (typeof value === 'number') return isFinite(value) ? Math.round(value) : null;
+            const s = String(value).trim().replace(/,/g, '').replace(/원$/, '').replace(/\.$/, '');
+            if (s === '' || s === '-') return 0;
+            if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+            return Math.round(Number(s));
+        },
+        // 2) CMS 행 → 레코드 (원본 행 보존, 해석 실패는 errors로)
+        buildRecords(rawData, det) {
+            const { profile, headerRowIndex, colIdx } = det;
+            const records = [];
+            const errors = [];
+            const footers = []; // "총 합계" 같은 합계 행: 거래로 쓰지 않고 검산용으로만
+            rawData.slice(headerRowIndex + 1).forEach((row, i) => {
+                const rowNo = headerRowIndex + 2 + i; // 엑셀 행 번호
+                const cell = key => (colIdx[key] >= 0 ? row[colIdx[key]] : null);
+                const isFooter = (row || []).some(c => /^\s*(총\s*)?합\s*계\s*$|^\s*소\s*계\s*$|^\s*총\s*계\s*$/.test(String(c ?? '')))
+                    && String(cell('clientName') ?? '').trim() === '' && String(cell('status') ?? '').trim() === '';
+                if (isFooter) {
+                    footers.push({ rowNo, amount: this.toAmount(cell('amount')) });
+                    return;
+                }
+                const hasAny = ['withdrawalDate', 'clientName', 'amount', 'status'].some(k => String(cell(k) ?? '').trim() !== '');
+                if (!hasAny) return;
+                const rec = {
+                    rowNo,
+                    withdrawalDate: this.toDateKey(cell('withdrawalDate')),
+                    settlementDate: this.toDateKey(cell('settlementDate')),
+                    clientName: String(cell('clientName') ?? '').trim(),
+                    bizNo: String(cell('bizNo') ?? '').trim(),
+                    amount: this.toAmount(cell('amount')),
+                    fee: this.toAmount(cell('fee')),
+                    status: String(cell('status') ?? '').trim(),
+                    raw: row
+                };
+                rec.success = profile.isSuccess(rec.status);
+                const bad = [];
+                if (!rec.withdrawalDate) bad.push('출금일(' + String(cell('withdrawalDate') ?? '') + ')');
+                if (rec.amount === null) bad.push('납부금액(' + String(cell('amount') ?? '') + ')');
+                if (rec.fee === null) bad.push('수수료(' + String(cell('fee') ?? '') + ')');
+                if (rec.success && !rec.settlementDate) bad.push('정산예정일(' + String(cell('settlementDate') ?? '') + ')');
+                if (bad.length) errors.push({ rowNo, clientName: rec.clientName, status: rec.status, fields: bad.join(', ') });
+                records.push(rec);
+            });
+            return { records, errors, footers };
+        },
+        summarizeRecords(records, footers) {
+            const statusCounts = {};
+            let okCount = 0, okAmount = 0, failCount = 0, minDate = null, maxDate = null, feeSum = 0, feeRows = 0, allAmount = 0;
+            for (const r of records) {
+                statusCounts[r.status] = statusCounts[r.status] || { count: 0, success: r.success };
+                statusCounts[r.status].count++;
+                if (r.success) { okCount++; okAmount += r.amount || 0; } else failCount++;
+                allAmount += r.amount || 0;
+                if (r.fee) feeSum += r.fee;
+                if (r.success && r.fee) feeRows++; // 방식 판단은 성공 건 기준 (실패 수수료 0원 건은 흔함)
+                if (r.withdrawalDate) {
+                    if (!minDate || r.withdrawalDate < minDate) minDate = r.withdrawalDate;
+                    if (!maxDate || r.withdrawalDate > maxDate) maxDate = r.withdrawalDate;
+                }
+            }
+            // 수수료 방식: 파일의 수수료 칸으로 판단 (0원뿐이면 출금액 그대로 입금)
+            const feeMode = (feeRows === 0 && feeSum === 0) ? 'none' : (feeRows === okCount ? 'deduct' : 'partial');
+            // 합계 행 검산: 파일 하단 합계 = 출금금액 합계(성공·실패 모두)
+            const footer = (footers || []).find(f => f.amount !== null && f.amount !== 0) || null;
+            const footerCheck = footer ? { footerAmount: footer.amount, sum: allAmount, ok: footer.amount === allAmount, rowNo: footer.rowNo } : null;
+            return { statusCounts, okCount, okAmount, failCount, minDate, maxDate, feeMode, feeSum, feeRows, footerCheck };
+        },
+        feeModeLabel(profile, summary) {
+            if (!profile.feeVatRate && !profile.failFeeDeducted && summary.feeMode === 'none') return '출금액 그대로 입금 (수수료는 따로 출금)';
+            if (summary.feeMode === 'none') return '전액 입금형 — 수수료 칸이 모두 0원이라 출금액 그대로 입금으로 계산';
+            const rate = 1 + (profile.feeVatRate || 0);
+            if (summary.feeMode === 'partial') return `일부 수수료 있음 — 수수료 칸 × ${rate}만큼 빼고 입금으로 계산 (확인 필요)`;
+            return `수수료 차감형 — (성공·실패 수수료) × ${rate}(부가세)를 빼고 입금으로 계산`;
+        },
+        // 기초 미정산 잔액 자동 제안: ① 장부 첫날 전 출금분(파일에 있으면) ② 은행의 첫 정산 전 입금 ③ 0
+        suggestOpening(records, opts) {
+            const { periodStart, bankDeposits } = opts;
+            if (periodStart) {
+                const prior = records.filter(r => r.success && r.withdrawalDate && r.withdrawalDate < periodStart && r.settlementDate && r.settlementDate >= periodStart);
+                if (prior.length) {
+                    return { amount: prior.reduce((s, r) => s + r.amount, 0), source: `장부 첫날(${periodStart}) 전 출금 ${prior.length}건 중 기간 안에 정산된 금액(정확 계산)` };
+                }
+            }
+            if (bankDeposits && bankDeposits.length) {
+                const firstSd = records.filter(r => r.success && r.settlementDate && (!periodStart || r.settlementDate >= periodStart))
+                    .map(r => r.settlementDate).sort()[0];
+                if (firstSd) {
+                    const pre = bankDeposits.filter(d => d.date < firstSd && (!periodStart || d.date >= periodStart));
+                    if (pre.length) {
+                        return { amount: pre.reduce((s, d) => s + d.amount, 0), source: `은행의 첫 정산(${firstSd}) 전 입금 ${pre.length}건 — 잔액이 마이너스가 되지 않는 최소값. 장부 이월액이 다르면 고쳐 주세요` };
+                    }
+                }
+            }
+            return { amount: 0, source: '이월 정산 없음' };
+        },
+        // 3) 은행 거래내역(통장변환결과 xlsx 또는 은행 원본)에서 키워드가 들어간 '입금' 행 찾기
+        extractBankDeposits(workbook, keywords) {
+            const dateNames = ['결제일', '거래일', '거래일자', '거래일시', '일자', '날짜'];
+            const depNames = ['입금', '입금액', '맡기신금액', '입금금액', '받은금액'];
+            const deposits = [];
+            const sheetsHit = [];
+            const sheetsScanned = [];
+            for (const sn of workbook.SheetNames) {
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sn], { header: 1, defval: null, raw: true });
+                let hIdx = -1, dCol = -1, inCol = -1;
+                for (let r = 0; r < Math.min(rows.length, 30) && hIdx < 0; r++) {
+                    const cells = (rows[r] || []).map(c => this.normHeader(c).replace(/\(원\)$/, ''));
+                    const d = cells.findIndex(c => dateNames.includes(c));
+                    const n = cells.findIndex(c => depNames.includes(c));
+                    if (d >= 0 && n >= 0) { hIdx = r; dCol = d; inCol = n; }
+                }
+                if (hIdx < 0) continue;
+                sheetsScanned.push(sn);
+                let hit = 0;
+                rows.slice(hIdx + 1).forEach((row, i) => {
+                    const text = (row || []).filter((c, ci) => ci !== dCol && ci !== inCol && typeof c === 'string').join(' ');
+                    if (!keywords.some(k => text.includes(k))) return;
+                    const amount = this.toAmount(row[inCol]);
+                    const date = this.toDateKey(row[dCol]);
+                    if (!amount || amount <= 0 || !date) return;
+                    deposits.push({ date, amount, desc: text.trim(), sheet: sn, rowNo: hIdx + 2 + i });
+                    hit++;
+                });
+                if (hit) sheetsHit.push({ sheet: sn, count: hit });
+            }
+            deposits.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.rowNo - b.rowNo));
+            return { deposits, sheetsHit, sheetsScanned };
+        },
+        dayDiff(a, b) {
+            const [y1, m1, d1] = a.split('-').map(Number);
+            const [y2, m2, d2] = b.split('-').map(Number);
+            return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+        },
+        // 4) 정산일 묶음 → 은행 입금 대사 → 통장형식(A 방식: 회원명 / 사업자번호, CMS수수료, 통장대체)
+        //    options: { profile, bankDeposits(null=은행자료 없음), openingBalance(null|정수), periodEnd('YYYY-MM-DD') }
+        buildStatement(records, options) {
+            const profile = options.profile;
+            const vat = profile.feeVatRate || 0;
+            const periodStart = options.periodStart || null;
+            const periodEnd = options.periodEnd || null;
+            // 은행 입금은 장부 기간 안의 것만 대사 (기간 밖 입금은 다른 기간 몫)
+            const bank = options.bankDeposits
+                ? options.bankDeposits.filter(d => (!periodStart || d.date >= periodStart) && (!periodEnd || d.date <= periodEnd)).map(d => ({ ...d, used: false }))
+                : null;
+            const opening = options.openingBalance || 0;
+            // 장부 첫날 전 출금분이 파일에 있으면 그 정산은 일반 정산 묶음으로 처리(전기이월 특례 매칭 안 함)
+            const priorMode = !!(periodStart && records.some(r => r.success && r.withdrawalDate && r.withdrawalDate < periodStart));
+
+            // 정산 묶음: 성공 건은 정산예정일로, 실패 건 수수료는 같은 출금일 성공 건의 정산일로
+            const groups = new Map();
+            const wdToSd = new Map();
+            for (const r of records) {
+                if (!r.success || !r.settlementDate) continue;
+                if (!groups.has(r.settlementDate)) groups.set(r.settlementDate, { sd: r.settlementDate, wds: new Set(), ok: [], fail: [] });
+                const g = groups.get(r.settlementDate);
+                g.ok.push(r); g.wds.add(r.withdrawalDate);
+                if (!wdToSd.has(r.withdrawalDate)) wdToSd.set(r.withdrawalDate, r.settlementDate);
+            }
+            const orphanFails = [];
+            for (const r of records) {
+                if (r.success || !r.fee) continue;
+                let sd = wdToSd.get(r.withdrawalDate);
+                if (!sd) { // 같은 출금일 성공 건이 없으면 출금일 이후 가장 가까운 정산일
+                    sd = [...groups.keys()].sort().find(k => k >= r.withdrawalDate);
+                    if (sd) r.failAssignNote = '같은 출금일 성공 건 없음 → 다음 정산일(' + sd + ')에 포함';
+                }
+                r.assignedSettlement = sd || '';
+                if (sd && profile.failFeeDeducted) { groups.get(sd).fail.push(r); groups.get(sd).wds.add(r.withdrawalDate); }
+                else orphanFails.push(r);
+            }
+            const groupList = [...groups.values()].sort((a, b) => (a.sd < b.sd ? -1 : 1));
+            for (const g of groupList) {
+                g.gross = g.ok.reduce((s, r) => s + r.amount, 0);
+                g.feeBase = g.ok.reduce((s, r) => s + r.fee, 0) + g.fail.reduce((s, r) => s + r.fee, 0);
+                g.ruleFee = Math.round(g.feeBase * (1 + vat));
+                g.ruleNet = g.gross - g.ruleFee;
+                g.outOfPeriod = !!(periodEnd && g.sd > periodEnd);
+                g.beforePeriod = !!(periodStart && g.sd < periodStart);
+            }
+
+            const bankLast = bank && bank.length ? bank[bank.length - 1].date : null;
+            const bankFirst = bank && bank.length ? bank[0].date : null;
+            const recon = [];
+
+            // 전기이월 정산: 첫 정산 묶음보다 앞선 가장 이른 은행 입금
+            let openingMatch = null;
+            const firstInGroup = groupList.find(g => !g.beforePeriod);
+            if (opening && bank && firstInGroup && !priorMode) {
+                const cand = bank.find(d => !d.used && d.date < firstInGroup.sd);
+                if (cand) { cand.used = true; openingMatch = cand; }
+            }
+
+            // 묶음별 은행 입금 찾기: ① 같은 날짜·예상액 일치 ② 같은 날짜 ③ -3~+7일 안 예상액 일치
+            for (const g of groupList) {
+                if (g.outOfPeriod || g.beforePeriod || !bank) continue;
+                const free = bank.filter(d => !d.used);
+                let m = free.find(d => d.date === g.sd && d.amount === g.ruleNet)
+                    || free.find(d => d.date === g.sd)
+                    || free.find(d => { const dd = this.dayDiff(g.sd, d.date); return dd >= -3 && dd <= 7 && d.amount === g.ruleNet; });
+                if (m) { m.used = true; g.bankMatch = m; }
+            }
+
+            // 통장형식 행 만들기
+            const entries = [];
+            let seq = 0;
+            const push = (date, deposit, withdrawal, client, memo, order) => entries.push({ date, deposit, withdrawal, client, memo, order, seq: seq++ });
+            for (const r of records) {
+                if (!r.success || !r.withdrawalDate) continue;
+                if (periodEnd && r.withdrawalDate > periodEnd) continue;
+                if (periodStart && r.withdrawalDate < periodStart) continue; // 전기 출금분은 기초 잔액에 포함
+                push(r.withdrawalDate, r.amount, 0, r.clientName, r.bizNo ? `${r.clientName} / ${r.bizNo}` : r.clientName, 0);
+            }
+            if (opening && !priorMode) {
+                if (openingMatch) {
+                    const fee = opening - openingMatch.amount;
+                    if (fee) push(openingMatch.date, 0, fee, profile.memo.feeClient, profile.memo.fee, 1);
+                    push(openingMatch.date, 0, openingMatch.amount, profile.memo.transferClient, profile.memo.transfer, 2);
+                    recon.push({ kind: '전기이월', sd: '', bankDate: openingMatch.date, wds: '', okCount: '', okAmount: opening, failCount: '', ruleFee: '', ruleNet: '', bankAmount: openingMatch.amount, actualFee: fee, diff: '', status: fee >= 0 ? '전기이월 정산' : '확인 필요(입금이 이월액보다 큼)' });
+                } else {
+                    recon.push({ kind: '전기이월', sd: '', bankDate: '', wds: '', okCount: '', okAmount: opening, failCount: '', ruleFee: '', ruleNet: '', bankAmount: '', actualFee: '', diff: '', status: bank ? '확인 필요(이월분 은행 입금을 찾지 못함)' : '은행자료 없음(이월분 정산 미작성)' });
+                }
+            }
+            for (const g of groupList) {
+                const base = { kind: '정산', sd: g.sd, wds: [...g.wds].sort().join(', '), okCount: g.ok.length, okAmount: g.gross, failCount: g.fail.length, ruleFee: g.ruleFee, ruleNet: g.ruleNet };
+                if (g.beforePeriod) continue; // 장부 첫날 전에 끝난 정산: 이번 장부와 무관
+                if (g.outOfPeriod) {
+                    recon.push({ ...base, bankDate: '', bankAmount: '', actualFee: '', diff: '', status: '기간 밖(기말 미정산)' });
+                    continue;
+                }
+                let transfer, fee, date, status, bankAmount = '', actualFee = '', diff = '', bankDate = '';
+                if (g.bankMatch) {
+                    bankAmount = g.bankMatch.amount; bankDate = g.bankMatch.date;
+                    transfer = bankAmount; fee = g.gross - bankAmount; date = bankDate;
+                    actualFee = fee; diff = fee - g.ruleFee;
+                    const dd = this.dayDiff(g.sd, bankDate);
+                    status = diff === 0 ? (dd === 0 ? '일치' : `일치(입금일 ${dd > 0 ? '+' : ''}${dd}일)`) : `불일치(수수료 차이 ${diff.toLocaleString('ko-KR')}원)`;
+                } else {
+                    transfer = g.ruleNet; fee = g.ruleFee; date = g.sd;
+                    if (!bank && profile.bankUse === 'none') status = '대조 불필요(출금액 그대로 입금)';
+                    else if (!bank) status = '은행자료 없음(규칙 계산)';
+                    else if (bankLast && g.sd > bankLast) status = '은행자료 기간 밖(규칙 계산)';
+                    else if (bankFirst && g.sd < bankFirst) status = '은행자료 기간 전(규칙 계산)';
+                    else status = '은행 입금 못 찾음(규칙 계산)';
+                }
+                if (fee) push(date, 0, fee, profile.memo.feeClient, profile.memo.fee, 1);
+                push(date, 0, transfer, profile.memo.transferClient, profile.memo.transfer, 2);
+                recon.push({ ...base, bankDate, bankAmount, actualFee, diff, status });
+            }
+            if (bank) {
+                for (const d of bank.filter(x => !x.used)) {
+                    recon.push({ kind: '은행만', sd: '', bankDate: d.date, wds: '', okCount: '', okAmount: '', failCount: '', ruleFee: '', ruleNet: '', bankAmount: d.amount, actualFee: '', diff: '', status: '은행에만 있음(CMS 정산 없음)' });
+                }
+            }
+            recon.sort((a, b) => {
+                const ka = a.sd || a.bankDate, kb = b.sd || b.bankDate;
+                return ka < kb ? -1 : ka > kb ? 1 : 0;
+            });
+
+            entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.order - b.order) || (a.seq - b.seq)));
+            const statement = [['날짜', '입금', '출금', '잔액', '거래처', '적요']];
+            let balance = opening;
+            for (const e of entries) {
+                balance += e.deposit - e.withdrawal;
+                statement.push([e.date, e.deposit, e.withdrawal, balance, e.client, e.memo]);
+            }
+            const closingUnsettled = balance;
+            // 기말 잔액 검산: 기간 안에서 출금됐지만 정산이 기간 뒤인 금액과 같아야 함
+            const outOfPeriodGross = groupList.filter(g => g.outOfPeriod)
+                .reduce((s, g) => s + g.ok.filter(r => !periodStart || r.withdrawalDate >= periodStart).reduce((a, r) => a + r.amount, 0), 0);
+            // 전기 출금분(파일에 있을 때)의 정확한 기초 잔액
+            const priorOpening = priorMode
+                ? records.filter(r => r.success && r.withdrawalDate < periodStart && r.settlementDate && r.settlementDate >= periodStart).reduce((s, r) => s + r.amount, 0)
+                : null;
+            const closingCheck = { expected: outOfPeriodGross, actual: closingUnsettled, diff: closingUnsettled - outOfPeriodGross };
+            const counts = {
+                matched: recon.filter(r => r.kind === '정산' && String(r.status).startsWith('일치')).length,
+                mismatched: recon.filter(r => r.kind === '정산' && String(r.status).startsWith('불일치')).length,
+                noBank: recon.filter(r => r.kind === '정산' && /규칙 계산/.test(r.status)).length,
+                bankOnly: recon.filter(r => r.kind === '은행만').length,
+                outOfPeriod: groupList.filter(g => g.outOfPeriod).length
+            };
+            return {
+                statement, recon, orphanFails, closingUnsettled, outOfPeriodGross, counts, closingCheck, priorMode, priorOpening,
+                groupCount: groupList.filter(g => !g.beforePeriod).length
+            };
+        }
+    };
+    if (typeof window !== 'undefined') {
+        window.CmsEngine = CmsEngine;
+        window.CmsDataTransformer = DataTransformer; // 검증 스크립트용 (tests/verify_thebill.js)
+    }
 
     // --- 앱 초기화 ---
     document.addEventListener('DOMContentLoaded', () => {
