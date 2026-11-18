@@ -813,6 +813,9 @@
       }
       const baseCcy = String(spec.baseCurrency || 'KRW').toUpperCase(), fxCcy = String(spec.foreignCurrency || 'USD').toUpperCase();
       const bothKeys = new Set((spec.bothTypes || []).map(t => norm(t).replace(/\s+/g, '')).filter(Boolean));
+      // 양쪽 조건(bothRule.allNonzero: [[열 이름], [열 이름], …]): 지정한 열이 모두 0이 아닌 행은 양쪽(예: NH 한 줄 외화매도 — 원화 잔액·외화 잔액이 함께 찍힘)
+      const bothCols = ((spec.bothRule && spec.bothRule.allNonzero) || []).map(names => findHeader(header, names));
+      const bothByRule = rec => bothCols.length > 0 && bothCols.every(i => i >= 0 && Math.abs(parseAmount(rec[i]) || 0) > 0);
       // 쪽마다 저장된 분류(입금·출금·제거 목록)가 있으면 그 쪽의 분류로 쓴다(잔액 기준 분류보다 먼저, 잔액 근거가 한 방향으로 분명하면 잔액이 고침)
       const sideProfile = side => {
         const s = spec[side] || {};
@@ -827,6 +830,7 @@
       const sideOf = rec => {
         if (isExchangeRow(rec, baseCols.amountCol, fxCols.amountCol)) return 'both';
         if (bothKeys.size && baseCols.tradeTypeCol !== undefined && bothKeys.has(norm(rec[baseCols.tradeTypeCol]).replace(/\s+/g, ''))) return 'both';
+        if (bothByRule(rec)) return 'both';
         return ruleMatches(rec, ci, spec.rowRule) ? 'foreign' : 'base';
       };
       // 외화 행이 하나도 없는 파일(같은 양식의 원화 전용 파일): 나누기 규칙이 든 예외를 쓰지 않고 원래 형식대로 처리

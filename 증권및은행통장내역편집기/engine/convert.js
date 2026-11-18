@@ -48,7 +48,9 @@
       const types = (x.types || []).map(keyOf).filter(Boolean);
       // add: 금액에 더할 열(예: 대신 재투자매도 = 거래금액 + 이자). add 가 있으면 그 행의 수수료·세금은 그대로 둔다
       const add = (x.add || []).map(idxOf).filter(i => i >= 0 && i < header.length);
-      return col >= 0 && col < header.length && types.length ? { types, col, add, keepCosts: add.length > 0, label: (x.types || []).join('·') } : null;
+      // div: 금액을 이 열 값으로 나눔(예: NH 한 줄 외화매도의 외화 쪽 = 거래금액 ÷ 적용환율). 0.01 단위 반올림
+      const div = (x.div || []).map(idxOf).filter(i => i >= 0 && i < header.length);
+      return col >= 0 && col < header.length && types.length ? { types, col, add, div, keepCosts: add.length > 0 || div.length > 0, label: (x.types || []).join('·') } : null;
     }).filter(Boolean);
   }
 
@@ -355,7 +357,11 @@
         const t = keyOf(r[phase3.tradeTypeCol]);
         const rule = abtRules.find(x => x.types.includes(t));
         if (!rule) return;
-        if (rule.add.length) {
+        if (rule.div.length) {
+          const d = E.parseAmount(r[rule.div[0]]) || 0;
+          if (!d) return; // 나눌 값(환율 등)이 없으면 원래 금액 그대로
+          r[phase3.amountCol] = Math.round((E.parseAmount(r[rule.col]) || 0) / d * 100) / 100;
+        } else if (rule.add.length) {
           const extra = rule.add.reduce((s, i) => s + (E.parseAmount(r[i]) || 0), 0);
           if (!extra) return; // 더할 값이 없으면 원래 금액 그대로(행을 바꾸지 않음)
           r[phase3.amountCol] = Math.round(((E.parseAmount(r[rule.col]) || 0) + extra) * 100) / 100;
@@ -363,7 +369,7 @@
         if (!rule.keepCosts) ['feeCol', 'taxCol', 'extraCostCol1', 'extraCostCol2', 'extraCostCol3'].forEach(k => { if (phase3[k] !== undefined) r[phase3[k]] = 0; });
         moved++;
       });
-      if (moved) notes.push(`거래종류별 금액 열 적용 ${moved}행: ${abtRules.map(x => `${x.label} → "${data[0][x.col]}"${x.add.length ? ` + ${x.add.map(i => `"${data[0][i]}"`).join(' + ')}` : ''}`).join(', ')}`);
+      if (moved) notes.push(`거래종류별 금액 열 적용 ${moved}행: ${abtRules.map(x => `${x.label} → "${data[0][x.col]}"${x.add.length ? ` + ${x.add.map(i => `"${data[0][i]}"`).join(' + ')}` : ''}${x.div.length ? ` ÷ "${data[0][x.div[0]]}"` : ''}`).join(', ')}`);
     }
     const hidden = addHiddenCostColumn(data, phase3, unit);
     if (hidden.details.length) notes.push(`정산금액과 차이 나는 숨은 비용 ${hidden.details.length}건(합계 ${roundTo(hidden.details.reduce((s, d) => s + d.amount, 0), unit).toLocaleString('ko-KR')})을 "(기타비용)" 출금 행으로 넣었습니다.`);
@@ -945,6 +951,9 @@
       const bothKeys = new Set((spec.bothTypes || []).map(t => E.norm(t).replace(/\s+/g, '')));
       const overrides = {};
       if (bothKeys.size && tcol !== undefined) one.layout.records.forEach((rec, i) => { if (bothKeys.has(E.norm(rec[tcol]).replace(/\s+/g, ''))) overrides[one.layout.sourceRows[i]] = 'both'; });
+      // 양쪽 조건(지정 열이 모두 0이 아님)에 맞는 행도 "양쪽"으로
+      const bothCols = ((spec.bothRule && spec.bothRule.allNonzero) || []).map(n => idx(n));
+      if (bothCols.length && bothCols.every(i => i !== null)) one.layout.records.forEach((rec, i) => { if (bothCols.every(c => Math.abs(E.parseAmount(rec[c]) || 0) > 0)) overrides[one.layout.sourceRows[i]] = 'both'; });
       draft = { fxCurrency: String(spec.foreignCurrency || 'USD').toUpperCase(), rule: { col: idx(spec.rowRule.col), op: spec.rowRule.op, value: spec.rowRule.value || '' }, base: side('base'), foreign: side('foreign'), overrides };
     }
     return { account: one, draft };

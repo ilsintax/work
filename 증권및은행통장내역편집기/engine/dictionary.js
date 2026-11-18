@@ -144,7 +144,7 @@
     };
     // 거래종류별 금액 열: [{ types: [거래종류], col: [열 이름], add?: [더할 열 이름] }]
     const checkAbt = (a, w) => {
-      if (a !== undefined && !(Array.isArray(a) && a.every(x => x && isStrList(x.types || null) && x.types.length && isStrList(x.col || null) && x.col.length && (x.add === undefined || (isStrList(x.add) && x.add.length))))) errors.push(`${w} 은 [{ types: [거래종류], col: [열 이름], add?: [더할 열 이름] }] 형식이어야 합니다.`);
+      if (a !== undefined && !(Array.isArray(a) && a.every(x => x && isStrList(x.types || null) && x.types.length && isStrList(x.col || null) && x.col.length && (x.add === undefined || (isStrList(x.add) && x.add.length)) && (x.div === undefined || (isStrList(x.div) && x.div.length))))) errors.push(`${w} 은 [{ types: [거래종류], col: [열 이름], add?: [더할 열 이름], div?: [나눌 열 이름] }] 형식이어야 합니다.`);
     };
     // 통화 분리(currencySplit): 통화 열, 원화 쪽 금액·잔액 열, 분류 목록
     const checkSplit = (sp, where) => {
@@ -163,6 +163,7 @@
       if (sp.foreign) checkBuckets(sp.foreign, `${w} 외화 쪽`);
       // 양쪽 거래종류(bothTypes): 원화·외화 금액이 같은 열에 있는 증권사의 환전 행 / 거래종류별 금액 열(amountByType)
       if (sp.bothTypes !== undefined && (!isStrList(sp.bothTypes) || !sp.bothTypes.length)) errors.push(`${w}: bothTypes(양쪽에 넣을 거래종류)는 글자 목록이어야 합니다.`);
+      if (sp.bothRule !== undefined && !(sp.bothRule && Array.isArray(sp.bothRule.allNonzero) && sp.bothRule.allNonzero.length >= 1 && sp.bothRule.allNonzero.every(x => isStrList(x) && x.length))) errors.push(`${w}: bothRule(양쪽 조건)은 { allNonzero: [[열 이름], …] } 형식이어야 합니다.`);
       ['base', 'foreign'].forEach(s => {
         const fm = sp[s] && sp[s].inferredFeeMode;
         if (fm !== undefined && !['included', 'separate'].includes(fm)) errors.push(`${w}: ${s}.inferredFeeMode(수수료 처리)는 included 또는 separate 여야 합니다.`);
@@ -457,11 +458,15 @@
     const tcol = (src.config && src.config.columnOverrides && src.config.columnOverrides.tradeTypeCol !== undefined) ? src.config.columnOverrides.tradeTypeCol : ((src.output && src.output.mapping) || {}).tradeTypeCol;
     if (srcL && srcL.records && tcol !== undefined && plan.assign) {
       const bySide = new Map();
+      // 이미 저장된 양쪽 조건(지정 열이 모두 0이 아님)으로 양쪽이 되는 행은 거래종류 이름 규칙(bothTypes)으로 만들지 않는다
+      const oldRule = ex && ex.currencySplit && JSON.stringify(ex.currencySplit.rowRule) === JSON.stringify(spec.rowRule) ? ex.currencySplit.bothRule : null;
+      const ruleCols = ((oldRule && oldRule.allNonzero) || []).map(n => E.findHeader(header, n));
+      const byRule = rec => ruleCols.length > 0 && ruleCols.every(c => c >= 0 && Math.abs(E.parseAmount(rec[c]) || 0) > 0);
       srcL.records.forEach((rec, i) => {
         const t = E.text(rec[tcol]).trim();
         if (!t) return;
         const side = plan.assign[srcL.sourceRows[i]] || 'base';
-        const auto = E.isExchangeRow(rec, (plan.base || {}).amountCol ?? undefined, (plan.foreign || {}).amountCol ?? undefined);
+        const auto = E.isExchangeRow(rec, (plan.base || {}).amountCol ?? undefined, (plan.foreign || {}).amountCol ?? undefined) || byRule(rec);
         const e = bySide.get(t) || { both: 0, other: 0 };
         if (side === 'both' && !auto) e.both++; else if (side !== 'both') e.other++;
         bySide.set(t, e);
@@ -485,6 +490,11 @@
       ['depositTypes', 'withdrawalTypes', 'removalTypes'].forEach(k => { if (old[other][k]) spec[other][k] = [...old[other][k]]; });
       if (old[other].inferredFeeMode) spec[other].inferredFeeMode = old[other].inferredFeeMode;
       if (old[other].columns && old[other].columns.amountCol) spec[other].columns = JSON.parse(JSON.stringify(old[other].columns)); // 먼저 반영한 다른 쪽 열 지정 유지
+    }
+    // 사전에 직접 적어 둔 양쪽 조건·거래종류별 금액 열(화면에서 만들 수 없는 것)은 같은 규칙이면 유지
+    if (old && JSON.stringify(old.rowRule) === JSON.stringify(spec.rowRule)) {
+      if (old.bothRule && !spec.bothRule) spec.bothRule = JSON.parse(JSON.stringify(old.bothRule));
+      ['base', 'foreign'].forEach(s => { if (old[s] && old[s].amountByType && !spec[s].amountByType) spec[s].amountByType = JSON.parse(JSON.stringify(old[s].amountByType)); });
     }
     const before = JSON.stringify(ex || null);
     if (!ex) {

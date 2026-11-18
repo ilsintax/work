@@ -352,3 +352,12 @@
 - 백업: version/20261117_142958_반영초기화수정전 (14/14), 사전 version/20261117_143230_사전가져오기전
 - 검증: `npm run test:all` 전부 통과(전체 기준값 31개 파일 — 미래 샘플만 정답으로 의도 변경 후 갱신, 판별 29/29, PASS 298, 브라우저 오류 0), check-publish 고객 정보 없음.
 - 미반영: GitHub 업로드는 하지 않음(요청 시).
+- 로컬 git 시작(사용자 요청 "git으로 관리하고 커밋"): git init(main), .gitignore 에 samples/·*.pdf 추가(샘플 PDF가 들어갈 뻔함), 저장소 작성자 = GitHub 업로드와 같은 계정(이 저장소에만 설정). 첫 커밋 ff59a15(45개 파일, 고객 자료 0).
+- GitHub 업로드: ilsintax/work 커밋 3bfb276(13개 파일). 공개 검사·업체명/계좌 직접 검색 통과.
+
+### 20261118-036 2026-11-18 (KST) 검토·시작·완료(NH 한 줄 외화매도)
+- 사용자 요청: 추가 샘플(26111801)에서 10/20 외화매도가 원화·외화 모두에 영향을 주는데 한 줄만 있음 → 공통이 아니라 사전 예외로, 시험 후 수정 방안 검토 → "잔액이 맞게 되는지 확인하고 진행".
+- 변경: engine/engine.js·convert.js·dictionary.js(양쪽 조건 bothRule, 금액 나누기 div, 보존·검사), dictionary/institutions.js(v33, NH 예외만), tools/import-dictionary.js(미리보기), tools/check-publish.js(괄호 값·기관 이름 대소문자), tests/run-new-formats.js(+4), tests/baseline-all.json(새 샘플 추가), 문서.
+- 백업: version/20261118_164958_NH외화매도한줄전 (11/11), 사전 version/20261118_165125_사전가져오기전
+- 검증: 코드만 바꾼 뒤 전체 기준값 31개 동일 → 사전 반영 후에도 31개 동일·새 샘플 원화·달러 완료 → 기준값 32개. `npm run test:all` 전부 통과(판별 29/29, PASS 302, 브라우저 오류 0), check-publish 고객 정보 없음.
+- 미반영: GitHub 업로드는 하지 않음(요청 시).

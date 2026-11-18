@@ -102,7 +102,11 @@ const listDiff = (where, a, b) => {
         if (JSON.stringify(lo.columns || null) !== JSON.stringify(lx.columns || null)) parts.push(`${nm} 열 ${JSON.stringify(lo.columns || {})} → ${JSON.stringify(lx.columns || {})}`);
         B.forEach(k => { const a = new Set(lo[k] || []), bb = new Set(lx[k] || []); const plus = [...bb].filter(t => !a.has(t)), minus = [...a].filter(t => !bb.has(t)); if (plus.length || minus.length) parts.push(`${nm} ${BL[k]}${plus.length ? ` +${plus.join(',')}` : ''}${minus.length ? ` −${minus.join(',')}` : ''}`); });
         if ((lo.inferredFeeMode || 'separate') !== (lx.inferredFeeMode || 'separate')) parts.push(`${nm} 수수료 처리 ${lo.inferredFeeMode || 'separate'} → ${lx.inferredFeeMode || 'separate'}`);
+        if (JSON.stringify(lo.amountByType || null) !== JSON.stringify(lx.amountByType || null)) parts.push(`${nm} 거래종류별 금액 열 ${JSON.stringify(lo.amountByType || [])} → ${JSON.stringify(lx.amountByType || [])}`);
       });
+      if (JSON.stringify(so.bothRule || null) !== JSON.stringify(sx.bothRule || null)) parts.push(`양쪽 조건 ${JSON.stringify(so.bothRule || null)} → ${JSON.stringify(sx.bothRule || null)}`);
+      if (JSON.stringify(so.bothTypes || null) !== JSON.stringify(sx.bothTypes || null)) parts.push(`양쪽 거래종류 ${JSON.stringify(so.bothTypes || [])} → ${JSON.stringify(sx.bothTypes || [])}`);
+      if (JSON.stringify(o.amountByType || null) !== JSON.stringify(x.amountByType || null)) parts.push(`금액 규칙 ${JSON.stringify(o.amountByType || [])} → ${JSON.stringify(x.amountByType || [])}`);
       if (!parts.length) parts.push('세부 내용 변경');
       changed.push(`${MK[m]} ${b.name} 예외 규칙 ${x.id}: ${parts.join(' / ')}`);
     });

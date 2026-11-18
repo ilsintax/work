@@ -36,7 +36,7 @@ if (!samples.length) { console.log('샘플 파일을 찾지 못했습니다(samp
 samples.forEach(rel => {
   const f = path.basename(rel);
   const acc = (f.match(/\(([^)]+)\)/) || [])[1];
-  if (acc) sensitive.add(acc);
+  if (acc && /\d/.test(acc)) sensitive.add(acc); // 괄호 안 값은 숫자가 있을 때만 계좌번호로(예: "(nh투자증권)" 같은 기관 표시는 제외)
   // 파일명의 고객명·계좌번호 조각(기관 이름·일반 단어 제외)도 민감 문자열로
   const inst = new Set();
   const D0 = globalThis.BANKBOOK_DICTIONARY;
@@ -45,7 +45,7 @@ samples.forEach(rel => {
   D0.abbreviations.forEach(a => a.keys.forEach(k => inst.add(k)));
   f.replace(/\.[^.]+$/, '').split(/[_()\s]+/).forEach(t => {
     // 일반 단어·날짜·기간 표시(2026.10, 20261013, 3Q, 3분기 등)는 고객 정보가 아니므로 제외
-    if (t.length >= 2 && !inst.has(t) && !/^(거래내역|거래내역서|증권계좌|잔고증명|\d{1,2}월|\d{2}년상반기|\d{2}년하반기|KB\d|키움해외|아이엠증권|한국투자증권|\d분기|\d[QH])$/i.test(t)
+    if (t.length >= 2 && !inst.has(t) && ![...inst].some(x => String(x).toLowerCase() === t.toLowerCase()) &&!/^(거래내역|거래내역서|증권계좌|잔고증명|\d{1,2}월|\d{2}년상반기|\d{2}년하반기|KB\d|키움해외|아이엠증권|한국투자증권|\d분기|\d[QH])$/i.test(t)
       && !/^\d{1,2}$/.test(t) && !/^\d{4,8}$/.test(t) && !/^\d{4}[.\-]\d{1,2}$/.test(t)) sensitive.add(t);
   });
   E.analyzeFile(XLSX, new Uint8Array(fs.readFileSync(path.join(SAMPLES, rel))), f, globalThis.BANKBOOK_DICTIONARY).forEach(r => {

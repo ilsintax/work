@@ -2,8 +2,8 @@
 // 이 파일을 저장소의 dictionary/institutions.js 와 교체해 올리면 팀 전체에 적용됩니다.
 // 아래 { } 안은 순수 JSON 입니다.
 (function (root) { root.BANKBOOK_DICTIONARY = {
-  "version": 32,
-  "updatedAt": "2026-11-17T05:32:21.754Z",
+  "version": 33,
+  "updatedAt": "2026-11-18T07:51:16.678Z",
   "source": "reference/stockbalance/index.html BrokerAutoMapper (2026-11-10 추출)",
   "abbreviations": [
     {
@@ -1966,10 +1966,34 @@
                 ],
                 "withdrawalTypes": [
                   "DR수수료",
+                  "외화매도",
                   "외화매도(달러)",
                   "외화증권매수"
                 ],
-                "removalTypes": []
+                "removalTypes": [],
+                "amountByType": [
+                  {
+                    "types": [
+                      "외화매도"
+                    ],
+                    "col": [
+                      "거래금액"
+                    ],
+                    "div": [
+                      "적용환율"
+                    ]
+                  }
+                ]
+              },
+              "bothRule": {
+                "allNonzero": [
+                  [
+                    "잔액"
+                  ],
+                  [
+                    "외화잔액"
+                  ]
+                ]
               }
             }
           }
@@ -4544,6 +4568,13 @@
       "at": "2026-11-17T05:32:21.754Z",
       "changes": [
         "국내 미래에셋증권: 원화·외화 나누기 규칙의 외화 쪽 갱신 — 열(금액=외화거래금액, 잔액=외화예수금, 수수료=수수료, 세금=제세금합) · 분류(입금 4·출금 2·제거 2) · 수수료 별도 출금 행"
+      ]
+    },
+    {
+      "version": 33,
+      "at": "2026-11-18T07:51:16.678Z",
+      "changes": [
+        "국내 NH투자증권: 원화·외화 나누기 예외에 한 줄 외화매도 처리 추가 — 원화 잔액·외화 잔액이 함께 찍힌 행은 양쪽, 외화 쪽 외화매도 금액 = 거래금액 ÷ 적용환율, 외화 쪽 출금에 외화매도(이 열 구성 파일만; 두 줄로 적힌 기존 양식은 해당 행 없음)"
       ]
     }
   ]

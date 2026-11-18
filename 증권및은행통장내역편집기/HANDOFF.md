@@ -1,8 +1,8 @@
 # HANDOFF — 통합 통장내역 편집기
 
-- 작업 ID: 20261117-035
-- 마지막 갱신: 2026-11-17 (KST)
-- 상태: 사전 반영 시 맞춘 내역 초기화 수정·미래 규칙 정답 반영(035)·사전 v32(로컬). GitHub 은 034(커밋 cbbc108) — 이번 변경은 아직 안 올림.
+- 작업 ID: 20261118-036
+- 마지막 갱신: 2026-11-18 (KST)
+- 상태: NH 한 줄 외화매도 처리(036)·사전 v33(로컬, git 커밋). GitHub 은 035(커밋 3bfb276) — 이번 변경은 아직 안 올림.
 - 작업 컴퓨터: 사무실 PC (Windows 11, SynologyDrive 동기화 폴더)
 - 마지막 작업본: index.html, engine/(engine.js, convert.js, dictionary.js, securities-legacy.js), dictionary/institutions.js(구조 2, 내용 버전 22) — 다음 작업 시작 시 sha256sum 으로 확인
 - 사용자 확인 완료: 키움해외 원화 입금 누락 = 입금·출금 중 하나만 조회한 파일(20261110-016). 맞추려면 "전체"로 다시 받기
