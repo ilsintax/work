@@ -54,8 +54,36 @@
                     법인세 요청자료 생성기
                 </span>
             </h1>
-            <p class="text-slate-500 font-medium text-sm md:text-base">필요한 자료 리스트를 구성하고 빈 폴더 구조로 압축(ZIP) 다운로드 하세요.</p>
+            <p class="text-slate-500 font-medium text-sm md:text-base">필요한 자료 리스트를 구성하고 폴더 구조로 압축(ZIP) 다운로드 하세요. 각 폴더에는 출력 방법 안내문(txt)이 들어갑니다.</p>
         </header>
+
+        <!-- Settings Panel: 매번 입력 (저장하지 않음) -->
+        <div class="bg-white rounded-3xl shadow-xl shadow-indigo-100/50 border border-slate-100 p-6 md:p-8 mb-6 md:mb-8">
+            <h2 class="text-xl font-bold text-slate-800 mb-5 flex items-center gap-2">
+                <i class="ph-fill ph-buildings text-indigo-500"></i>
+                업체·안내문 정보
+                <span class="text-xs font-medium text-slate-400 ml-1">(안내문 txt에 들어갑니다. 저장되지 않으니 매번 입력하세요)</span>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <label class="block">
+                    <span class="text-sm font-semibold text-slate-600">업체명 (선택)</span>
+                    <input type="text" id="companyInput" placeholder="예: 주식회사 OOO" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
+                </label>
+                <label class="block">
+                    <span class="text-sm font-semibold text-slate-600">사업연도 시작일</span>
+                    <input type="date" id="fyStartInput" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
+                </label>
+                <label class="block">
+                    <span class="text-sm font-semibold text-slate-600">사업연도 종료일</span>
+                    <input type="date" id="fyEndInput" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
+                </label>
+                <label class="block">
+                    <span class="text-sm font-semibold text-slate-600">문의처 (담당자·연락처)</span>
+                    <input type="text" id="contactInput" placeholder="예: 세무법인 일신 홍길동 02-000-0000" class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
+                </label>
+            </div>
+            <p id="settingsError" class="text-sm text-red-500 mt-3 hidden"></p>
+        </div>
 
         <!-- Main Content Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-start">
@@ -136,7 +164,7 @@
                         <i class="ph-fill ph-check-circle text-2xl text-emerald-500"></i>
                         생성 완료 및 다운로드 시작!
                     </h3>
-                    <p class="text-emerald-600 text-sm mt-1">성공적으로 아래의 폴더 구조를 가진 ZIP 파일이 만들어졌습니다.</p>
+                    <p class="text-emerald-600 text-sm mt-1">성공적으로 아래의 폴더 구조를 가진 ZIP 파일이 만들어졌습니다. (각 폴더에 출력방법_안내.txt 포함)</p>
                 </div>
             </div>
             
@@ -152,21 +180,187 @@
         // State
         let selectedItems = [];
 
-        // Default Examples
+        // Default Examples — name: 폴더 이름, guide: 폴더 안 출력방법_안내.txt 내용
+        // 안내문의 {START} {END} {NEXTMONTH} 는 화면에서 입력한 사업연도로 바뀐다.
         const examples = [
-            "법인등기사항전부증명서",
-            "12월말일자 주주명부(연도중 주주명부 변경시 변경시점 모두 포함)",
-            "자동차보험증권",
-            "자동차등록증(자동차등록원부)",
-            "금융거래확인서 및 원리금상환내역(대출상환)",
-            "이자소득원천징수영수증",
-            "기업부설연구소등록증",
-            "연구개발인력현황(한국산업기술진흥협회)",
-            "연구인력개발비체크리스트",
-            "연구개발계획서 및 연구과제총괄표",
-            "출자좌수증명원(건설업협회)",
-            "네이버광고 충전 및 지출확인자료",
-            "카카오광고 충전 및 지출확인자료"
+            { name: "법인 등기사항전부증명서(말소사항 포함)", guide: {
+                why: "임원·자본금·본점 소재지 등 법인 기본사항 확인",
+                period: "가장 최근 발급분",
+                where: "대법원 인터넷등기소 www.iros.go.kr",
+                steps: [
+                    "인터넷등기소 접속 → 로그인",
+                    "[열람/발급(출력)] → [법인] 선택",
+                    "상호 또는 등기번호로 회사 검색",
+                    "'전부', '말소사항 포함'을 선택 후 결제",
+                    "발급(출력)하거나, '열람'으로 출력해도 됩니다"
+                ],
+                notes: ["가까운 등기소나 무인발급기에서도 발급할 수 있습니다."]
+            }},
+            { name: "12월말일자 주주명부(연도중 주주명부 변경시 변경시점 모두 포함)", guide: {
+                why: "주식등변동상황명세서 작성(주주별 주식 수·지분율 확인)",
+                period: "사업연도 종료일({END}) 현재 + 연도 중 주주가 바뀐 경우 바뀐 시점별 명부",
+                where: "회사에서 직접 작성하는 서류",
+                steps: [
+                    "주주명, 주민등록번호(법인은 사업자등록번호), 주소, 보유 주식 수, 지분율을 적습니다",
+                    "대표이사 법인인감을 날인합니다",
+                    "연도 중 양도·증자·감자가 있었다면 바뀐 날짜별 명부를 모두 넣어 주세요"
+                ],
+                notes: ["주식 양도가 있었다면 주식양수도계약서도 함께 넣어 주세요."]
+            }},
+            { name: "자동차보험증권(업무전용자동차보험 가입 확인)", guide: {
+                why: "법인 업무용승용차 비용 처리 요건(업무전용자동차보험 가입) 확인",
+                period: "{START} ~ {END} 기간을 모두 덮는 보험증권 (중간에 갱신했으면 갱신 전·후 모두)",
+                where: "가입한 보험사 홈페이지·앱 또는 담당 보험설계사",
+                steps: [
+                    "보험사 홈페이지(법인 로그인) → 계약조회 → 보험증권 출력 또는 PDF 저장",
+                    "또는 담당 보험설계사에게 보험증권 발송을 요청"
+                ],
+                notes: [
+                    "증권에 '임직원 운전자 한정' 등 업무전용자동차보험 특약이 보이는 면을 꼭 포함해 주세요.",
+                    "리스·렌트 차량은 리스·렌트회사가 가입한 보험 내역(계약서 포함)을 넣어 주세요."
+                ]
+            }},
+            { name: "자동차등록증(자동차등록원부)", guide: {
+                why: "법인 소유 차량의 차종·취득일·소유자 확인",
+                period: "보유 중인 모든 차량(연도 중 처분한 차량 포함)",
+                where: "정부24 www.gov.kr 또는 자동차365 www.car365.go.kr",
+                steps: [
+                    "정부24 접속 → 법인 공동인증서로 로그인",
+                    "'자동차등록원부' 검색 → 열람·발급 신청 → 출력 또는 PDF 저장",
+                    "또는 차량에 보관 중인 자동차등록증을 스캔·사진으로 넣어 주세요"
+                ],
+                notes: ["리스·렌트 차량은 리스·렌트 계약서와 월 납입 스케줄을 넣어 주세요."]
+            }},
+            { name: "금융거래확인서 및 원리금상환내역(대출상환)", guide: {
+                why: "결산일 기준 예금·대출 잔액과 이자비용 확인",
+                period: "잔액: {END} 기준 / 상환내역: {START} ~ {END}",
+                where: "거래 은행 영업점 (일부 은행은 기업 인터넷뱅킹 '증명서 발급' 메뉴)",
+                steps: [
+                    "은행에 '결산용 금융거래확인서({END} 기준)' 발급을 요청",
+                    "대출이 있으면 '대출 원리금 상환(이자 납입) 내역 {START} ~ {END}'도 함께 요청"
+                ],
+                notes: [
+                    "거래하는 모든 은행의 자료가 필요합니다.",
+                    "은행에 따라 발급 수수료가 있을 수 있습니다."
+                ]
+            }},
+            { name: "이자·배당소득 원천징수영수증", guide: {
+                why: "이자·배당을 받을 때 금융기관이 미리 뗀 법인세를 법인세에서 빼기 위함(기납부세액)",
+                period: "{START} ~ {END}",
+                where: "거래 은행·증권사 기업 인터넷뱅킹 또는 영업점",
+                steps: [
+                    "기업 인터넷뱅킹 로그인 → 증명서 발급(또는 원천징수영수증) 메뉴 → 기간 지정 후 출력",
+                    "인터넷으로 안 되면 영업점에 요청"
+                ],
+                notes: ["예금 이자가 있는 모든 은행, 배당을 받은 증권사 자료를 넣어 주세요."]
+            }},
+            { name: "지방세 세목별 과세증명서", guide: {
+                why: "재산세·자동차세·주민세·취득세·등록면허세 등 지방세 비용과 자산 취득 시 세금 확인",
+                period: "{START} ~ {END}",
+                where: "위택스 www.wetax.go.kr (인터넷 발급 무료)",
+                steps: [
+                    "위택스 접속 → 법인 공동인증서로 로그인",
+                    "상단 [납부결과] → [증명서발급] → [세목별 과세증명] 선택",
+                    "기간을 위와 같이 지정해 발급 → 출력 또는 PDF 저장"
+                ],
+                notes: [
+                    "인터넷은 대리 발급이 안 되므로 회사에서 직접 출력해 주세요.",
+                    "정부24 또는 시·군·구청 방문으로도 발급할 수 있습니다(방문 대리 발급 시 위임장·법인인감증명서·대리인 신분증 필요)."
+                ]
+            }},
+            { name: "4대사회보험료 납부확인서(사업장, 건강·연금·고용·산재)", guide: {
+                why: "회사가 부담한 4대보험료 확인 및 결산 정리",
+                period: "{START} ~ {END}분 + 마지막 달분(다음 달 {NEXTMONTH} 10일 납부분)까지",
+                where: "사회보험통합징수포털 si4n.nhis.or.kr 또는 건강보험 EDI edi.nhis.or.kr",
+                steps: [
+                    "사회보험통합징수포털 접속 → 사업장 공동인증서로 로그인",
+                    "증명서 발급 메뉴 → 보험료 납부확인서 선택",
+                    "기간을 지정해 건강·연금·고용·산재 4가지를 모두 출력 또는 PDF 저장"
+                ],
+                notes: [
+                    "4개 보험 중 빠지는 것이 없도록 각각 출력해 주세요.",
+                    "가능하면 월별 고지·납부 금액이 보이는 내역으로 넣어 주세요."
+                ]
+            }},
+            { name: "기업부설연구소(연구개발전담부서) 인정서", guide: {
+                why: "연구·인력개발비 세액공제 요건(연구소·전담부서 인정) 확인",
+                period: "현재 인정서 + 연도 중 변경신고 내역",
+                where: "한국산업기술진흥협회 연구개발인정 사이트 www.rnd.or.kr",
+                steps: [
+                    "rnd.or.kr 접속 → 회사 계정으로 로그인",
+                    "기업부설연구소(연구개발전담부서) 메뉴에서 인정서 출력 또는 PDF 저장"
+                ],
+                notes: ["연도 중 연구원 변동·소재지 변경 등 변경신고를 했다면 그 내역도 넣어 주세요."]
+            }},
+            { name: "연구개발인력현황(한국산업기술진흥협회)", guide: {
+                why: "연구전담요원 인건비 공제 대상자 확인",
+                period: "{END} 현재 + {START} ~ {END} 중 변동내역",
+                where: "한국산업기술진흥협회 연구개발인정 사이트 www.rnd.or.kr",
+                steps: [
+                    "rnd.or.kr 접속 → 회사 계정으로 로그인",
+                    "연구소 현황(연구원 현황) 메뉴에서 연구전담요원 명단을 출력 또는 PDF 저장",
+                    "연구원별 입사·퇴사일, 전담요원 등록·해제일이 보이게 넣어 주세요"
+                ],
+                notes: []
+            }},
+            { name: "연구·인력개발비 체크리스트(첨부 엑셀 작성)", guide: {
+                why: "연구·인력개발비 세액공제 대상 여부 확인",
+                period: "{START} ~ {END}",
+                where: "세무법인에서 드린 엑셀 양식",
+                steps: [
+                    "이 폴더에 들어 있는(또는 메일로 받은) 엑셀 파일을 엽니다",
+                    "색칠된 칸을 빠짐없이 작성합니다",
+                    "저장한 엑셀 파일을 이 폴더에 다시 넣어 주세요"
+                ],
+                notes: ["색칠되지 않은 칸은 수정하지 마세요."]
+            }},
+            { name: "연구개발계획서·보고서·연구노트 및 연구과제총괄표", guide: {
+                why: "연구·인력개발비 세액공제를 받으려면 연구개발계획서·연구개발보고서·연구노트 등을 작성·보관해야 함(조세특례제한법 시행령 제9조 제13항)",
+                period: "{START} ~ {END} 중 수행한 연구과제",
+                where: "회사에서 작성·보관 중인 서류",
+                steps: [
+                    "연구과제별로 연구개발계획서와 연구개발보고서를 넣어 주세요",
+                    "연구노트(연구 수행 기록)를 넣어 주세요",
+                    "연구과제총괄표(과제명·기간·참여 연구원 등)를 넣어 주세요"
+                ],
+                notes: []
+            }},
+            { name: "공제조합 출자좌수(지분) 증명서", guide: {
+                why: "공제조합 출자금(투자자산) 잔액과 평가액 확인",
+                period: "{END} 기준",
+                where: "출자한 공제조합 (건설공제조합, 전문건설공제조합, 기계설비건설공제조합, 정보통신공제조합 등) 홈페이지 또는 지점",
+                steps: [
+                    "조합 홈페이지 조합원 서비스에 로그인 → 증명서 발급 메뉴",
+                    "{END} 기준 출자좌수와 지분(좌당) 가액이 나오는 증명서를 출력",
+                    "인터넷 발급이 안 되면 조합 지점에 요청"
+                ],
+                notes: [
+                    "증명서 이름은 조합마다 다릅니다(출자증명서, 출자좌수 확인서 등).",
+                    "조합에서 배당금을 받았다면 배당 내역도 넣어 주세요."
+                ]
+            }},
+            { name: "네이버광고 충전 및 지출확인자료", guide: {
+                why: "광고비 충전액과 실제 사용액 구분, 기말 남은 금액 확인",
+                period: "{START} ~ {END} 충전·사용 내역 + {END} 현재 남은 금액",
+                where: "네이버 검색광고 searchad.naver.com",
+                steps: [
+                    "광고주 계정으로 로그인",
+                    "비즈머니 메뉴 → 충전내역과 사용(소진)내역을 기간 지정 조회",
+                    "엑셀로 다운로드하거나 화면을 출력해 주세요"
+                ],
+                notes: []
+            }},
+            { name: "카카오광고 충전 및 지출확인자료", guide: {
+                why: "광고비 충전액과 실제 사용액 구분, 기말 남은 금액 확인",
+                period: "{START} ~ {END} 충전·사용 내역 + {END} 현재 남은 금액",
+                where: "카카오 비즈니스 business.kakao.com (카카오모먼트·키워드광고 등)",
+                steps: [
+                    "광고 계정으로 로그인",
+                    "캐시(충전·사용) 내역 메뉴에서 기간 지정 조회",
+                    "엑셀로 다운로드하거나 화면을 출력해 주세요"
+                ],
+                notes: []
+            }}
         ];
 
         // DOM Elements
@@ -179,10 +373,38 @@
         const generateBtnEl = document.getElementById('generateBtn');
         const resultSectionEl = document.getElementById('resultSection');
         const resultListEl = document.getElementById('resultList');
+        const companyInputEl = document.getElementById('companyInput');
+        const fyStartInputEl = document.getElementById('fyStartInput');
+        const fyEndInputEl = document.getElementById('fyEndInput');
+        const contactInputEl = document.getElementById('contactInput');
+        const settingsErrorEl = document.getElementById('settingsError');
+
+        // 사업연도 기본값: 1~9월이면 작년, 10~12월이면 올해 (1/1~12/31)
+        function initFiscalYear() {
+            const now = new Date();
+            const y = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+            fyStartInputEl.value = `${y}-01-01`;
+            fyEndInputEl.value = `${y}-12-31`;
+        }
+
+        // 'YYYY-MM-DD' → 'YYYY.MM.DD'
+        function fmtDate(v) {
+            return v ? v.replace(/-/g, '.') : '';
+        }
+
+        // 종료일 다음 달 → 'YYYY년 M월'
+        function nextMonthLabel(v) {
+            if (!v) return '';
+            const [y, m] = v.split('-').map(Number);
+            const ny = m === 12 ? y + 1 : y;
+            const nm = m === 12 ? 1 : m + 1;
+            return `${ny}년 ${nm}월`;
+        }
 
         // Initialize Examples
         function renderExamples() {
-            examples.forEach(example => {
+            examples.forEach(ex => {
+                const example = ex.name;
                 const li = document.createElement('li');
                 li.className = "group flex items-center cursor-pointer p-3.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-sm transition-all text-sm";
                 
@@ -233,13 +455,59 @@
                     numberSpan.className = "flex items-center justify-center w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm shrink-0";
                     numberSpan.textContent = index + 1;
                     
+                    const textBox = document.createElement('div');
+                    textBox.className = "flex-1 min-w-0";
+
                     const textSpan = document.createElement('span');
                     textSpan.className = "text-slate-700 font-medium break-words w-full";
-                    textSpan.textContent = item;
-                    
+                    textSpan.textContent = item.name;
+                    textBox.appendChild(textSpan);
+
+                    // 안내문 종류 + 첨부파일 표시
+                    const metaDiv = document.createElement('div');
+                    metaDiv.className = "text-xs mt-1 flex flex-wrap gap-1.5 items-center";
+                    const badge = document.createElement('span');
+                    badge.className = item.guide
+                        ? "px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100"
+                        : "px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200";
+                    badge.textContent = item.guide ? "출력방법 안내문" : "기본 안내문(직접 입력 항목)";
+                    metaDiv.appendChild(badge);
+                    item.files.forEach((f, fi) => {
+                        const chip = document.createElement('span');
+                        chip.className = "px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 flex items-center gap-1";
+                        const fname = document.createElement('span');
+                        fname.textContent = f.name;
+                        const x = document.createElement('button');
+                        x.className = "hover:text-red-500";
+                        x.title = "첨부 빼기";
+                        x.textContent = "×";
+                        x.onclick = () => { item.files.splice(fi, 1); renderSelectedList(); };
+                        chip.appendChild(document.createTextNode("📎 "));
+                        chip.appendChild(fname);
+                        chip.appendChild(x);
+                        metaDiv.appendChild(chip);
+                    });
+                    textBox.appendChild(metaDiv);
+
                     textContainer.appendChild(numberSpan);
-                    textContainer.appendChild(textSpan);
-                    
+                    textContainer.appendChild(textBox);
+
+                    // Attach Button (예: 체크리스트 엑셀을 폴더에 같이 넣기)
+                    const attachBtn = document.createElement('button');
+                    attachBtn.className = "text-slate-300 hover:text-indigo-500 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-indigo-50 transition-colors focus:outline-none shrink-0 opacity-50 group-hover:opacity-100";
+                    attachBtn.innerHTML = '<i class="ph-bold ph-paperclip text-lg"></i>';
+                    attachBtn.title = "이 폴더에 넣을 파일 첨부 (예: 작성할 엑셀 양식)";
+                    attachBtn.onclick = () => {
+                        const fileInput = document.createElement('input');
+                        fileInput.type = 'file';
+                        fileInput.multiple = true;
+                        fileInput.onchange = () => {
+                            Array.from(fileInput.files).forEach(f => item.files.push(f));
+                            renderSelectedList();
+                        };
+                        fileInput.click();
+                    };
+
                     // Delete Button
                     const deleteBtn = document.createElement('button');
                     deleteBtn.className = "text-slate-300 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors focus:outline-none shrink-0 opacity-50 group-hover:opacity-100";
@@ -248,6 +516,7 @@
                     deleteBtn.onclick = () => removeItem(index);
                     
                     li.appendChild(textContainer);
+                    li.appendChild(attachBtn);
                     li.appendChild(deleteBtn);
                     selectedListEl.appendChild(li);
                 });
@@ -261,8 +530,10 @@
         function addItem() {
             const val = itemInputEl.value.trim();
             if (!val) return; // Do nothing if empty
-            
-            selectedItems.push(val);
+
+            // 예시와 이름이 같으면 그 안내문을 쓰고, 직접 입력(또는 이름을 고친) 항목은 기본 안내문
+            const ex = examples.find(e => e.name === val);
+            selectedItems.push({ name: val, guide: ex ? ex.guide : null, files: [] });
             itemInputEl.value = ''; // Clear input
             itemInputEl.focus(); // Keep focus for continuous typing
             renderSelectedList(true); // Pass true to trigger animation on new item
@@ -282,13 +553,94 @@
 
         // Sanitize Folder Name (Remove invalid characters for Windows/Mac)
         function sanitizeFolderName(name) {
-            return name.replace(/[<>:"/\\|?*]/g, '_');
+            // 윈도우는 이름 끝의 점·공백을 허용하지 않음
+            return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '');
+        }
+
+        // 메모장에서 한글이 깨지지 않도록 UTF-8 BOM + 윈도우 줄바꿈(CRLF)
+        function toTxt(lines) {
+            return '﻿' + lines.join('\r\n') + '\r\n';
+        }
+
+        function fillDates(s, ctx) {
+            return s.replace(/\{START\}/g, ctx.start).replace(/\{END\}/g, ctx.end).replace(/\{NEXTMONTH\}/g, ctx.nextMonth);
+        }
+
+        // 폴더별 출력방법_안내.txt
+        function buildGuideTxt(item, ctx) {
+            const L = [];
+            L.push(`[자료명] ${item.name}`);
+            if (ctx.company) L.push(`[업체명] ${ctx.company}`);
+            L.push(`[사업연도] ${ctx.start} ~ ${ctx.end}`);
+            L.push('');
+            const g = item.guide;
+            if (g) {
+                L.push(`[필요한 이유] ${fillDates(g.why, ctx)}`);
+                L.push(`[대상 기간] ${fillDates(g.period, ctx)}`);
+                L.push(`[발급처] ${fillDates(g.where, ctx)}`);
+                L.push('');
+                L.push('[출력 방법]');
+                g.steps.forEach((s, i) => L.push(` ${i + 1}) ${fillDates(s, ctx)}`));
+                if (g.notes.length) {
+                    L.push('');
+                    L.push('[주의]');
+                    g.notes.forEach(n => L.push(` - ${fillDates(n, ctx)}`));
+                }
+            } else {
+                L.push('[출력 방법] 위 자료를 준비해 이 폴더에 넣어 주세요.');
+                L.push(' 자세한 내용은 아래 문의처로 연락 주세요.');
+            }
+            if (item.files.length) {
+                L.push('');
+                L.push('[함께 넣어 드린 파일]');
+                item.files.forEach(f => L.push(` - ${f.name}`));
+            }
+            L.push('');
+            L.push('[넣는 곳] 준비한 파일(PDF·엑셀·스캔본·사진)을 이 폴더에 넣어 주세요.');
+            L.push('※ 사이트 개편으로 메뉴 이름이 다를 수 있습니다. 찾기 어려우면 문의처로 연락 주세요.');
+            if (ctx.contact) L.push(`[문의처] ${ctx.contact}`);
+            return toTxt(L);
+        }
+
+        // 최상위 00_요청자료_안내.txt
+        function buildRootTxt(folderNames, ctx) {
+            const L = [];
+            L.push(ctx.company ? `${ctx.company} 법인세 신고 요청자료 안내` : '법인세 신고 요청자료 안내');
+            L.push(`사업연도: ${ctx.start} ~ ${ctx.end}`);
+            L.push('');
+            L.push('1. 아래 폴더마다 "출력방법_안내.txt"가 있습니다. 안내에 따라 자료를 준비해 해당 폴더에 넣어 주세요.');
+            L.push('2. 해당 사항이 없는 자료는 폴더를 비워 두시고, 회신 메일에 "해당 없음"이라고 적어 주세요.');
+            L.push('3. 모두 넣은 뒤 전체 폴더를 압축(zip)해서 회신해 주세요.');
+            L.push('');
+            L.push('[요청자료 목록]');
+            folderNames.forEach(f => L.push(` - ${f}`));
+            if (ctx.contact) {
+                L.push('');
+                L.push(`[문의처] ${ctx.contact}`);
+            }
+            return toTxt(L);
         }
 
         // Generate Folders and ZIP
         async function generateZip() {
             if (selectedItems.length === 0) return;
-            
+
+            // 사업연도 확인
+            settingsErrorEl.classList.add('hidden');
+            if (!fyStartInputEl.value || !fyEndInputEl.value || fyStartInputEl.value > fyEndInputEl.value) {
+                settingsErrorEl.textContent = '사업연도 시작일과 종료일을 올바르게 입력해 주세요. (안내문 기간에 쓰입니다)';
+                settingsErrorEl.classList.remove('hidden');
+                settingsErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const ctx = {
+                company: companyInputEl.value.trim(),
+                contact: contactInputEl.value.trim(),
+                start: fmtDate(fyStartInputEl.value),
+                end: fmtDate(fyEndInputEl.value),
+                nextMonth: nextMonthLabel(fyEndInputEl.value)
+            };
+
             // UI Loading State
             const originalBtnContent = generateBtnEl.innerHTML;
             generateBtnEl.disabled = true;
@@ -300,25 +652,43 @@
                 
                 // Create folders in JSZip
                 selectedItems.forEach((item, index) => {
-                    const cleanName = sanitizeFolderName(item);
+                    const cleanName = sanitizeFolderName(item.name);
                     const folderName = `${index + 1}. ${cleanName}`;
-                    zip.folder(folderName);
+                    const folder = zip.folder(folderName);
+                    folder.file('출력방법_안내.txt', buildGuideTxt(item, ctx));
+                    item.files.forEach(f => folder.file(sanitizeFolderName(f.name), f));
                     folderNames.push(folderName);
                 });
+                zip.file('00_요청자료_안내.txt', buildRootTxt(folderNames, ctx));
 
                 // Generate ZIP Blob
                 const content = await zip.generateAsync({ type: "blob" });
-                
-                // Download file
-                saveAs(content, "법인세_요청자료_폴더모음.zip");
+
+                // Download file (업체명을 입력하면 파일명 뒤에 붙임)
+                const zipName = ctx.company
+                    ? `법인세_요청자료_폴더모음_${sanitizeFolderName(ctx.company)}.zip`
+                    : "법인세_요청자료_폴더모음.zip";
+                saveAs(content, zipName);
 
                 // Show Result Section at bottom
                 resultListEl.innerHTML = '';
-                folderNames.forEach(folder => {
+                const addRow = (iconClass, text, indent) => {
                     const li = document.createElement('li');
-                    li.className = "flex items-center gap-2 p-1.5 rounded bg-white border border-emerald-50";
-                    li.innerHTML = `<i class="ph-fill ph-folder text-amber-400 text-lg"></i> <span class="font-medium text-slate-600">${folder}</span>`;
+                    li.className = `flex items-center gap-2 p-1.5 rounded bg-white border border-emerald-50${indent ? ' ml-6' : ''}`;
+                    const icon = document.createElement('i');
+                    icon.className = iconClass;
+                    const span = document.createElement('span');
+                    span.className = "font-medium text-slate-600";
+                    span.textContent = text;
+                    li.appendChild(icon);
+                    li.appendChild(span);
                     resultListEl.appendChild(li);
+                };
+                addRow("ph-fill ph-file-text text-slate-400 text-lg", "00_요청자료_안내.txt", false);
+                folderNames.forEach((folder, i) => {
+                    addRow("ph-fill ph-folder text-amber-400 text-lg", folder, false);
+                    addRow("ph ph-file-text text-slate-400", "출력방법_안내.txt", true);
+                    selectedItems[i].files.forEach(f => addRow("ph ph-paperclip text-slate-400", f.name, true));
                 });
                 resultSectionEl.classList.remove('hidden');
 
@@ -348,6 +718,7 @@
         generateBtnEl.addEventListener('click', generateZip);
 
         // Initial Render
+        initFiscalYear();
         renderExamples();
         renderSelectedList();
 
