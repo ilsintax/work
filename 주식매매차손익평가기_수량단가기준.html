@@ -3615,8 +3615,8 @@
     window.domesticClosePrices = (() => {
       const KEY_STORE = 'domesticStockEvaluator.dataGoKrServiceKey';
       const ENDPOINTS = [
-        { kind: '주식', required: true, url: 'https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo' },
-        { kind: 'ETF', required: false, url: 'https://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService/getETFPriceInfo' }
+        { kind: '주식', required: true, url: 'https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2' },
+        { kind: 'ETF', required: false, url: 'https://apis.data.go.kr/1160100/GetSecuritiesProductInfoService_V2/getETFPriceInfo_V2' }
       ];
       const PAGE_SIZE = 5000;
       const codeMemory = new Map();      // 종목 식별정보 → { code, name } (사람이 고른 연결)
