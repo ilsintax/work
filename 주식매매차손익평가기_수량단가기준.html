@@ -3967,5 +3967,132 @@
       };
     })();
   </script>
+  <!-- wehago-auto-mapping v1: 위하고 거래처원장 엑셀의 기준 위치(주식명 셀·제목행·날짜/적요/차변/대변/잔액 열)를 자동으로 지정. 기존 계산·선택 코드는 그대로 사용 -->
+  <script>
+    const wehagoAutoMapping = (() => {
+      const HEADER_KEYS = [
+        { key: 'dateCol', names: ['날짜', '일자', '거래일자'] },
+        { key: 'descCol', names: ['적요'] },
+        { key: 'debitCol', names: ['차변'] },
+        { key: 'creditCol', names: ['대변'] },
+        { key: 'balanceCol', names: ['잔액'] }
+      ];
+      const SCAN_ROWS = 20;
+      const norm = (v) => String(v ?? '').replace(/\s+/g, '');
+      let lastWorkbook = null;
+      let autoApplied = false;
+
+      const notice = document.createElement('div');
+      notice.id = 'wehago-auto-notice';
+      notice.className = 'hidden rounded-2xl border px-4 py-3 text-sm';
+      const section = document.getElementById('mapping-section');
+      if (section) section.insertBefore(notice, section.children[1] || null);
+
+      function showNotice(html, tone) {
+        notice.className = 'rounded-2xl border px-4 py-3 text-sm ' + (tone === 'ok'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          : 'border-amber-200 bg-amber-50 text-amber-900');
+        notice.innerHTML = html;
+      }
+      function hideNotice() { notice.className = 'hidden'; notice.innerHTML = ''; }
+
+      // 한 시트에서 제목행·열·주식명 셀을 찾는다. 확실하지 않으면 null.
+      function detectSheet(data) {
+        const limit = Math.min(SCAN_ROWS, data.length);
+        for (let r = 0; r < limit; r++) {
+          const cells = (data[r] || []).map(norm);
+          const found = {};
+          let ok = true;
+          for (const h of HEADER_KEYS) {
+            const cols = [];
+            cells.forEach((c, i) => { if (h.names.includes(c)) cols.push(i); });
+            if (cols.length !== 1) { ok = false; break; }
+            found[h.key] = cols[0];
+          }
+          if (!ok) continue;
+          let stock = null;
+          for (let sr = 0; sr < r; sr++) {
+            (data[sr] || []).forEach((c, i) => {
+              if (/^거래처\s*:/.test(String(c ?? '').trim())) stock = stock ? 'many' : { row: sr, col: i };
+            });
+          }
+          if (!stock || stock === 'many') return null;
+          return { stock, headerRow: r, cols: found };
+        }
+        return null;
+      }
+
+      function sameLayout(a, b) {
+        return a && b && a.headerRow === b.headerRow && a.stock.row === b.stock.row && a.stock.col === b.stock.col &&
+          HEADER_KEYS.every((h) => a.cols[h.key] === b.cols[h.key]);
+      }
+
+      function colName(i) { return XLSX.utils.encode_col(i); }
+
+      function tryAuto() {
+        if (!state.workbook || state.workbook === lastWorkbook) return;
+        if (state.wizardActive || Object.keys(state.selections || {}).length) return;
+        lastWorkbook = state.workbook;
+        autoApplied = false;
+        hideNotice();
+        const names = state.workbook.SheetNames || [];
+        if (!names.length) return;
+        const first = detectSheet(getSheetData(state.workbook.Sheets[names[0]], true));
+        if (!first) {
+          showNotice('위하고 거래처원장 형식을 자동으로 찾지 못했습니다. <strong>선택 시작</strong>을 눌러 기준 위치를 직접 지정하세요.', 'warn');
+          return;
+        }
+        const differ = names.filter((n) => !sameLayout(first, detectSheet(getSheetData(state.workbook.Sheets[n], true))));
+        if (differ.length) {
+          showNotice(`시트마다 형식이 달라 자동 지정하지 않았습니다(형식이 다른 시트 ${differ.length}개, 예: ${escapeHtml(differ.slice(0, 3).join(', '))}). <strong>선택 시작</strong>을 눌러 직접 지정하세요.`, 'warn');
+          return;
+        }
+        apply(first, names.length);
+      }
+
+      function apply(layout, sheetCount) {
+        startMapping();
+        state.selections = {
+          stockCell: { row: layout.stock.row, col: layout.stock.col },
+          headerRow: { row: layout.headerRow },
+          dateCol: { col: layout.cols.dateCol },
+          descCol: { col: layout.cols.descCol },
+          debitCol: { col: layout.cols.debitCol },
+          creditCol: { col: layout.cols.creditCol },
+          balanceCol: { col: layout.cols.balanceCol }
+        };
+        state.wizardStep = mappingPrompts.length;
+        state.wizardActive = false;
+        mappingGuide.classList.add('hidden');
+        renderMappingSummary();
+        renderPreview();
+        buildStockConfigurations();
+        autoApplied = true;
+        const c = layout.cols;
+        showNotice(`위하고 거래처원장 형식을 자동으로 인식했습니다(시트 ${sheetCount}개). 주식명 ${colName(layout.stock.col)}${layout.stock.row + 1} · 제목행 ${layout.headerRow + 1}행 · 날짜 ${colName(c.dateCol)} · 적요 ${colName(c.descCol)} · 차변 ${colName(c.debitCol)} · 대변 ${colName(c.creditCol)} · 잔액 ${colName(c.balanceCol)}열. 다르면 <strong>선택 시작</strong>으로 직접 지정하세요.`, 'ok');
+      }
+
+      // 엑셀을 읽어 미리보기가 그려지면 자동 지정을 시도한다(파일 선택·끌어다 놓기 모두).
+      new MutationObserver(() => { try { tryAuto(); } catch (e) { /* 자동 지정 실패 시 기존 수동 지정 그대로 */ } })
+        .observe(previewContainer, { childList: true });
+
+      // 직접 지정을 시작하면 안내를 내린다.
+      startMappingBtn.addEventListener('click', () => { autoApplied = false; hideNotice(); });
+
+      // 잔액필터본: 자동 지정 뒤 '최종잔액 0' 선택을 바꾸면 같은 위치로 다시 만든다(직접 지정과 같은 동작).
+      document.querySelectorAll('input[name="ending-zero-filter"]').forEach((input) => {
+        input.addEventListener('change', () => {
+          if (!autoApplied || state.wizardActive || !state.workbook) return;
+          const entered = (state.stockConfigs || []).some((s) => Number(s.initialQty) || Number(s.initialCost));
+          if (entered && !confirm('최종잔액 0 선택을 바꾸면 종목 목록을 다시 만들어 입력한 기초값이 초기화됩니다. 계속할까요?')) return;
+          lastWorkbook = null;
+          state.selections = {};
+          tryAuto();
+        });
+      });
+
+      return { detectSheet, tryAuto };
+    })();
+  </script>
 </body>
 </html>
