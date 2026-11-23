@@ -64,6 +64,21 @@
     return m ? m[1] : 'utf-8';
   }
 
+  // 웹페이지(HTML) 표의 글자 날짜("2026/10/01")를 SheetJS가 날짜값으로 바꾸면, sheet_to_json 에서 한국 시간 기준
+  // 9시간이 한 번 더 빠져 하루 앞 날짜(9/30)가 된다(20261123-038, 대신증권 HTML xls). 날짜 칸은 원래 글자로 되돌려
+  // parseDateCell 이 글자 그대로 읽게 한다. 금액 칸(숫자)은 그대로 둔다.
+  function keepHtmlDateText(XLSX, wb) {
+    wb.SheetNames.forEach(name => {
+      const ws = wb.Sheets[name];
+      Object.keys(ws).forEach(k => {
+        if (k[0] === '!') return;
+        const c = ws[k];
+        // 서식(z)이 남으면 sheet_to_json 이 다시 날짜로 바꾸려다 깨지므로 칸을 글자 칸으로 새로 만든다.
+        if (c && c.t === 'd' && typeof c.w === 'string' && c.w.trim()) ws[k] = { t: 's', v: c.w, w: c.w };
+      });
+    });
+  }
+
   // bytes: Uint8Array → { sheets: [{ name, rows }], format, warnings }
   function readWorkbook(XLSX, bytes, fileName) {
     const warnings = [];
@@ -74,6 +89,7 @@
       let decoded;
       try { decoded = new TextDecoder(charset).decode(bytes); } catch (e) { decoded = new TextDecoder('euc-kr').decode(bytes); }
       wb = XLSX.read(decoded, { type: 'string', cellDates: true });
+      keepHtmlDateText(XLSX, wb);
       format = 'html';
       warnings.push(`확장자는 엑셀이지만 실제로는 웹페이지(HTML, ${charset}) 파일이라 문자셋을 풀어서 읽었습니다.`);
     } else if (format === 'csv') {

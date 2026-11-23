@@ -50,6 +50,7 @@
 - 검증 8 (4단계 순서 복원): `node tests/run-order.js` — 샘플 순서를 메모리에서 섞어(뒤 절반 역순·가운데 1/3 역순·같은 날 안 뒤집기) 잔액 연결로 복원되는지, 원본 순서 파일은 손대지 않는지, 거래 누락 파일은 거짓 완료가 안 되는지
 - 검증 9 (5단계 추가 적요): `node tests/run-memo.js` — 증권 추가 적요 1·2·열별 값 빼기·사전 반영(형식 memo)·같은 형식 자동 적용, 은행 열별 값 빼기
 - 검증 10 (기관 선택·형식 이름·웹페이지 표): `node tests/run-picker.js` — 웹페이지 제목 표 합치기, 고른 기관으로 다시 판별, 은행 이름 목록, 형식 이름
+- 검증 11 (웹페이지 xls 날짜): `node tests/run-html-date.js` — HTML 표의 글자 날짜 "YYYY/MM/DD"가 하루 앞으로 바뀌지 않는지(만든 표 + 대신 HTML 샘플이 있으면 결과 날짜 = 원본)
 - 샘플 위치: `samples/` 폴더(테스트·check-publish 모두 여기서 읽음, 없으면 루트). check-publish 는 샘플이 0개면 실패로 끝남(검사 없이 "고객 정보 없음"이 나오지 않게).
 - 사전 검사: `npm run check-dictionary [-- 파일]` — 화면에서 저장한 institutions.js 를 올리기 전에 검사(오류면 종료 코드 1). 구조 변환 저장: `node tools/check-dictionary.js --migrate`(먼저 백업)
 - 검증 4 (사전): `node tests/run-dictionary.js` — IM 열 지정·KB 수수료 포함·KB국민은행 적요 열을 사전에 반영 → 재판별 결과, 다른 계좌 불변, 저장 파일에 고객 정보 없음, 실제 사전 파일 불변

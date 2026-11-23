@@ -370,3 +370,13 @@
 - 백업: version/20261119_181431_대신현금매도공통분류수정전 (2/2)
 - 검증: check-dictionary 오류 0(경고 2, 유진 기존 사항). `npm run test:all` 전부 통과(기준값 32개 동일, PASS 302, 브라우저 오류 0). check-publish 고객 정보 없음.
 - 미반영: GitHub 업로드는 하지 않음(요청 시).
+- GitHub 업로드(사용자 요청 "올려주세요"): ilsintax/work 커밋 6f91222(사전·HISTORY·HANDOFF 3개 파일). 올리기 전 사이트 사전이 v33(직전 커밋본)과 같은지 확인, check-publish 고객 정보 없음, 올린 뒤 파일 해시 일치·Pages built·사이트 사전 v34 확인.
+
+### 20261123-038 2026-11-23 (KST) 완료(웹페이지 xls 날짜 하루 앞당김 수정)
+- 사용자 요청: 대신증권 HTML xls 변환 결과의 결제일이 원본보다 하루 이르다(업체가 10/1 거래를 9/30으로 받음) → "변환도구만 수정, 깃허브에도 반영".
+- 원인: readWorkbook 의 웹페이지(HTML) 분기가 `XLSX.read(문자열, {cellDates:true})` 로 읽음 → SheetJS 0.20.3 이 글자 날짜 "YYYY/MM/DD" 를 날짜값(한국 0시)으로 바꾼 뒤 sheet_to_json 에서 9시간을 한 번 더 빼 전날 15시가 됨 → parseDateCell 이 전날로 읽음. 진짜 엑셀(xlsx·xls) 샘플은 날짜 칸 59개 모두 어긋남 0(해당 없음). 기존 HTML 샘플은 날짜가 날짜값으로 바뀌지 않는 모양이라 시험에 걸리지 않았음.
+- 변경: engine/engine.js keepHtmlDateText — HTML 분기에서만 날짜로 바뀐 칸을 원래 글자(w)의 글자 칸으로 새로 만듦(서식 z 가 남으면 sheet_to_json 이 다시 날짜로 바꾸다 Invalid Date). 금액 칸은 그대로. tests/run-html-date.js 신설(고객 자료 없는 HTML 표 4건 + samples/ 의 대신 HTML 샘플이 있으면 결과 날짜 = 원본 날짜), package.json test:all·test:html-date.
+- 샘플: samples/26112301샘플추가 에 대신증권 HTML xls 3개(로컬 전용). 고친 결과를 이전 변환 결과와 줄마다 비교 → 줄 수·금액·잔액 같고 날짜만 +1일(적요 끝 비고 차이는 사전 v34 변경 때문).
+- 백업: version/20261123_113155_대신HTML날짜수정전 (5/5)
+- 검증: 기존 기준값 32개 파일 동일 → 새 샘플 3개 추가해 기준값 35개. `npm run test:all` 통과, check-publish 고객 정보 없음.
+- 영향 안내: 이 수정 전에 HTML 형식(대신증권 등) 파일을 변환한 결과는 날짜가 하루 이를 수 있음 → 다시 변환 필요.
