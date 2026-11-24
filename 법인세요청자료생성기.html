@@ -197,15 +197,20 @@
                 notes: ["가까운 등기소나 무인발급기에서도 발급할 수 있습니다."]
             }},
             { name: "12월말일자 주주명부(연도중 주주명부 변경시 변경시점 모두 포함)", guide: {
+                make: true,
                 why: "주식등변동상황명세서 작성(주주별 주식 수·지분율 확인)",
                 period: "사업연도 종료일({END}) 현재 + 연도 중 주주가 바뀐 경우 바뀐 시점별 명부",
-                where: "회사에서 직접 작성하는 서류",
+                where: "회사에서 직접 만드는 서류입니다. 인터넷·관공서에서 발급하거나 출력하는 서류가 아닙니다.",
                 steps: [
+                    "엑셀·한글 등으로 표를 만듭니다(정해진 양식 없음, 회사가 보관 중인 주주명부가 있으면 그것을 써도 됩니다)",
                     "주주명, 주민등록번호(법인은 사업자등록번호), 주소, 보유 주식 수, 지분율을 적습니다",
-                    "대표이사 법인인감을 날인합니다",
+                    "기준일({END} 현재)을 적고 대표이사 법인인감을 날인합니다",
                     "연도 중 양도·증자·감자가 있었다면 바뀐 날짜별 명부를 모두 넣어 주세요"
                 ],
-                notes: ["주식 양도가 있었다면 주식양수도계약서도 함께 넣어 주세요."]
+                notes: [
+                    "주식 양도가 있었다면 주식양수도계약서도 함께 넣어 주세요.",
+                    "주주 변동이 없었다면 그렇다고 회신 메일에 적어 주세요(명부는 기준일 현재 1장이면 됩니다)."
+                ]
             }},
             { name: "자동차보험증권(업무전용자동차보험 가입 확인)", guide: {
                 why: "법인 업무용승용차 비용 처리 요건(업무전용자동차보험 가입) 확인",
@@ -268,18 +273,20 @@
                     "정부24 또는 시·군·구청 방문으로도 발급할 수 있습니다(방문 대리 발급 시 위임장·법인인감증명서·대리인 신분증 필요)."
                 ]
             }},
-            { name: "4대사회보험료 납부확인서(사업장, 건강·연금·고용·산재)", guide: {
-                why: "회사가 부담한 4대보험료 확인 및 결산 정리",
+            { name: "4대사회보험료 월별 납부·미납내역(사업장, 건강·연금·고용·산재)", guide: {
+                why: "월별로 고지된 보험료 중 낸 것과 안 낸 것(미납·연체금)을 확인해 결산에 미지급 보험료를 반영",
                 period: "{START} ~ {END}분 + 마지막 달분(다음 달 {NEXTMONTH} 10일 납부분)까지",
-                where: "사회보험통합징수포털 si4n.nhis.or.kr 또는 건강보험 EDI edi.nhis.or.kr",
+                where: "건강보험 EDI edi.nhis.or.kr (사업장 공동인증서)",
                 steps: [
-                    "사회보험통합징수포털 접속 → 사업장 공동인증서로 로그인",
-                    "증명서 발급 메뉴 → 보험료 납부확인서 선택",
-                    "기간을 지정해 건강·연금·고용·산재 4가지를 모두 출력 또는 PDF 저장"
+                    "건강보험 EDI 접속 → 사업장 공동인증서로 로그인",
+                    "[보험료 납부/미납내역조회] 메뉴를 엽니다",
+                    "건강·연금·고용·산재 탭을 하나씩 눌러 위 기간을 조회합니다",
+                    "탭마다 월별 고지금액·납부금액·미납금액이 보이는 화면을 엑셀 저장 또는 인쇄(PDF 저장)합니다"
                 ],
                 notes: [
-                    "4개 보험 중 빠지는 것이 없도록 각각 출력해 주세요.",
-                    "가능하면 월별 고지·납부 금액이 보이는 내역으로 넣어 주세요."
+                    "'보험료 납부확인서'·'합산보험료 납부확인서'(증명서)는 낸 금액만 나오고 미납이 보이지 않아 결산에 쓸 수 없습니다. 증명서가 아니라 위 조회 화면을 넣어 주세요.",
+                    "4개 탭(건강·연금·고용·산재) 모두 넣어 주세요. 고지가 없는 보험은 그 화면을 그대로 넣어 주시면 됩니다.",
+                    "미납·연체금이 있으면 그 금액이 보이게 넣어 주세요."
                 ]
             }},
             { name: "기업부설연구소(연구개발전담부서) 인정서", guide: {
@@ -304,6 +311,7 @@
                 notes: []
             }},
             { name: "연구·인력개발비 체크리스트(첨부 엑셀 작성)", guide: {
+                make: true,
                 why: "연구·인력개발비 세액공제 대상 여부 확인",
                 period: "{START} ~ {END}",
                 where: "세무법인에서 드린 엑셀 양식",
@@ -315,6 +323,7 @@
                 notes: ["색칠되지 않은 칸은 수정하지 마세요."]
             }},
             { name: "연구개발계획서·보고서·연구노트 및 연구과제총괄표", guide: {
+                make: true,
                 why: "연구·인력개발비 세액공제를 받으려면 연구개발계획서·연구개발보고서·연구노트 등을 작성·보관해야 함(조세특례제한법 시행령 제9조 제13항)",
                 period: "{START} ~ {END} 중 수행한 연구과제",
                 where: "회사에서 작성·보관 중인 서류",
@@ -470,7 +479,7 @@
                     badge.className = item.guide
                         ? "px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100"
                         : "px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200";
-                    badge.textContent = item.guide ? "출력방법 안내문" : "기본 안내문(직접 입력 항목)";
+                    badge.textContent = item.guide ? (item.guide.make ? "작성방법 안내문(회사 작성 서류)" : "출력방법 안내문") : "기본 안내문(직접 입력 항목)";
                     metaDiv.appendChild(badge);
                     item.files.forEach((f, fi) => {
                         const chip = document.createElement('span');
@@ -566,7 +575,11 @@
             return s.replace(/\{START\}/g, ctx.start).replace(/\{END\}/g, ctx.end).replace(/\{NEXTMONTH\}/g, ctx.nextMonth);
         }
 
-        // 폴더별 출력방법_안내.txt
+        // 회사가 직접 만드는 서류(guide.make)는 "작성방법", 나머지는 "출력방법"
+        function isMake(item) { return !!(item.guide && item.guide.make); }
+        function guideFileName(item) { return isMake(item) ? '작성방법_안내.txt' : '출력방법_안내.txt'; }
+
+        // 폴더별 출력방법_안내.txt / 작성방법_안내.txt
         function buildGuideTxt(item, ctx) {
             const L = [];
             L.push(`[자료명] ${item.name}`);
@@ -577,9 +590,9 @@
             if (g) {
                 L.push(`[필요한 이유] ${fillDates(g.why, ctx)}`);
                 L.push(`[대상 기간] ${fillDates(g.period, ctx)}`);
-                L.push(`[발급처] ${fillDates(g.where, ctx)}`);
+                L.push(`${g.make ? '[누가 만드나]' : '[발급처]'} ${fillDates(g.where, ctx)}`);
                 L.push('');
-                L.push('[출력 방법]');
+                L.push(g.make ? '[작성 방법]' : '[출력 방법]');
                 g.steps.forEach((s, i) => L.push(` ${i + 1}) ${fillDates(s, ctx)}`));
                 if (g.notes.length) {
                     L.push('');
@@ -597,7 +610,7 @@
             }
             L.push('');
             L.push('[넣는 곳] 준비한 파일(PDF·엑셀·스캔본·사진)을 이 폴더에 넣어 주세요.');
-            L.push('※ 사이트 개편으로 메뉴 이름이 다를 수 있습니다. 찾기 어려우면 문의처로 연락 주세요.');
+            if (!isMake(item)) L.push('※ 사이트 개편으로 메뉴 이름이 다를 수 있습니다. 찾기 어려우면 문의처로 연락 주세요.');
             if (ctx.contact) L.push(`[문의처] ${ctx.contact}`);
             return toTxt(L);
         }
@@ -608,7 +621,7 @@
             L.push(ctx.company ? `${ctx.company} 법인세 신고 요청자료 안내` : '법인세 신고 요청자료 안내');
             L.push(`사업연도: ${ctx.start} ~ ${ctx.end}`);
             L.push('');
-            L.push('1. 아래 폴더마다 "출력방법_안내.txt"가 있습니다. 안내에 따라 자료를 준비해 해당 폴더에 넣어 주세요.');
+            L.push('1. 아래 폴더마다 "출력방법_안내.txt"(어디서 발급·출력하는 서류) 또는 "작성방법_안내.txt"(회사가 직접 만드는 서류)가 있습니다. 안내에 따라 자료를 준비해 해당 폴더에 넣어 주세요.');
             L.push('2. 해당 사항이 없는 자료는 폴더를 비워 두시고, 회신 메일에 "해당 없음"이라고 적어 주세요.');
             L.push('3. 모두 넣은 뒤 전체 폴더를 압축(zip)해서 회신해 주세요.');
             L.push('');
@@ -655,7 +668,7 @@
                     const cleanName = sanitizeFolderName(item.name);
                     const folderName = `${index + 1}. ${cleanName}`;
                     const folder = zip.folder(folderName);
-                    folder.file('출력방법_안내.txt', buildGuideTxt(item, ctx));
+                    folder.file(guideFileName(item), buildGuideTxt(item, ctx));
                     item.files.forEach(f => folder.file(sanitizeFolderName(f.name), f));
                     folderNames.push(folderName);
                 });
@@ -687,7 +700,7 @@
                 addRow("ph-fill ph-file-text text-slate-400 text-lg", "00_요청자료_안내.txt", false);
                 folderNames.forEach((folder, i) => {
                     addRow("ph-fill ph-folder text-amber-400 text-lg", folder, false);
-                    addRow("ph ph-file-text text-slate-400", "출력방법_안내.txt", true);
+                    addRow("ph ph-file-text text-slate-400", guideFileName(selectedItems[i]), true);
                     selectedItems[i].files.forEach(f => addRow("ph ph-paperclip text-slate-400", f.name, true));
                 });
                 resultSectionEl.classList.remove('hidden');
