@@ -1416,7 +1416,7 @@
       row[3] = accountName;
       row[4] = counterpartyCode;
       row[5] = counterpartyName;
-      row[7] = memo;
+      row[7] = fitUploadMemo(memo, 150); // 세무사랑 적요 한도(upload-memo-limit v1)
       row[8] = amount;
       row[14] = 1;
       return row;
@@ -1431,7 +1431,7 @@
       row[4] = accountName;
       row[5] = counterpartyCode;
       row[6] = counterpartyName;
-      row[7] = memo;
+      row[7] = fitUploadMemo(memo, 100); // 위하고 적요 한도(upload-memo-limit v1)
       if (String(division) === '3') {
         row[8] = amount;
       } else if (String(division) === '4') {
@@ -4093,6 +4093,52 @@
 
       return { detectSheet, tryAuto };
     })();
+  </script>
+  <script>
+    // upload-memo-limit v1 (2026-11-25): 업로드 적요 길이 맞춤 — 규칙 원본 office\_양식\목록.md, 같은 규칙의 Python 판 office\_결산검토공통\_도구\lib_upload.py fit_memo
+    // 한도는 UTF-8 바이트(한글 3, 숫자·영문·공백·기호 1): 위하고 100, 세무사랑 150. 넘을 때만 줄인다.
+    // 주식 적요(N주와 @단가가 함께 있음): 맨 앞 (매매차익)·(수수료)·(제세금) 표시 + N주 / @단가 / 잔고N주 는 꼭 남기고,
+    // 다음 종목명, 그다음 그 밖(거래종류·추가적요, 원래 순서)을 남은 자리만큼 잘라서라도 채운다. 조각 순서는 원래대로.
+    // 그 밖의 적요는 뒷부분을 잘라 한도에 맞춘다.
+    function uploadMemoBytes(s) { return new TextEncoder().encode(String(s)).length; }
+    function uploadMemoCut(s, room) {
+      let out = '';
+      for (const ch of Array.from(String(s))) {
+        if (uploadMemoBytes(out + ch) > room) break;
+        out += ch;
+      }
+      return out;
+    }
+    function fitUploadMemo(memo, limit) {
+      const text = memo === null || memo === undefined ? '' : String(memo);
+      if (uploadMemoBytes(text) <= limit) return memo;
+      const QTY = /^[\d,]+\s*주$/, PRICE = /^@\s*[\d,.]+$/, BAL = /^잔고\s*-?[\d,]+\s*주$/;
+      const all = text.split('/').map((p) => p.trim());
+      const isStock = all.some((p) => QTY.test(p)) && all.some((p) => PRICE.test(p));
+      if (!isStock) return uploadMemoCut(text, limit).replace(/\s+$/, '');
+      const m = text.match(/^((?:\([^()]*\)\s*)+)/);
+      const mark = m ? m[1].trim() : '';
+      const parts = text.slice(m ? m[1].length : 0).split('/').map((p) => p.trim());
+      const qi = parts.findIndex((p) => QTY.test(p));
+      const kind = parts.map((p, i) => (QTY.test(p) || PRICE.test(p) || BAL.test(p)) ? '필수' : (i === qi - 1 ? '종목명' : '기타'));
+      let keep = {};
+      kind.forEach((k, i) => { if (k === '필수') keep[i] = parts[i]; });
+      const build = (d) => {
+        const body = Object.keys(d).map(Number).sort((a, b) => a - b).map((i) => d[i]).filter(Boolean).join(' / ');
+        return mark ? `${mark} ${body}` : body;
+      };
+      const order = kind.map((k, i) => (k === '종목명' ? i : -1)).filter((i) => i >= 0)
+        .concat(kind.map((k, i) => (k === '기타' ? i : -1)).filter((i) => i >= 0));
+      for (const i of order) {
+        const trial = { ...keep, [i]: parts[i] };
+        if (uploadMemoBytes(build(trial)) <= limit) { keep = trial; continue; }
+        const room = limit - (uploadMemoBytes(build({ ...keep, [i]: 'x' })) - 1);
+        const piece = room > 0 ? uploadMemoCut(parts[i], room).replace(/\s+$/, '') : '';
+        if (piece) keep[i] = piece;
+        break;
+      }
+      return build(keep);
+    }
   </script>
 </body>
 </html>
